@@ -755,8 +755,10 @@ function is_secure (req, res, cert, validate_email = true)
 	res.header("X-XSS-Protection",		"1; mode=block");
 	res.header("X-Content-Type-Options",	"nosniff");
 
+	/*
 	if (req.headers.host && req.headers.host !== SERVER_NAME)
 		return "Invalid 'host' field in the header";
+	*/
 
 	if (req.headers.origin)
 	{
@@ -1341,6 +1343,7 @@ function dns_check (req, res, next)
 
 		if (error)
 		{
+			console.log(error);
 			const error_response = {
 				"message"	: "Invalid 'hostname' in certificate",
 				"invalid-input"	: xss_safe(hostname_in_certificate)
@@ -4343,7 +4346,7 @@ if (cluster.isMaster)
 	}
 
 	show_statistics();
-	setInterval (show_statistics, 5000);
+	//setInterval (show_statistics, 5000);
 }
 else
 {

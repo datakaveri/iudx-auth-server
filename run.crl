@@ -20,8 +20,8 @@ NODE_JS_OPTIONS="--zero-fill-buffers"
 
 while :
 do
-	/usr/local/bin/node $NODE_JS_OPTIONS crl.js
-	/usr/local/bin/curl "https://api.telegram.org/bot$telegram_apikey/sendMessage?chat_id=$telegram_chat_id&text=[AUTH]:crl-script-crashed"
+	/usr/bin/node $NODE_JS_OPTIONS crl.js
+	/usr/bin/curl "https://api.telegram.org/bot$telegram_apikey/sendMessage?chat_id=$telegram_chat_id&text=[AUTH]:crl-script-crashed"
 	sleep 10
 	echo "================> Restarting ===================="
 done
