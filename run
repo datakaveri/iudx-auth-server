@@ -20,8 +20,8 @@ NODE_JS_OPTIONS="--zero-fill-buffers"
 
 while :
 do
-	/usr/local/bin/node $NODE_JS_OPTIONS main.js
-	/usr/local/bin/curl "https://api.telegram.org/bot$telegram_apikey/sendMessage?chat_id=$telegram_chat_id&text=[AUTH]:server-crashed"
+	/usr/bin/node $NODE_JS_OPTIONS main.js
+	/usr/bin/curl "https://api.telegram.org/bot$telegram_apikey/sendMessage?chat_id=$telegram_chat_id&text=[AUTH]:server-crashed"
 	sleep 1
 	echo "================> Restarting ===================="
 done

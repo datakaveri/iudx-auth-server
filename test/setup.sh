@@ -33,4 +33,6 @@ openssl x509 -CA ca.iudx.org.in.crt -CAkey ca.key -CAcreateserial -in r-server.c
 openssl x509 -CA ca.iudx.org.in.crt -CAkey ca.key -CAcreateserial -in f-server.csr -req -days 365 -sha256 -out f-server.pem 
 openssl x509 -CA ca.iudx.org.in.crt -CAkey ca.key -CAcreateserial -in e-server.csr -req -days 365 -sha256 -out e-server.pem 
 
-cp *.pem /home/build/
+rm *.csr
+
+cp *.pem /root/

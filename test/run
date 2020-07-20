@@ -9,7 +9,7 @@ start_time=$(date +%s)
 for f in `ls test*.py`
 do
 	echo "-----> $f" | tee -a /tmp/report
-	output=`python2 $f`
+	output=`python3 $f`
 
 	if [ $? = 0 ]
 	then
