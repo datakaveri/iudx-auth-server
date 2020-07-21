@@ -222,7 +222,7 @@ app.use(bodyParser.raw({type:"*/*"}));
 
 app.use(parse_cert_header);
 app.use(basic_security_check);
-app.use(dns_check);
+//app.use(dns_check);
 //app.use(ocsp_check);
 
 /* --- aperture --- */
