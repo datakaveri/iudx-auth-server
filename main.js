@@ -202,6 +202,7 @@ const app = express();
 
 app.disable("x-powered-by");
 
+app.set("trust proxy", true);
 app.use(timeout("5s"));
 app.use(
 	cors ({
@@ -1384,7 +1385,7 @@ function dns_check (req, res, next)
 	if (! cert.subject || ! is_string_safe(cert.subject.CN))
 		return END_ERROR (res, 400, "Invalid 'CN' in the certificate");
 
-	const	ip			= req.connection.remoteAddress;
+	const	ip			= req.ip;
 	let	ip_matched		= false;
 	const	hostname_in_certificate	= cert.subject.CN.toLowerCase();
 
@@ -1568,13 +1569,13 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 	{
 		log ("red",
 			"Too many requests from user : " + consumer_id +
-			", from ip : " + String (req.connection.remoteAddress)
+			", from ip : " + String (req.ip)
 		);
 
 		return END_ERROR (res, 429, "Too many requests");
 	}
 
-	const ip	= req.connection.remoteAddress;
+	const ip	= req.ip;
 	const issuer	= cert.issuer;
 
 	const geoip	= geoip_lite.lookup(ip) || {ll:[]};
