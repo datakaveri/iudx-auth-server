@@ -28,7 +28,9 @@ const os			= require("os");
 const dns			= require("dns");
 const cors			= require("cors");
 const ocsp			= require("ocsp");
+const x509			= require('x509')
 const Pool			= require("pg").Pool;
+const http			= require("http");
 const https			= require("https");
 const assert			= require("assert").strict;
 const chroot			= require("chroot");
@@ -200,6 +202,7 @@ const app = express();
 
 app.disable("x-powered-by");
 
+app.set("trust proxy", true);
 app.use(timeout("5s"));
 app.use(
 	cors ({
@@ -218,9 +221,10 @@ app.use(
 app.use(compression());
 app.use(bodyParser.raw({type:"*/*"}));
 
+app.use(parse_cert_header);
 app.use(basic_security_check);
-app.use(dns_check);
-app.use(ocsp_check);
+//app.use(dns_check);
+//app.use(ocsp_check);
 
 /* --- aperture --- */
 
@@ -1013,6 +1017,63 @@ function body_to_json (body)
 
 let has_started_serving_apis = false;
 
+/* ---
+    functions to change certificate fields to match Node certificate
+    object
+	--- */
+
+function change_cert_keys(obj)
+{
+	const newkeys = {
+		"countryName"		    : "C",
+		"stateOrProvinceName"	    : "ST",
+		"localityName"		    : "L",
+		"organizationName"	    : "O",
+		"organizationalUnitName"    : "OU",
+		"commonName"		    : "CN",
+		"givenName"		    : "GN",
+		"surName"		    : "SN"
+	};
+
+	let new_obj = {};
+
+	for( let key in obj )
+		new_obj[newkeys[key] || key] = obj[key];
+
+	return new_obj;
+}
+
+function parse_cert_header(req, res, next)
+{
+	let cert;
+
+	try
+	{
+		let raw_cert = decodeURIComponent(req.headers['x-forwarded-ssl']);
+		cert	     = x509.parseCert(raw_cert);
+	}
+	catch(error)
+	{
+		return END_ERROR(res, 403, "Error in parsing certificate");
+		log("red", error);
+	}
+
+	cert.subject   = change_cert_keys(cert.subject);
+	cert.issuer    = change_cert_keys(cert.issuer);
+
+	cert['fingerprint']		= cert['fingerPrint'];
+	cert['serialNumber']		= cert['serial'];
+	cert.subject['id-qt-unotice']	= cert.subject['Policy Qualifier User Notice'];
+
+	delete(cert['fingerPrint']);
+	delete(cert['serial']);
+	delete(cert.subject['Policy Qualifier User Notice']);
+
+	req.certificate = cert;
+	return next();
+
+}
+
 /* --- basic security checks to be done at every API call --- */
 
 function basic_security_check (req, res, next)
@@ -1050,7 +1111,8 @@ function basic_security_check (req, res, next)
 		);
 	}
 
-	const cert		= req.socket.getPeerCertificate(true);
+	//const cert		= req.socket.getPeerCertificate(true);
+	const cert		= req.certificate;
 
 	cert.serialNumber	= cert.serialNumber.toLowerCase();
 	cert.fingerprint	= cert.fingerprint.toLowerCase();
@@ -1323,7 +1385,7 @@ function dns_check (req, res, next)
 	if (! cert.subject || ! is_string_safe(cert.subject.CN))
 		return END_ERROR (res, 400, "Invalid 'CN' in the certificate");
 
-	const	ip			= req.connection.remoteAddress;
+	const	ip			= req.ip;
 	let	ip_matched		= false;
 	const	hostname_in_certificate	= cert.subject.CN.toLowerCase();
 
@@ -1507,13 +1569,13 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 	{
 		log ("red",
 			"Too many requests from user : " + consumer_id +
-			", from ip : " + String (req.connection.remoteAddress)
+			", from ip : " + String (req.ip)
 		);
 
 		return END_ERROR (res, 429, "Too many requests");
 	}
 
-	const ip	= req.connection.remoteAddress;
+	const ip	= req.ip;
 	const issuer	= cert.issuer;
 
 	const geoip	= geoip_lite.lookup(ip) || {ll:[]};
@@ -4350,7 +4412,8 @@ if (cluster.isMaster)
 }
 else
 {
-	https.createServer(https_options,app).listen(443,"0.0.0.0");
+	//https.createServer(https_options,app).listen(443,"0.0.0.0");
+	http.createServer(app).listen(3000, "0.0.0.0");
 
 	drop_worker_privileges();
 

@@ -23,7 +23,8 @@
     "posix": "^4.1.2",
     "qrcode": "^1.4.4",
     "safe-regex": "^2.1.1",
-    "sync-request": "^6.1.0"
+    "sync-request": "^6.1.0",
+    "x509": "^0.3.4"
   },
   "devDependencies": {},
   "scripts": {
