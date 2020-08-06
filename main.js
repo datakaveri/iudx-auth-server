@@ -124,7 +124,7 @@ const statistics = {
 
 /* --- environment variables--- */
 
-process.env.TZ = "Asia/Kolkata";
+// process.env.TZ = "Asia/Kolkata";
 
 /* --- dns --- */
 
@@ -154,6 +154,10 @@ const DB_SERVER	= "127.0.0.1";
 const password	= {
 	"DB"	: fs.readFileSync("passwords/auth.db.password","ascii").trim(),
 };
+
+/* --- log file --- */
+
+const log_file = fs.createWriteStream('/var/log/debug.log', {flags : 'a'});
 
 /* --- razorpay --- */
 
@@ -541,12 +545,14 @@ function send_telegram (message)
 
 function log(color, msg)
 {
-	const message = new Date() + " | " + msg;
+	//const message = new Date() + " | " + msg;
+	const message =  msg;
 
 	if (color === "red") {
 		send_telegram(message);
 	}
 
+        log_file.write(message + '\n');
 	logger.color(color).log(message);
 }
 
@@ -1092,6 +1098,14 @@ function basic_security_check (req, res, next)
 	const api			= endpoint.replace(/\/v[1-2]\//,"/v1/");
 	const min_class_required	= MIN_CERT_CLASS_REQUIRED[api];
 
+	const msg = {
+                       "level"     : "INFO",
+                       "action"    : "connection",
+                       "api"       : api,
+                       "ip"        : req.ip
+	};
+
+	log("green", JSON.stringify(msg));
 	process.send(endpoint);
 
 	if (! min_class_required)
@@ -2195,6 +2209,14 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 			);
 		}
 
+		const msg = {
+		    "level"     : "INFO",
+		    "action"    : "token-issued",
+		    "id"	: consumer_id
+		};
+
+		log("green", JSON.stringify(msg));
+
 		return END_SUCCESS (res,response);
 	});
 });
@@ -2474,6 +2496,14 @@ app.post("/auth/v[1-2]/token/introspect", (req, res) => {
 							update_error
 						);
 					}
+
+					const msg = {
+					    "level"     : "INFO",
+					    "action"    : "token-introspected",
+					    "id"	: hostname_in_certificate
+					};
+
+					log("green", JSON.stringify(msg));
 
 					return END_SUCCESS (res,response);
 				}
