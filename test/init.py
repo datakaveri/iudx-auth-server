@@ -3,7 +3,7 @@
 import os
 from auth import Auth
 
-auth_server = "authdev.iudx.io"
+auth_server = "auth.iudx.org.in"
 home        = os.path.expanduser("~") + "/"
 
 consumer		= Auth(home + "consumer.pem",	 home + "consumer.key.pem",	auth_server)
