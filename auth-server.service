@@ -1,0 +1,25 @@
+[Unit]
+Description=Auth Server
+
+[Service]
+WorkingDirectory=/home/iudx-auth-server
+ExecStart=/usr/bin/node /home/iudx-auth-server/main.js
+Restart=always
+RestartSec=5
+SystemCallFilter=@io-event @file-system @network-io @setuid @ipc @mount @process @basic-io @signal brk mprotect ioctl getrandom madvise uname sysinfo
+[Install]
+WantedBy=multi-user.target
+
+
+#User=_aaa
+#Group=_aaa
+# Does not work because postgres password and telegram files are not owned by _aaa
+
+#process - arch_prctl
+#ipc - pipe2
+#filesystem - readlink
+#io-event - epoll_create1
+#basic-io - read
+#SystemCallFilter=@system-service
+#signal - rt_sigaction
+#mount - chroot
