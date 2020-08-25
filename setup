@@ -104,6 +104,7 @@ npm audit fix --force
 
 cp auth-server.service /etc/systemd/system
 systemctl daemon-reload
+systemctl enable auth-server.service
 systemctl start auth-server.service
 
 i=`systemctl is-active auth-server`
