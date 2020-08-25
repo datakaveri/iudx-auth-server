@@ -227,6 +227,7 @@ app.use(bodyParser.raw({type:"*/*"}));
 
 app.use(parse_cert_header);
 app.use(basic_security_check);
+app.use(log_conn);
 //app.use(dns_check);
 //app.use(ocsp_check);
 
@@ -1098,14 +1099,6 @@ function basic_security_check (req, res, next)
 	const api			= endpoint.replace(/\/v[1-2]\//,"/v1/");
 	const min_class_required	= MIN_CERT_CLASS_REQUIRED[api];
 
-	const msg = {
-                       "level"     : "INFO",
-                       "action"    : "connection",
-                       "api"       : api,
-                       "ip"        : req.ip
-	};
-
-	log("green", JSON.stringify(msg));
 	process.send(endpoint);
 
 	if (! min_class_required)
@@ -1384,6 +1377,36 @@ function basic_security_check (req, res, next)
 
 		return next();
 	}
+}
+
+/* Log all API calls */
+
+function log_conn (req, res, next)
+{
+	const endpoint			= req.url.split("?")[0];
+	const api			= endpoint.replace(/\/v[1-2]\//,"/v1/");
+	const api_details 		= api.split('/').slice(3).join('_');
+
+	if( api_details == "")
+		return next();
+
+	const details =
+		{
+			"ip"  		 : req.ip,
+			"authentication" : "certificate " + res.locals.cert.issuer.CN,
+			"id"		 : res.locals.email || cert.subject.CN.toLowerCase()
+	};
+
+	const msg = {
+                       "level"     : "info",
+                       "notify"    : false,
+                       "type"      : api_details.toUpperCase() + "_REQUEST",
+                       "details"   : details
+	};
+
+	log ("green", JSON.stringify(msg));
+
+	return next();
 }
 
 function dns_check (req, res, next)
@@ -2209,13 +2232,22 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 			);
 		}
 
-		const msg = {
-		    "level"     : "INFO",
-		    "action"    : "token-issued",
-		    "id"	: consumer_id
+		const expiry_date = new Date(Date.now() + (token_time * 10));
+
+		const msg =
+		{
+			"level"		: "info",
+			"notify"    	: true,
+			"type"      	: "ISSUED_TOKEN",
+			"details"   	: {
+				"requester"        : consumer_id,
+				"requesterRole"    : cert_class,
+				"token_expiry"     : expiry_date,
+				"resource_ids"     : processed_request_array
+					}
 		};
 
-		log("green", JSON.stringify(msg));
+		log ("green", JSON.stringify(msg));
 
 		return END_SUCCESS (res,response);
 	});
@@ -2498,12 +2530,17 @@ app.post("/auth/v[1-2]/token/introspect", (req, res) => {
 					}
 
 					const msg = {
-					    "level"     : "INFO",
-					    "action"    : "token-introspected",
-					    "id"	: hostname_in_certificate
+						"level"		: "info",
+						"notify"    	: true,
+						"type"      	: "INTROSPECTED_TOKEN",
+						"details"   	: {
+							"resource_server"  : hostname_in_certificate,
+							"token_hash"       : sha256_of_token,
+							"issued_to"	   : issued_to
+						}
 					};
 
-					log("green", JSON.stringify(msg));
+					log ("green", JSON.stringify(msg));
 
 					return END_SUCCESS (res,response);
 				}
@@ -2676,6 +2713,20 @@ app.post("/auth/v[1-2]/token/revoke", (req, res) => {
 		"num-tokens-revoked" : num_tokens_revoked
 	};
 
+	const msg =
+		{
+			"level"		: "info",
+			"notify"    	: false,
+			"type"      	: "REVOKED_TOKENS",
+			"details"   	: {
+				"requester"     : id,
+				"requesterRole" : (tokens ? "consumer" : "provider"),
+				"revoked"	: response["num-tokens-revoked"]
+			}
+		};
+
+	log ("green", JSON.stringify(msg));
+
 	return END_SUCCESS (res, response);
 });
 
@@ -2769,6 +2820,24 @@ app.post("/auth/v[1-2]/token/revoke-all", (req, res) => {
 					}
 
 					response["num-tokens-revoked"] += update_results.rowCount;
+
+					const details = {
+						"requester"     : id,
+						"requesterRole" : update_results.rowCount == 0 ?
+							"consumer" : "provider",
+						"serial" 	: serial,
+						"fingerprint"	: fingerprint,
+						"revoked"	: response["num-tokens-revoked"]
+					};
+
+					const msg = {
+						"level"		: "info",
+						"notify"    	: true,
+						"type"      	: "REVOKED_ALL_TOKENS",
+						"details"	: details
+					};
+
+					log ("green", JSON.stringify(msg));
 
 					return END_SUCCESS (res,response);
 				}
@@ -2885,6 +2954,19 @@ app.post("/auth/v[1-2]/acl/set", (req, res) => {
 						error_1
 				);
 			}
+
+			const msg =
+				{
+					"level"		: "info",
+					"notify"    	: true,
+					"type"      	: "CREATED_POLICY",
+					"details"   	: {
+						"provider"  : provider_id,
+						"policy"    : rules
+					}
+				};
+
+			log ("green", JSON.stringify(msg));
 
 			return END_SUCCESS (res);
 		});
@@ -3032,6 +3114,19 @@ app.post("/auth/v[1-2]/acl/append", (req, res) => {
 				);
 			}
 
+			const msg =
+				{
+					"level"		: "info",
+					"notify"    	: true,
+					"type"      	: "APPENDED_POLICY",
+					"details"   	: {
+						"provider"  : provider_id,
+						"policy"    : policy
+					}
+				};
+
+			log ("green", JSON.stringify(msg));
+
 			return END_SUCCESS (res);
 		});
 	});
@@ -3166,6 +3261,19 @@ app.post("/auth/v[1-2]/acl/revert", (req, res) => {
 						error_1
 				);
 			}
+
+			const msg =
+				{
+					"level"		: "info",
+					"notify"    	: true,
+					"type"      	: "REVERTED_POLICY",
+					"details"   	: {
+						"provider"  : provider_id,
+						"policy"    : previous_policy
+					}
+				};
+
+			log ("green", JSON.stringify(msg));
 
 			return END_SUCCESS (res);
 		});
@@ -3366,6 +3474,21 @@ app.post("/auth/v[1-2]/group/add", (req, res) => {
 		if (error || results.rowCount === 0)
 			return END_ERROR (res, 500, "Internal error!", error);
 
+		const msg =
+			{
+				"level"		: "info",
+				"notify"    	: true,
+				"type"      	: "CONSUMER_ADDED_GROUP",
+				"details"   	: {
+					"provider"	: provider_id,
+					"consumer"	: consumer_id,
+					"group"		: group,
+					"valid_for"	: valid_till + " hours"
+				}
+			};
+
+		log ("green", JSON.stringify(msg));
+
 		return END_SUCCESS (res);
 	});
 });
@@ -3523,6 +3646,21 @@ app.post("/auth/v[1-2]/group/delete", (req, res) => {
 		const response = {
 			"num-consumers-deleted"	: results.rowCount
 		};
+
+		const msg =
+			{
+				"level"		: "info",
+				"notify"    	: true,
+				"type"      	: "CONSUMER_DELETED_GROUP",
+				"details"   	: {
+					"provider"	: provider_id,
+					"consumer"	: consumer_id,
+					"group"		: group,
+					"deleted"	: results.rowCount
+				}
+			};
+
+		log ("green", JSON.stringify(msg));
 
 		return END_SUCCESS (res,response);
 	});
