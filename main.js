@@ -1387,14 +1387,18 @@ function log_conn (req, res, next)
 	const api			= endpoint.replace(/\/v[1-2]\//,"/v1/");
 	const api_details 		= api.split('/').slice(3).join('_');
 
+	// if marketplace APIs called, api_details will be empty
 	if( api_details == "")
 		return next();
+	
+	// if provider/consumer, id is email, else is hostname
+	const id = res.locals.email || res.locals.cert.subject.CN.toLowerCase();
 
 	const details =
 		{
 			"ip"  		 : req.ip,
 			"authentication" : "certificate " + res.locals.cert.issuer.CN,
-			"id"		 : res.locals.email || cert.subject.CN.toLowerCase()
+			"id"		 : id
 	};
 
 	const msg = {
