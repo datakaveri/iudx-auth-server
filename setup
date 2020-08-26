@@ -73,8 +73,18 @@ openssl req -x509 -nodes -days 365 -subj "/CN=auth.iudx.org.in" -newkey rsa:2048
 apt install -y nodejs npm nginx
 
 # nginx config (w/o lets encrypt)
+#
+# nginx allows for only one ssl_client_certificate parameter
+# so the system ca-certificates.crt (to allow lets encrypt certs)
+# must be concatenated with ca.iudx.org.in.crt file
+
+# TODO: Other way to do it would be to move ca crt file to /etc/ssl/certs
+# directory, then run 'update-ca-certificates'. nginx will use the
+# /etc/certs/ca-certificates.crt file directly
+
 mkdir /etc/nginx/certs
-cp ca.iudx.org.in.crt /etc/nginx/certs/
+cat /etc/ssl/certs/ca-certificates.crt ca.iudx.org.in.crt > ca-certs.crt
+cp ca-certs.crt /etc/nginx/certs/
 cp nginx.conf /etc/nginx/sites-available/default
 systemctl restart nginx
 
