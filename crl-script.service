@@ -1,11 +1,11 @@
 [Unit]
-Description=Auth Server
+Description=CRL Script for Auth Server
 
 [Service]
 Environment="NODE_JS_OPTIONS=--zero-fill-buffers"
 Environment="NODE_ENV=production"
 WorkingDirectory=/home/iudx-auth-server
-ExecStart=/usr/bin/node ${NODE_JS_OPTIONS} /home/iudx-auth-server/main.js
+ExecStart=/usr/bin/node ${NODE_JS_OPTIONS} /home/iudx-auth-server/crl.js
 Restart=always
 RestartSec=5
 SystemCallFilter=@io-event @file-system @network-io @setuid @ipc @mount @process @basic-io @signal brk mprotect ioctl getrandom madvise uname sysinfo
