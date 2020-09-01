@@ -41,15 +41,15 @@ as_provider         = audit_report["as-provider"]
 
 num_tokens_before = len(as_provider)
 body = [
-	{
-		"id"	: "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/" + RS + "/resource-xyz-yzz",
-		"api"		: "/latest",
-		"methods"	: ["GET"],
-		"body"		: {"key":"some-key"}
-	},
-	{
-		"id"	: "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/abc-xyz"
-	}
+        {
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/" + RS + "/resource-xyz-yzz",
+                "api"           : "/latest",
+                "methods"       : ["GET"],
+                "body"          : {"key":"some-key"}
+        },
+        {
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/abc-xyz"
+        }
 ]
 
 r = consumer.get_token(body)
@@ -57,21 +57,21 @@ access_token = r['response']
 
 assert r['success']     is True
 assert None             != access_token
-assert 60*60*2		== access_token['expires-in']
+assert 60*60*2          == access_token['expires-in']
 
 token = access_token['token'],
 
 if type(token) == TUPLE:
-	token = token[0]
+        token = token[0]
 
 s = token.split("/")
 
-assert len(s)	== 3
-assert s[0]	== 'auth.iudx.org.in'
+assert len(s)   == 3
+assert s[0]     == 'auth.iudx.org.in'
 
 server_token = access_token['server-token'][RS]
 if type(server_token) == TUPLE:
-	server_token = server_token[0]
+        server_token = server_token[0]
 
 assert resource_server.introspect_token (token,server_token)['success'] is True
 # introspect once more
@@ -80,28 +80,28 @@ assert resource_server.introspect_token (token,server_token)['success'] is True
 # introspect with request
 request = [
             {
-		"id"	: "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/" + RS + "/resource-xyz-yzz",
-		"apis"		: ["/latest"],
-		"methods"	: ["GET"],
-		"body"		: {"key":"some-key"}
-	    }
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/" + RS + "/resource-xyz-yzz",
+                "apis"          : ["/latest"],
+                "methods"       : ["GET"],
+                "body"          : {"key":"some-key"}
+            }
 ]
 
 bad_request = [
             {
-		"id"	: "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/" + RS + "/resource-xyz-yzz",
-		"apis"		: ["/latest-now"],
-		"methods"	: ["POST"],
-		"body"		: {"key":"some-key"}
-	    }
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/" + RS + "/resource-xyz-yzz",
+                "apis"          : ["/latest-now"],
+                "methods"       : ["POST"],
+                "body"          : {"key":"some-key"}
+            }
 ]
 
-assert resource_server.introspect_token (token,server_token,request)['success']			is True
+assert resource_server.introspect_token (token,server_token,request)['success']                 is True
 
 expect_failure(True)
-assert resource_server.introspect_token (token,server_token,bad_request)['success']		is False
-assert resource_server.introspect_token (token,'invalid-token-012345678901234567')['success']	is False
-assert resource_server.introspect_token (token)['success']					is False
+assert resource_server.introspect_token (token,server_token,bad_request)['success']             is False
+assert resource_server.introspect_token (token,'invalid-token-012345678901234567')['success']   is False
+assert resource_server.introspect_token (token)['success']                                      is False
 expect_failure(False)
 
 r = provider.audit_tokens(5)
@@ -119,12 +119,12 @@ token_hash_found = False
 found = None
 
 for a in as_provider:
-	if a['token-hash'] == token_hash:
-		token_hash_found = True
-		found = a
-		break
+        if a['token-hash'] == token_hash:
+                token_hash_found = True
+                found = a
+                break
 
-assert token_hash_found	is True
+assert token_hash_found is True
 assert found['revoked'] is False
 
 r = provider.revoke_token_hashes(token_hash)
@@ -140,13 +140,13 @@ as_provider = audit_report["as-provider"]
 token_hash_found = False
 found = None
 for a in as_provider:
-	if a['token-hash'] == token_hash:
-		token_hash_found = True
-		found = a
-		break
+        if a['token-hash'] == token_hash:
+                token_hash_found = True
+                found = a
+                break
 
 
-assert token_hash_found	is True
+assert token_hash_found is True
 assert found['revoked'] is True
 
 # test revoke-all (as provider)
@@ -155,17 +155,17 @@ access_token = r['response']
 
 assert r['success']     is True
 assert None             != access_token
-assert 60*60*2		== access_token['expires-in']
+assert 60*60*2          == access_token['expires-in']
 
 token = access_token['token']
 
 if type(token) == TUPLE:
-	token = token[0]
+        token = token[0]
 
 s = token.split("/")
 
-assert len(s)	== 3
-assert s[0]	== 'auth.iudx.org.in'
+assert len(s)   == 3
+assert s[0]     == 'auth.iudx.org.in'
 
 r = provider.audit_tokens(100)
 assert r["success"] is True
@@ -190,7 +190,7 @@ audit_report        = r['response']
 as_provider         = audit_report["as-provider"]
 
 for a in as_provider:
-	if a['certificate-serial-number'] == cert_serial and a['certificate-fingerprint'] == cert_fingerprint:
+        if a['certificate-serial-number'] == cert_serial and a['certificate-fingerprint'] == cert_fingerprint:
                 if a['expired'] is False:
                         assert a['revoked'] is True
 
@@ -200,17 +200,17 @@ access_token = r['response']
 
 assert r['success']     is True
 assert None             != access_token
-assert 60*60*2		== access_token['expires-in']
+assert 60*60*2          == access_token['expires-in']
 
 token = access_token['token']
 
 if type(token) == TUPLE:
-	token = token[0]
+        token = token[0]
 
 s = token.split("/")
 
-assert len(s)	== 3
-assert s[0]	== 'auth.iudx.org.in'
+assert len(s)   == 3
+assert s[0]     == 'auth.iudx.org.in'
 
 r = provider.audit_tokens(5)
 assert r["success"] is True
@@ -242,36 +242,36 @@ new_policy  = "*@iisc.ac.in can access * for 1 month"
 assert provider.set_policy(new_policy)['success'] is True
 
 body = [
-	{
-		"id"	: "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1",
-	},
-	{
-		"id"	: "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r2"
-	}
+        {
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1",
+        },
+        {
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r2"
+        }
 ]
 
 r = restricted_consumer.get_token(body)
 access_token = r['response']
 
-assert r['success']     		is True
-assert None  		           	!= access_token
-assert r['response']['expires-in']	== 60*60*24*30*1
+assert r['success']                     is True
+assert None                             != access_token
+assert r['response']['expires-in']      == 60*60*24*30*1
 
 body = [
-	{
-		"id"	: "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1",
-	},
-	{
-		"id"	: "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs2/r2"
-	}
+        {
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1",
+        },
+        {
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs2/r2"
+        }
 ]
 
 expect_failure(True)
 r = restricted_consumer.get_token(body)
 expect_failure(False)
 
-assert r['success']	is False
-assert r['status_code']	== 403
+assert r['success']     is False
+assert r['status_code'] == 403
 
 # new api tests
 
@@ -279,29 +279,29 @@ new_policy  = "*@iisc.ac.in can access * for 5 months"
 assert provider.set_policy(new_policy)['success'] is True
 
 body = [
-	"rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1",
-	"rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs2/r2"
+        "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1",
+        "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs2/r2"
 ]
 
 r = consumer.get_token(body)
-assert r['success']			is True
-assert r['response']['expires-in']	== 60*60*24*30*5
+assert r['success']                     is True
+assert r['response']['expires-in']      == 60*60*24*30*5
 
 body = "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1";
 r = consumer.get_token(body)
-assert r['success']			is True
-assert r['response']['expires-in']	== 60*60*24*30*5
+assert r['success']                     is True
+assert r['response']['expires-in']      == 60*60*24*30*5
 
 body = { "id" : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1"};
 r = consumer.get_token(body)
-assert r['success']			is True
-assert r['response']['expires-in']	== 60*60*24*30*5
+assert r['success']                     is True
+assert r['response']['expires-in']      == 60*60*24*30*5
 
 # payment related
 
 #policy = "all can access anything for 10 days @ 20 INR"
 #provider.set_policy(policy)
-#assert r['success']			is True
+#assert r['success']                    is True
 
 #body = { "id" : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1"};
 #
@@ -309,26 +309,26 @@ assert r['response']['expires-in']	== 60*60*24*30*5
 #r = consumer.get_token(body)
 #expect_failure(False)
 #
-#assert r['success']	is False
-#assert r['status_code']	== 402 # payment required
+#assert r['success']    is False
+#assert r['status_code']        == 402 # payment required
 #
 #amount = 20
 #r = consumer.topup(amount)
 #
 #r = consumer.get_token(body)
-#assert r['success']			is True
-#assert r['response']['expires-in']	== 60*60*24*10
+#assert r['success']                    is True
+#assert r['response']['expires-in']     == 60*60*24*10
 #
 #access_token = r['response']
 #token = access_token['token']
 #r = consumer.confirm_payment(token)
-#assert r['success']	is True
+#assert r['success']    is True
 #
 #expect_failure(True)
 #r = consumer.confirm_payment(token)
 #expect_failure(False)
 
-#assert r['success']	is False
+#assert r['success']    is False
 #
 #body = { "id" : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1"};
 #
@@ -336,8 +336,8 @@ assert r['response']['expires-in']	== 60*60*24*30*5
 #r = untrusted.get_token(body)
 #expect_failure(False)
 #
-#assert r['success']	is False
-#assert r['status_code']	== 403
+#assert r['success']    is False
+#assert r['status_code']        == 403
 
 # test audit for multiple providers
 
@@ -348,15 +348,15 @@ policy = 'all can access example.com/test-providers'
 alt_provider.set_policy(policy)
 
 body = [
-	{
-		"id"	: "iisc.ac.in/2052f450ac2dde345335fb18b82e21da92e3388c/example.com/test-providers",
-	},
-	{
-		"id"	: "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/ABC123"
-	},
-	{
-		"id"	: "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/abc-xyz"
-	}
+        {
+                "id"    : "iisc.ac.in/2052f450ac2dde345335fb18b82e21da92e3388c/example.com/test-providers",
+        },
+        {
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/ABC123"
+        },
+        {
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/abc-xyz"
+        }
 ]
 
 r = consumer.get_token(body)
@@ -367,18 +367,18 @@ assert r["success"] is True
 audit_report = r['response']
 as_provider = audit_report["as-provider"]
 
-token_hash = hashlib.sha256(access_token['token']).hexdigest()
+token_hash = hashlib.sha256(access_token['token'].encode('utf-8')).hexdigest()
 
 token_hash_found = False
 found = None
 
 for a in as_provider:
-	if a['token-hash'] == token_hash:
+        if a['token-hash'] == token_hash:
                 token_hash_found = True
-		found = a
-		break
+                found = a
+                break
 
-assert token_hash_found	is True
+assert token_hash_found is True
 assert found['revoked'] is False
 
 for r in found['request']:
@@ -393,11 +393,11 @@ as_provider = audit_report["as-provider"]
 found = None
 
 for a in as_provider:
-	if a['token-hash'] == token_hash:
-		found = a
-		break
+        if a['token-hash'] == token_hash:
+                found = a
+                break
 
-assert token_hash_found	is True
+assert token_hash_found is True
 assert found['revoked'] is False
 
 for r in found['request']:
