@@ -1405,7 +1405,6 @@ function dns_check (req, res, next)
 
 		if (error)
 		{
-			console.log(error);
 			const error_response = {
 				"message"	: "Invalid 'hostname' in certificate",
 				"invalid-input"	: xss_safe(hostname_in_certificate)
@@ -2568,7 +2567,8 @@ app.post("/auth/v[1-2]/token/revoke", (req, res) => {
 				]
 			);
 
-			num_tokens_revoked += update_rows.length;
+			// querySync returns empty object for UPDATE
+			num_tokens_revoked += 1;
 		}
 	}
 	else
@@ -2637,7 +2637,8 @@ app.post("/auth/v[1-2]/token/revoke", (req, res) => {
 				]
 			);
 
-			num_tokens_revoked += update_rows.length;
+			// querySync returns empty object for UPDATE
+			num_tokens_revoked += 1;
 		}
 	}
 
@@ -3235,6 +3236,24 @@ app.post("/auth/v[1-2]/audit/tokens", (req, res) => {
 					row.revoked || (! row.is_valid_token_for_provider)
 				);
 
+				/* return only resource IDs belonging to provider
+				   who requested audit */
+
+				let filtered_request = [];
+
+				for (const r of row.request)
+				{
+					const split		= r.id.split("/");
+
+					const email_domain	= split[0].toLowerCase();
+					const sha1_of_email	= split[1].toLowerCase();
+
+					const provider		= email_domain + "/" + sha1_of_email;
+
+					if (provider === provider_id_hash)
+						filtered_request.push(r);
+				}
+
 				as_provider.push ({
 					"consumer"			: row.id,
 					"token-hash"			: row.token,
@@ -3245,7 +3264,7 @@ app.post("/auth/v[1-2]/audit/tokens", (req, res) => {
 					"expired"			: row.expired,
 					"certificate-serial-number"	: row.cert_serial,
 					"certificate-fingerprint"	: row.cert_fingerprint,
-					"request"			: row.request,
+					"request"			: filtered_request,
 					"geoip"				: row.geoip,
 					"paid"				: row.paid,
 					"api-called-from"		: row.api_called_from
