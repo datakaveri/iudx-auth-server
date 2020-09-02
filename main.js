@@ -93,19 +93,6 @@ const MIN_CERT_CLASS_REQUIRED	= Object.freeze ({
 	"/auth/v1/group/list"			: 3,
 });
 
-/* --- API statistics --- */
-
-const statistics = {
-
-	"start_time"	: 0,
-
-	"api"		: {
-		"count" : {
-			"invalid-api" : 0
-		}
-	}
-};
-
 /* --- environment variables--- */
 
 // process.env.TZ = "Asia/Kolkata";
@@ -276,34 +263,6 @@ const https_options = Object.freeze ({
 function print(msg)
 {
 	logger.color("white").log(msg);
-}
-
-function show_statistics ()
-{
-	console.clear();
-
-	print (new Date());
-
-	const now	= Math.floor (Date.now() / 1000);
-	const diff	= now - statistics.start_time;
-
-	print ("---------------------------------------------------");
-	print ("API".padEnd(35) + "Count".padEnd(10) + "Rate");
-	print ("---------------------------------------------------");
-
-	for (const api in statistics.api.count)
-	{
-		const rate = (statistics.api.count[api]/diff).toFixed(3);
-
-		print (
-			api.padEnd(35)					+
-			String(statistics.api.count[api]).padEnd(5)	+
-			"      "					+
-			String(rate)
-		);
-	}
-
-	print ("---------------------------------------------------");
 }
 
 function is_valid_token (token, user = null)
@@ -1029,8 +988,6 @@ function basic_security_check (req, res, next)
 	const endpoint			= req.url.split("?")[0];
 	const api			= endpoint.replace(/\/v[1-2]\//,"/v1/");
 	const min_class_required	= MIN_CERT_CLASS_REQUIRED[api];
-
-	process.send(endpoint);
 
 	if (! min_class_required)
 	{
@@ -3657,26 +3614,9 @@ if (cluster.isMaster)
 
 	log("info", "EVENT", false, {}, "Master started with pid " + process.pid);
 
-	const ALL_END_POINTS	= Object.keys(MIN_CERT_CLASS_REQUIRED).sort();
-
-	for (const e of ALL_END_POINTS)
-		statistics.api.count[e] = 0;
-
-	statistics.start_time = Math.floor (Date.now() / 1000);
-
 	for (let i = 0; i < NUM_CPUS; i++) {
 		cluster.fork();
 	}
-
-	cluster.on ("fork", (worker) => {
-		worker.on ("message", (endpoint) => {
-
-			if (ALL_END_POINTS.indexOf(endpoint) === -1)
-				endpoint = "invalid-api";
-
-			statistics.api.count[endpoint] += 1;
-		});
-	});
 
 	cluster.on ("exit", (worker) => {
 
@@ -3693,8 +3633,6 @@ if (cluster.isMaster)
 		);
 	}
 
-	//show_statistics();
-	//setInterval (show_statistics, 5000);
 }
 else
 {
