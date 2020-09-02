@@ -51,8 +51,8 @@ chmod 400 *.sql
 chmod 400 rzpay.*
 
 # setup postgresql
-apt install postgresql postgresql-contrib
-apt install libpq-dev
+apt install -y postgresql postgresql-contrib
+apt install -y libpq-dev
 
 until pg_isready
 do
@@ -70,6 +70,34 @@ chmod 400 https-key.pem
 
 openssl req -x509 -nodes -days 365 -subj "/CN=auth.iudx.org.in" -newkey rsa:2048 -keyout https-key.pem -out https-certificate.pem
 
+apt install -y nodejs npm nginx
+
+# nginx config (w/o lets encrypt)
+#
+# nginx allows for only one ssl_client_certificate parameter
+# so the system ca-certificates.crt (to allow lets encrypt certs)
+# must be concatenated with the other .crt files
+
+# TODO: Other way to do it would be to move the .crt files to /etc/ssl/certs
+# directory, then run 'update-ca-certificates'. nginx will use the
+# /etc/certs/ca-certificates.crt file directly
+
+mkdir /etc/nginx/certs
+cat /etc/ssl/certs/ca-certificates.crt ca.iudx.org.in.crt CCAIndia2014.cer CCAIndia2015.cer > ca-certs.crt
+cp ca-certs.crt /etc/nginx/certs/
+cp nginx.conf /etc/nginx/sites-available/default
+systemctl restart nginx
+
+i=`systemctl is-active nginx`
+
+if [ $i != "active" ]
+then
+	echo
+	echo "nginx not running!!"
+	echo
+	exit
+fi
+
 git clone --depth=1 https://github.com/rbccps-iisc/node-aperture
 cd node-aperture
 npm install
@@ -84,5 +112,33 @@ npm audit fix --force
 		sleep 1
 	done
 
-	./run.tmux
-	./run.crl.tmux
+cp auth-server.service /etc/systemd/system
+systemctl daemon-reload
+systemctl enable auth-server.service
+systemctl start auth-server.service
+
+cp crl-script.service /etc/systemd/system
+systemctl daemon-reload
+systemctl enable crl-script.service
+systemctl start crl-script.service
+
+i=`systemctl is-active auth-server`
+
+if [ $i != "active" ]
+then
+	echo
+	echo "Auth server not running!!"
+	echo
+	exit
+fi
+
+i=`systemctl is-active crl-script`
+
+if [ $i != "active" ]
+then
+	echo
+	echo "CRL script not running!!"
+	echo
+	exit
+fi
+

@@ -36,7 +36,7 @@ assert r['status_code'] == 403
 # delegated certificate cannot call any Marketplace API
 
 expect_failure(True)
-r = delegate.topup(100)
+#r = delegate.topup(100)
 expect_failure(False)
 
 assert r["success"] is False
@@ -45,7 +45,7 @@ assert r['status_code'] == 403
 # untrusted certificates cannot call any Marketplace API
 
 expect_failure(True)
-r = untrusted.topup(100)
+#r = untrusted.topup(100)
 expect_failure(False)
 
 assert r["success"] is False

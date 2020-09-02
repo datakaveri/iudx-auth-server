@@ -1,0 +1,33 @@
+[Unit]
+Description=Auth Server
+
+[Service]
+Environment="NODE_JS_OPTIONS=--zero-fill-buffers"
+Environment="NODE_ENV=production"
+WorkingDirectory=/home/iudx-auth-server
+ExecStart=/usr/bin/node ${NODE_JS_OPTIONS} /home/iudx-auth-server/main.js
+Restart=always
+RestartSec=5
+SystemCallFilter=@io-event @file-system @network-io @setuid @ipc @mount @process @basic-io @signal brk mprotect ioctl getrandom madvise uname sysinfo
+
+# /usr, /boot and /etc directories are read-only
+ProtectSystem=full
+# make passwords directory read only?
+# /home, /root, /run/user made read only
+ProtectHome=read-only
+[Install]
+WantedBy=multi-user.target
+
+
+#User=_aaa
+#Group=_aaa
+# Does not work because postgres password and telegram files are not owned by _aaa
+
+#process - arch_prctl
+#ipc - pipe2
+#filesystem - readlink
+#io-event - epoll_create1
+#basic-io - read
+#SystemCallFilter=@system-service
+#signal - rt_sigaction
+#mount - chroot

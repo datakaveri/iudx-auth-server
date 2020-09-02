@@ -1,0 +1,21 @@
+#!/bin/sh
+
+#cd /home/postgresql
+
+#export PGPASSWORD=`cat passwords/admin.db.password`
+#sudo -u postgres psql -U postgres -d postgres -c "alter user postgres with password '$PGPASSWORD';"
+
+#initdb -D /home/postgresql/data/ -U postgres --auth=md5 --encoding=UTF-8 --pwfile=admin.db.password
+
+#echo "listen_addresses = '127.0.0.1'" >> /home/postgresql/data/postgresql.conf 
+
+#until pg_isready
+#do
+#	pg_ctl start 
+#	sleep 1
+#done
+
+sudo -u postgres psql -U postgres < schema.sql
+
+#rm -rf schema.sql
+#rm -rf setup.postgresql.openbsd
