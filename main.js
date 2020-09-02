@@ -329,63 +329,6 @@ function base64 (string)
 		.toString("base64");
 }
 
-function send_telegram_to_provider (consumer_id, provider_id, telegram_id, token_hash, request)
-{
-	pool.query ("SELECT chat_id FROM telegram WHERE id = $1::text LIMIT 1", [telegram_id], (error,results) =>
-	{
-		if (error)
-			send_telegram ("Failed to get chat_id for : " + telegram_id + " : provider " + provider_id);
-		else
-		{
-			const url		= TELEGRAM + "/bot" + telegram_apikey + "/sendMessage";
-
-			const split		= request.id.split("/");
-			const resource		= split.slice(2).join("/");
-
-			const telegram_message	= {
-
-				url		: url,
-				form		: {
-					chat_id		: results.rows[0].chat_id,
-
-					text		: '[ IUDX-AUTH ] #' + token_hash  + '#\n\n"'		+
-									consumer_id				+
-								'" wants to access "'				+
-									resource + '"\n\n'			+
-								"Request details:\n\n"				+
-									JSON.stringify (request,null,"\t"),
-
-					reply_markup	: JSON.stringify ({
-						inline_keyboard	: [[
-							{
-								text		: "\u2714\ufe0f Allow",
-								callback_data	: "allow" 
-							},
-							{
-								text		: "\u2716\ufe0f Deny",
-								callback_data	: "deny"
-							}
-						]]
-					})
-				}
-			};
-
-			http_request.post (telegram_message, (error_1, response, body) => {
-
-				if (error_1)
-				{
-					log ("warn", "EVENT", true, {},
-						"Telegram failed ! response = " +
-							String(response)	+
-						" body = "			+
-							String(body)
-					);
-				}
-			});
-		}
-	});
-}
-
 function send_telegram (message)
 {
 	http_request ( telegram_url + "[ AUTH ] : " + message, (error, response, body) =>
@@ -1354,7 +1297,6 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 
 	const request_array			= to_array(body.request);
 	const processed_request_array		= [];
-	const manual_authorization_array	= [];
 
 	if (! request_array || request_array.length < 1)
 	{
@@ -1470,7 +1412,6 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 	for (let r of request_array)
 	{
 		let resource;
-		let requires_manual_authorization = false;
 
 		if (typeof r === "string")
 		{
@@ -1769,9 +1710,6 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 
 					const token_time_in_policy	= result.expiry || 0;
 
-					requires_manual_authorization	= requires_manual_authorization	||
-										result["manual-authorization"];
-
 					if (token_time_in_policy < 1)
 					{
 						const error_response = {
@@ -1819,25 +1757,12 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 			return END_ERROR (res, 400, error_response);
 		}
 
-		if (requires_manual_authorization)
-		{
-			manual_authorization_array.push ({
-				"id"			: resource,
-				"methods"		: r.methods,
-				"apis"			: r.apis,
-				"body"			: r.body,
-				"manual-authorization"	: requires_manual_authorization,
-			});
-		}
-		else
-		{
-			processed_request_array.push ({
-				"id"			: resource,
-				"methods"		: r.methods,
-				"apis"			: r.apis,
-				"body"			: r.body,
-			});
-		}
+		processed_request_array.push ({
+			"id"			: resource,
+			"methods"		: r.methods,
+			"apis"			: r.apis,
+			"body"			: r.body,
+		});
 
 		resource_id_dict[resource] = true;
 
@@ -1866,12 +1791,6 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 		"//"			: "",
 		"is_token_valid"	: true,
 	};
-
-	if (manual_authorization_array.length > 0)
-	{
-		response["//"]		+= "This token requires manual authorization from the provider. ";
-		response.is_token_valid	= false;
-	}
 
 	const num_resource_servers = Object
 					.keys(resource_server_token)
@@ -1913,7 +1832,6 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 			"$10::jsonb,"				+
 			"$11::jsonb,"				+
 			"$12::text"				+ // api_called_from
-			"$13::jsonb"				+ // manual_authorization_array
 	")";
 
 	const params = [
@@ -1929,7 +1847,6 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 		JSON.stringify(providers),			// 10
 		JSON.stringify(geoip),				// 11
 		req.headers.origin,				// 12
-		JSON.stringify(manual_authorization_array)	// 13
 	];
 
 	pool.query (query, params, (error,results) =>
@@ -1939,26 +1856,6 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 			return END_ERROR (
 				res, 500,
 				"Internal error!", error
-			);
-		}
-
-		for (const m of manual_authorization_array)
-		{
-			const split		= m.id.split("/");
-
-			const email_domain	= split[0].toLowerCase();
-			const sha1_of_email	= split[1].toLowerCase();
-
-			const provider_id_hash	= email_domain + "/" + sha1_of_email;
-
-			const telegram_id = m["manual-auth"].split("telegram:")[1];
-
-			send_telegram_to_provider (
-				consumer_id,
-				provider_id_hash,
-				telegram_id,
-				sha256_of_token,
-				m
 			);
 		}
 
