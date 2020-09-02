@@ -1465,11 +1465,6 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 	let num_rules_passed		= 0;
 	let total_data_cost_per_second	= 0.0;
 
-	const payment_info		= {
-		amount		: 0.0,
-		providers	: {}
-	};
-
 	const can_access_regex = res.locals.can_access_regex;
 
 	for (let r of request_array)
@@ -1773,12 +1768,11 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 					);
 
 					const token_time_in_policy	= result.expiry || 0;
-					const payment_amount		= result.amount || 0.0;
 
 					requires_manual_authorization	= requires_manual_authorization	||
 										result["manual-authorization"];
 
-					if (token_time_in_policy < 1 || payment_amount < 0.0)
+					if (token_time_in_policy < 1)
 					{
 						const error_response = {
 							"message"	: "Unauthorized",
@@ -1791,15 +1785,6 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 
 						return END_ERROR (res, 403, error_response);
 					}
-
-					const cost_per_second		= payment_amount / token_time_in_policy;
-
-					total_data_cost_per_second	+= cost_per_second;
-
-					if (! payment_info.providers[provider_id_hash])
-						payment_info.providers[provider_id_hash] = 0.0;
-
-					payment_info.providers[provider_id_hash] += cost_per_second;
 
 					token_time = Math.min (
 						token_time,
@@ -1880,59 +1865,11 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 
 		"//"			: "",
 		"is_token_valid"	: true,
-
-		"payment-info"	: {
-			"amount"	: 0.0,
-			"currency"	: "INR",
-		},
 	};
 
 	if (manual_authorization_array.length > 0)
 	{
 		response["//"]		+= "This token requires manual authorization from the provider. ";
-		response.is_token_valid	= false;
-	}
-
-	const total_payment_amount = total_data_cost_per_second * token_time;
-
-	if (total_payment_amount > 0)
-	{
-		if (res.locals.untrusted)
-		{
-			return END_ERROR (
-				res, 403,
-				"Untrusted Apps cannot get tokens requiring credits"
-			);
-		}
-
-		const query	= "SELECT amount FROM credit"			+
-					" WHERE id = $1::text"			+
-					" AND cert_serial = $2::text"		+
-					" AND cert_fingerprint = $3::text"	+
-					" LIMIT 1";
-
-		const params	= (cert_class > 2) ?
-					[consumer_id, "*", "*"]	:
-					[consumer_id, cert.serialNumber, cert.fingerprint];
-
-		const rows	= pg.querySync (query, params);
-		const credits	= (rows.length === 1) ? rows[0].amount : 0.0;
-
-		if (total_payment_amount > credits)
-		{
-			return END_ERROR (
-				res, 402,
-					"Not enough balance in credits for : "	+
-					total_payment_amount			+
-					" Rupees"
-			);
-		}
-
-		payment_info.amount		= total_payment_amount;
-		response["payment-info"].amount	= total_payment_amount;
-
-		response["//"]		+= "This token requires payment authorization;"	+
-						"please use the 'confirm-payment' API to approve";
 		response.is_token_valid	= false;
 	}
 
@@ -1960,8 +1897,6 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 	response["server-token"]	= resource_server_token;
 	const sha256_of_token		= sha256(token);
 
-	const paid = total_payment_amount > 0.0 ? false : true;
-
 	const query = "INSERT INTO token VALUES("		+
 			"$1::text,"				+
 			"$2::text,"				+
@@ -1977,11 +1912,8 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 			"$9::jsonb,"				+
 			"$10::jsonb,"				+
 			"$11::jsonb,"				+
-			"$12::jsonb,"				+
-			"$13::boolean,"				+
-			"NULL,"					+ // paid_at
-			"$14::text,"				+ // api_called_from
-			"$15::jsonb"				+ // manual_authorization_array
+			"$12::text"				+ // api_called_from
+			"$13::jsonb"				+ // manual_authorization_array
 	")";
 
 	const params = [
@@ -1996,10 +1928,8 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 		JSON.stringify(sha256_of_resource_server_token),//  9
 		JSON.stringify(providers),			// 10
 		JSON.stringify(geoip),				// 11
-		JSON.stringify(payment_info),			// 12
-		paid,						// 13
-		req.headers.origin,				// 14
-		JSON.stringify(manual_authorization_array)	// 15
+		req.headers.origin,				// 12
+		JSON.stringify(manual_authorization_array)	// 13
 	];
 
 	pool.query (query, params, (error,results) =>
@@ -2104,7 +2034,6 @@ app.post("/auth/v[1-2]/token/introspect", (req, res) => {
 		" WHERE id = $1::text"				+
 		" AND token = $2::text"				+
 		" AND revoked = false"				+
-		" AND paid = true"				+
 		" AND expiry > NOW()"				+
 		" LIMIT 1",
 		[
@@ -3062,7 +2991,7 @@ app.post("/auth/v[1-2]/audit/tokens", (req, res) => {
 
 		"SELECT issued_at,expiry,request,cert_serial,"	+
 		" cert_fingerprint,introspected,revoked,"	+
-		" expiry < NOW() as expired,geoip,paid,"	+
+		" expiry < NOW() as expired,geoip,"		+
 		" api_called_from"				+
 		" FROM token"					+
 		" WHERE id = $1::text"				+
@@ -3090,7 +3019,6 @@ app.post("/auth/v[1-2]/audit/tokens", (req, res) => {
 				"certificate-fingerprint"	: row.cert_fingerprint,
 				"request"			: row.request,
 				"geoip"				: row.geoip,
-				"paid"				: row.paid,
 				"api-called-from"		: row.api_called_from
 			});
 		}
@@ -3107,7 +3035,7 @@ app.post("/auth/v[1-2]/audit/tokens", (req, res) => {
 			" revoked,introspected,"			+
 			" providers-> $1::text"				+
 			" AS is_valid_token_for_provider,"		+
-			" expiry < NOW() as expired,geoip,paid,"	+
+			" expiry < NOW() as expired,geoip,"		+
 			" api_called_from"				+
 			" FROM token"					+
 			" WHERE providers-> $1::text"			+
@@ -3164,7 +3092,6 @@ app.post("/auth/v[1-2]/audit/tokens", (req, res) => {
 					"certificate-fingerprint"	: row.cert_fingerprint,
 					"request"			: filtered_request,
 					"geoip"				: row.geoip,
-					"paid"				: row.paid,
 					"api-called-from"		: row.api_called_from
 				});
 			}
