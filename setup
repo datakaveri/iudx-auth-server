@@ -43,9 +43,6 @@ done
 echo your-telegram-api-key		> telegram.apikey
 echo your-telegram-chat-id		> telegram.chatid
 
-echo your-razorpay-key-id		> rzpay.key.id
-echo your-razorpay-key-secret		> rzpay.key.secret
-
 chmod 400 telegram.*
 chmod 400 *.sql
 chmod 400 rzpay.*
