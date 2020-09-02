@@ -516,7 +516,7 @@ function send_telegram_to_provider (consumer_id, provider_id, telegram_id, token
 
 				if (error_1)
 				{
-					log ("err", "EVENT", true, {},
+					log ("warn", "EVENT", true, {},
 						"Telegram failed ! response = " +
 							String(response)	+
 						" body = "			+
@@ -534,7 +534,7 @@ function send_telegram (message)
 	{
 		if (error)
 		{
-			log ("err", "EVENT", true, {},
+			log ("warn", "EVENT", true, {},
 				"Telegram failed ! response = " +
 					String(response)	+
 				" body = "			+
