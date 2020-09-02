@@ -925,7 +925,6 @@ function basic_security_check (req, res, next)
 		);
 	}
 
-	//const cert		= req.socket.getPeerCertificate(true);
 	const cert		= req.certificate;
 
 	cert.serialNumber	= cert.serialNumber.toLowerCase();
@@ -1185,19 +1184,14 @@ function log_conn (req, res, next)
 	const api			= endpoint.replace(/\/v[1-2]\//,"/v1/");
 	const api_details 		= api.split('/').slice(3).join('_');
 
-	// if marketplace APIs called, api_details will be empty
-	if( api_details == "")
-		return next();
-	
 	// if provider/consumer, id is email, else is hostname
 	const id 	= res.locals.email || res.locals.cert.subject.CN.toLowerCase();
 	const type 	= api_details.toUpperCase() + "_REQUEST";
 
-	const details =
-		{
-			"ip"  		 : req.ip,
-			"authentication" : "certificate " + res.locals.cert.issuer.CN,
-			"id"		 : id
+	const details = {
+		"ip"  		 : req.ip,
+		"authentication" : "certificate " + res.locals.cert.issuer.CN,
+		"id"		 : id
 	};
 
 	log("info", type, false, details);
@@ -1405,7 +1399,6 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 	const providers			= {};
 
 	let num_rules_passed		= 0;
-	let total_data_cost_per_second	= 0.0;
 
 	const can_access_regex = res.locals.can_access_regex;
 
@@ -1787,8 +1780,6 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 		"token"			: token,
 		"token-type"		: "IUDX",
 		"expires-in"		: token_time,
-
-		"//"			: "",
 		"is_token_valid"	: true,
 	};
 
