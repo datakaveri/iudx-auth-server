@@ -27,11 +27,9 @@ const fs			= require("fs");
 const os			= require("os");
 const dns			= require("dns");
 const cors			= require("cors");
-const ocsp			= require("ocsp");
 const x509			= require('x509')
 const Pool			= require("pg").Pool;
 const http			= require("http");
-const https			= require("https");
 const assert			= require("assert").strict;
 const chroot			= require("chroot");
 const crypto			= require("crypto");
@@ -189,7 +187,6 @@ app.use(parse_cert_header);
 app.use(basic_security_check);
 app.use(log_conn);
 //app.use(dns_check);
-//app.use(ocsp_check);
 
 /* --- aperture --- */
 
@@ -236,27 +233,6 @@ const apertureOpts = {
 
 const parser	= aperture.createParser		(apertureOpts);
 const evaluator	= aperture.createEvaluator	(apertureOpts);
-
-/* --- https --- */
-
-const system_trusted_certs = is_openbsd ?
-					"/etc/ssl/cert.pem" :
-					"/etc/ssl/certs/ca-certificates.crt";
-
-const trusted_CAs = [
-	fs.readFileSync("ca.iudx.org.in.crt"),
-	fs.readFileSync(system_trusted_certs),
-	fs.readFileSync("CCAIndia2015.cer"),
-	fs.readFileSync("CCAIndia2014.cer")
-];
-
-const https_options = Object.freeze ({
-	key			: fs.readFileSync("https-key.pem"),
-	cert			: fs.readFileSync("https-certificate.pem"),
-	ca			: trusted_CAs,
-	requestCert		: true,
-	rejectUnauthorized	: true,
-});
 
 /* --- functions --- */
 
@@ -1345,59 +1321,6 @@ function dns_check (req, res, next)
 		}
 
 		return next();  // dns check passed
-	});
-}
-
-function ocsp_check (req, res, next)
-{
-	const cert = res.locals.cert;
-
-	// Skip ocsp check if an IUDX certificate was presented
-
-	if (res.locals.is_iudx_certificate)
-		return next();
-
-	if (! cert.issuerCertificate || ! cert.issuerCertificate.raw)
-	{
-		if (req.socket.isSessionReused())
-		{
-			return next(); // previously ocsp check was passed !
-		}
-		else
-		{
-			return END_ERROR (
-				res, 400,
-				"Something is wrong with your client/browser !"
-			);
-		}
-	}
-
-	const ocsp_request = {
-		cert	: cert.raw,
-		issuer	: cert.issuerCertificate.raw
-	};
-
-	ocsp.check (ocsp_request, (ocsp_error, ocsp_response) =>
-	{
-		if (ocsp_error)
-		{
-			return END_ERROR (
-				res, 403,
-				"Your certificate issuer did "	+
-				"NOT respond to an OCSP request"
-			);
-		}
-
-		if (ocsp_response.type !== "good")
-		{
-			return END_ERROR (
-				res, 403,
-				"Your certificate has been "	+
-				"revoked by your certificate issuer"
-			);
-		}
-
-		return next();	// ocsp check passed
 	});
 }
 
@@ -3636,7 +3559,6 @@ if (cluster.isMaster)
 }
 else
 {
-	//https.createServer(https_options,app).listen(443,"0.0.0.0");
 	http.createServer(app).listen(3000, "0.0.0.0");
 
 	drop_worker_privileges();
