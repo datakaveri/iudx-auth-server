@@ -124,7 +124,7 @@ const statistics = {
 
 /* --- environment variables--- */
 
-process.env.TZ = "Asia/Kolkata";
+// process.env.TZ = "Asia/Kolkata";
 
 /* --- dns --- */
 
@@ -154,6 +154,10 @@ const DB_SERVER	= "127.0.0.1";
 const password	= {
 	"DB"	: fs.readFileSync("passwords/auth.db.password","ascii").trim(),
 };
+
+/* --- log file --- */
+
+const log_file = fs.createWriteStream('/var/log/debug.log', {flags : 'a'});
 
 /* --- razorpay --- */
 
@@ -223,6 +227,7 @@ app.use(bodyParser.raw({type:"*/*"}));
 
 app.use(parse_cert_header);
 app.use(basic_security_check);
+app.use(log_conn);
 //app.use(dns_check);
 //app.use(ocsp_check);
 
@@ -511,7 +516,7 @@ function send_telegram_to_provider (consumer_id, provider_id, telegram_id, token
 
 				if (error_1)
 				{
-					log ("yellow",
+					log ("err", "EVENT", true, {},
 						"Telegram failed ! response = " +
 							String(response)	+
 						" body = "			+
@@ -529,7 +534,7 @@ function send_telegram (message)
 	{
 		if (error)
 		{
-			log ("yellow",
+			log ("err", "EVENT", true, {},
 				"Telegram failed ! response = " +
 					String(response)	+
 				" body = "			+
@@ -539,15 +544,25 @@ function send_telegram (message)
 	});
 }
 
-function log(color, msg)
+function log(level, type, notify, details, message = null)
 {
-	const message = new Date() + " | " + msg;
+	//const message = new Date() + " | " + msg;
+	const log_msg = {
+		"level"		: level,
+		"type"      	: type,
+		"notify"	: notify,
+		"details"   	: details,
+	};
 
-	if (color === "red") {
+	if (message !== null)
+		log_msg['message'] = message;
+
+	if (level === "err")
 		send_telegram(message);
-	}
 
-	logger.color(color).log(message);
+	let output = JSON.stringify(log_msg);
+
+        log_file.write(output + '\n');
 }
 
 function SERVE_HTML (req,res)
@@ -585,7 +600,7 @@ function END_SUCCESS (res, response = null)
 function END_ERROR (res, http_status, error, exception = null)
 {
 	if (exception)
-		log("red", String(exception).replace(/\n/g," "));
+		log("err", "END_ERROR", true, {}, String(exception).replace(/\n/g," "));
 
 	res.setHeader("Content-Security-Policy",	"default-src 'none'");
 	res.setHeader("Content-Type",			"application/json");
@@ -737,7 +752,7 @@ function is_certificate_ok (req, cert, validate_email)
 				// As this could be a fraud commited by a sub-CA
 				// maybe revoke the sub-CA certificate
 
-				log ("red",
+				log ("err", "ERROR", false, {},
 					"Invalid certificate: issuer = "+
 						issuer_domain		+
 					" and issued to = "		+
@@ -1055,7 +1070,7 @@ function parse_cert_header(req, res, next)
 	catch(error)
 	{
 		return END_ERROR(res, 403, "Error in parsing certificate");
-		log("red", error);
+		log("err", "CERT_PARSE", false, {}, error);
 	}
 
 	cert.subject   = change_cert_keys(cert.subject);
@@ -1372,6 +1387,34 @@ function basic_security_check (req, res, next)
 	}
 }
 
+/* Log all API calls */
+
+function log_conn (req, res, next)
+{
+	const endpoint			= req.url.split("?")[0];
+	const api			= endpoint.replace(/\/v[1-2]\//,"/v1/");
+	const api_details 		= api.split('/').slice(3).join('_');
+
+	// if marketplace APIs called, api_details will be empty
+	if( api_details == "")
+		return next();
+	
+	// if provider/consumer, id is email, else is hostname
+	const id 	= res.locals.email || res.locals.cert.subject.CN.toLowerCase();
+	const type 	= api_details.toUpperCase() + "_REQUEST";
+
+	const details =
+		{
+			"ip"  		 : req.ip,
+			"authentication" : "certificate " + res.locals.cert.issuer.CN,
+			"id"		 : id
+	};
+
+	log("info", type, false, details);
+
+	return next();
+}
+
 function dns_check (req, res, next)
 {
 	const cert		= res.locals.cert;
@@ -1566,7 +1609,7 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 
 	if (tokens_rate_per_second > 1) // tokens per second
 	{
-		log ("red",
+		log ("err", "HIGH_TOKEN_RATE", true, {},
 			"Too many requests from user : " + consumer_id +
 			", from ip : " + String (req.ip)
 		);
@@ -2195,6 +2238,18 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 			);
 		}
 
+		const expiry_date = new Date(Date.now() + (token_time * 10));
+
+		const details =
+		{
+			"requester"        : consumer_id,
+			"requesterRole"    : cert_class,
+			"token_expiry"     : expiry_date,
+			"resource_ids"     : processed_request_array
+		};
+
+		log("info", "ISSUED_TOKEN", true, details);
+
 		return END_SUCCESS (res,response);
 	});
 });
@@ -2475,6 +2530,14 @@ app.post("/auth/v[1-2]/token/introspect", (req, res) => {
 						);
 					}
 
+					const details = {
+						"resource_server"  : hostname_in_certificate,
+						"token_hash"       : sha256_of_token,
+						"issued_to"	   : issued_to
+					};
+
+					log("info", "INTROSPECTED_TOKEN", true, details);
+
 					return END_SUCCESS (res,response);
 				}
 			);
@@ -2646,6 +2709,15 @@ app.post("/auth/v[1-2]/token/revoke", (req, res) => {
 		"num-tokens-revoked" : num_tokens_revoked
 	};
 
+	const details =
+		{
+			"requester"     : id,
+			"requesterRole" : (tokens ? "consumer" : "provider"),
+			"revoked"	: response["num-tokens-revoked"]
+		};
+
+	log("info", "REVOKED_TOKENS", false, details);
+
 	return END_SUCCESS (res, response);
 });
 
@@ -2739,6 +2811,17 @@ app.post("/auth/v[1-2]/token/revoke-all", (req, res) => {
 					}
 
 					response["num-tokens-revoked"] += update_results.rowCount;
+
+					const details = {
+						"requester"     : id,
+						"requesterRole" : update_results.rowCount == 0 ?
+							"consumer" : "provider",
+						"serial" 	: serial,
+						"fingerprint"	: fingerprint,
+						"revoked"	: response["num-tokens-revoked"]
+					};
+
+					log("info", "REVOKED_ALL_TOKENS", true, details);
 
 					return END_SUCCESS (res,response);
 				}
@@ -2855,6 +2938,13 @@ app.post("/auth/v[1-2]/acl/set", (req, res) => {
 						error_1
 				);
 			}
+
+			const details = {
+				"provider"  : provider_id,
+				"policy"    : rules
+			};
+
+			log("info", "CREATED_POLICY", true, details);
 
 			return END_SUCCESS (res);
 		});
@@ -3002,6 +3092,13 @@ app.post("/auth/v[1-2]/acl/append", (req, res) => {
 				);
 			}
 
+			const details = {
+				"provider"  : provider_id,
+				"policy"    : policy
+			};
+
+			log("info", "APPENDED_POLICY", true, details);
+
 			return END_SUCCESS (res);
 		});
 	});
@@ -3136,6 +3233,13 @@ app.post("/auth/v[1-2]/acl/revert", (req, res) => {
 						error_1
 				);
 			}
+
+			const details = {
+				"provider"  : provider_id,
+				"policy"    : previous_policy
+			};
+
+			log("info", "REVERTED_POLICY", true, details);
 
 			return END_SUCCESS (res);
 		});
@@ -3336,6 +3440,15 @@ app.post("/auth/v[1-2]/group/add", (req, res) => {
 		if (error || results.rowCount === 0)
 			return END_ERROR (res, 500, "Internal error!", error);
 
+		const details = {
+			"provider"	: provider_id,
+			"consumer"	: consumer_id,
+			"group"		: group,
+			"valid_for"	: valid_till + " hours"
+		};
+
+		log("info", "CONSUMER_ADDED_GROUP", true, details);
+
 		return END_SUCCESS (res);
 	});
 });
@@ -3493,6 +3606,15 @@ app.post("/auth/v[1-2]/group/delete", (req, res) => {
 		const response = {
 			"num-consumers-deleted"	: results.rowCount
 		};
+
+		const details = {
+			"provider"	: provider_id,
+			"consumer"	: consumer_id,
+			"group"		: group,
+			"deleted"	: results.rowCount
+		};
+
+		log("info", "CONSUMER_DELETED_GROUP", true, details);
 
 		return END_SUCCESS (res,response);
 	});
@@ -3851,7 +3973,7 @@ app.get("/marketplace/topup-success", (req, res) => {
 	{
 		if (error || results.rowCount === 0)
 		{
-			log ("red",error);
+			log ("err", "EVENT", false, {}, error);
 
 			const error_response = {
 				"message"	: "Internal error in topup confirmation",
@@ -4326,7 +4448,8 @@ if (! is_openbsd)
 	dns.lookup("google.com", {all:true},
 		(error) => {
 			if (error)
-				log("yellow","DNS to google.com failed ");
+				log("err", "EVENT", false, {},
+					"DNS to google.com failed ");
 		}
 	);
 
@@ -4388,7 +4511,7 @@ if (cluster.isMaster)
 		);
 	}
 
-	log("yellow","Master started with pid " + process.pid);
+	log("info", "EVENT", false, {}, "Master started with pid " + process.pid);
 
 	const ALL_END_POINTS	= Object.keys(MIN_CERT_CLASS_REQUIRED).sort();
 
@@ -4413,7 +4536,7 @@ if (cluster.isMaster)
 
 	cluster.on ("exit", (worker) => {
 
-		log("red","Worker " + worker.process.pid + " died.");
+		log("err", "WORKER_EVENT", true, {},"Worker " + worker.process.pid + " died.");
 
 		cluster.fork();
 	});
@@ -4426,7 +4549,7 @@ if (cluster.isMaster)
 		);
 	}
 
-	show_statistics();
+	//show_statistics();
 	//setInterval (show_statistics, 5000);
 }
 else
@@ -4436,7 +4559,7 @@ else
 
 	drop_worker_privileges();
 
-	log("green","Worker started with pid " + process.pid);
+	log("info", "WORKER_EVENT", false, {},"Worker started with pid " + process.pid);
 }
 
 // EOF
