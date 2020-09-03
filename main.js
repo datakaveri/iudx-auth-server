@@ -31,6 +31,7 @@ const x509			= require('x509')
 const Pool			= require("pg").Pool;
 const http			= require("http");
 const assert			= require("assert").strict;
+const forge			= require("node-forge");
 const chroot			= require("chroot");
 const crypto			= require("crypto");
 const logger			= require("node-color-log");
@@ -40,6 +41,7 @@ const express			= require("express");
 const timeout			= require("connect-timeout");
 const aperture			= require("./node-aperture");
 const safe_regex		= require("safe-regex");
+const nodemailer		= require("nodemailer");
 const geoip_lite		= require("geoip-lite");
 const bodyParser		= require("body-parser");
 const compression		= require("compression");
@@ -58,6 +60,7 @@ const unveil			= is_openbsd ? require("openbsd-unveil"): null;
 
 const NUM_CPUS			= os.cpus().length;
 const SERVER_NAME		= "auth.iudx.org.in";
+const CONSENT_URL		= "consentdev.iudx.io";
 
 const MAX_TOKEN_TIME		= 31536000; // in seconds (1 year)
 
@@ -115,6 +118,29 @@ const telegram_chat_id	= fs.readFileSync ("telegram.chatid","ascii").trim();
 const telegram_url	= TELEGRAM + "/bot" + telegram_apikey +
 				"/sendMessage?chat_id="	+ telegram_chat_id +
 				"&text=";
+/* --- nodemailer --- */
+
+let transporter;
+
+const mailer_config 	= JSON.parse(fs.readFileSync("mailer_config.json","utf-8"));
+const mailer_options 	= {
+	host	: mailer_config.host,
+	port	: mailer_config.port,
+	auth	: {
+		user : mailer_config.username,
+		pass : mailer_config.password
+	},
+	tls: {rejectUnauthorized: false}
+};
+
+transporter = nodemailer.createTransport(mailer_options);
+
+transporter.verify(function(error, success) {
+	if (error)
+		log("err", "MAILER_EVENT", true, {}, error.toString());
+	else
+		log("info", "MAILER_EVENT", false, {}, success.toString());
+});
 
 /* --- postgres --- */
 
@@ -863,6 +889,9 @@ function parse_cert_header(req, res, next)
 {
 	let cert;
 
+	if (req.headers.host === CONSENT_URL)
+		return next();
+
 	try
 	{
 		let raw_cert = decodeURIComponent(req.headers['x-forwarded-ssl']);
@@ -901,6 +930,10 @@ function basic_security_check (req, res, next)
 
 		has_started_serving_apis = true;
 	}
+
+	// skip checks for consent APIs
+	if (req.headers.host === CONSENT_URL)
+		return next();
 
 	// replace all version with "/v1/"
 
@@ -1183,14 +1216,32 @@ function log_conn (req, res, next)
 	const endpoint			= req.url.split("?")[0];
 	const api			= endpoint.replace(/\/v[1-2]\//,"/v1/");
 	const api_details 		= api.split('/').slice(3).join('_');
+	let id, cert_issuer;
 
-	// if provider/consumer, id is email, else is hostname
-	const id 	= res.locals.email || res.locals.cert.subject.CN.toLowerCase();
-	const type 	= api_details.toUpperCase() + "_REQUEST";
+	// if marketplace APIs called, api_details will be empty
+	if( api_details == "")
+		return next();
 
-	const details = {
+	/* if provider/consumer, id is email
+	 * if rs, id is hostname
+	 * if consent API, id is null? */
+
+	if (res.locals.cert)
+	{
+		id = res.locals.email || res.locals.cert.subject.CN.toLowerCase();
+		cert_issuer = res.locals.cert.issuer.CN;
+	}
+	else
+	{
+		id	    = null;
+		cert_issuer = "none";
+	}
+
+	const type	= api_details.toUpperCase() + "_REQUEST";
+	const details	=
+	{
 		"ip"  		 : req.ip,
-		"authentication" : "certificate " + res.locals.cert.issuer.CN,
+		"authentication" : "certificate " + cert_issuer,
 		"id"		 : id
 	};
 
@@ -3241,6 +3292,14 @@ app.post("/auth/v[1-2]/certificate-info", (req, res) => {
 	};
 
 	return END_SUCCESS (res,response);
+});
+
+/* --- Consent APIs --- */
+
+app.post("/consent/v[1-2]/provider/registration", (req, res) => {
+
+	return END_SUCCESS (res);
+
 });
 
 /* --- Invalid requests --- */
