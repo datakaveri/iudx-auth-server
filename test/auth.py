@@ -4,7 +4,6 @@ import os
 import sys
 import json
 import requests
-#from topup_sql import topup_function
 
 class Auth():
 #{
@@ -25,27 +24,15 @@ class Auth():
 
                 api_type = "/auth"
 
-                if api.startswith("marketplace/"):
-                        api_type = "/marketplace"
-                        api = "/".join(api.split("/")[1:])
-                if api.endswith("topup-success"):
-                        url = self.url + api_type + "/" + api
-                        response = requests.get (
-                                url     = url,
-                                verify  = self.ssl_verify,
-                                cert    = self.credentials,
-                                params  = body
-                                )
-                else:
-                        body = json.dumps(body)
-                        url = self.url + api_type + "/v1/" + api
-                        response = requests.post (
-                                url         = url,
-                                verify      = self.ssl_verify,
-                                cert        = self.credentials,
-                                data        = body,
-                                headers     = {"content-type":"application/json"}
-                        )
+                body = json.dumps(body)
+                url = self.url + api_type + "/v1/" + api
+                response = requests.post (
+                        url         = url,
+                        verify      = self.ssl_verify,
+                        cert        = self.credentials,
+                        data        = body,
+                        headers     = {"content-type":"application/json"}
+                )
 
                 if response.status_code != 200:
                 #
@@ -172,26 +159,4 @@ class Auth():
                 return self.call("group/list", body)
         #
 
-        ############################# Marketplace ##############################
-
-        def topup(self, amount, serial = None, fingerprint = None):
-        #
-                body = {'amount': amount}
-
-                if serial and fingerprint:
-                        body['serial']          = serial
-                        body['fingerprint']     = fingerprint
-
-                callback_params = topup_function(body, self.credentials)
-                # call topup-success API to confirm the topup
-
-                return self.call("marketplace/topup-success", callback_params)
-        #
-
-        def confirm_payment(self, token):
-        #
-                body = {'token': token}
-
-                return self.call("marketplace/confirm-payment", body)
-        #
 #}

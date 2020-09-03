@@ -27,11 +27,9 @@ const fs			= require("fs");
 const os			= require("os");
 const dns			= require("dns");
 const cors			= require("cors");
-const ocsp			= require("ocsp");
 const x509			= require('x509')
 const Pool			= require("pg").Pool;
 const http			= require("http");
-const https			= require("https");
 const assert			= require("assert").strict;
 const chroot			= require("chroot");
 const crypto			= require("crypto");
@@ -77,22 +75,6 @@ const MIN_CERT_CLASS_REQUIRED	= Object.freeze ({
 /* data consumer's APIs */
 	"/auth/v1/token"			: 2,
 
-/* for credit topup */
-	"/marketplace/topup-success"		: 2,
-
-/* static files for marketplace */
-	"/marketplace/topup.html"		: 2,
-	"/marketplace/marketplace.js"		: 2,
-	"/marketplace/marketplace.css"		: 2,
-
-/* marketplace APIs */
-	"/marketplace/v1/credit/info"		: 2,
-	"/marketplace/v1/credit/topup"		: 2,
-	"/marketplace/v1/confirm-payment"	: 2,
-	"/marketplace/v1/audit/credits"		: 2,
-
-	"/marketplace/v1/credit/transfer"	: 3,
-
 /* data provider's APIs */
 	"/auth/v1/audit/tokens"			: 3,
 
@@ -108,19 +90,6 @@ const MIN_CERT_CLASS_REQUIRED	= Object.freeze ({
 	"/auth/v1/group/delete"			: 3,
 	"/auth/v1/group/list"			: 3,
 });
-
-/* --- API statistics --- */
-
-const statistics = {
-
-	"start_time"	: 0,
-
-	"api"		: {
-		"count" : {
-			"invalid-api" : 0
-		}
-	}
-};
 
 /* --- environment variables--- */
 
@@ -158,17 +127,6 @@ const password	= {
 /* --- log file --- */
 
 const log_file = fs.createWriteStream('/var/log/debug.log', {flags : 'a'});
-
-/* --- razorpay --- */
-
-const rzpay_key_id	= fs.readFileSync("rzpay.key.id",	"ascii").trim();
-const rzpay_key_secret	= fs.readFileSync("rzpay.key.secret",	"ascii").trim();
-
-const rzpay_url		= "https://"					+
-					rzpay_key_id			+
-						":"			+
-					rzpay_key_secret		+
-				"@api.razorpay.com/v1/invoices/";
 
 // async postgres connection
 const pool = new Pool ({
@@ -229,7 +187,6 @@ app.use(parse_cert_header);
 app.use(basic_security_check);
 app.use(log_conn);
 //app.use(dns_check);
-//app.use(ocsp_check);
 
 /* --- aperture --- */
 
@@ -277,110 +234,11 @@ const apertureOpts = {
 const parser	= aperture.createParser		(apertureOpts);
 const evaluator	= aperture.createEvaluator	(apertureOpts);
 
-/* --- https --- */
-
-const system_trusted_certs = is_openbsd ?
-					"/etc/ssl/cert.pem" :
-					"/etc/ssl/certs/ca-certificates.crt";
-
-const trusted_CAs = [
-	fs.readFileSync("ca.iudx.org.in.crt"),
-	fs.readFileSync(system_trusted_certs),
-	fs.readFileSync("CCAIndia2015.cer"),
-	fs.readFileSync("CCAIndia2014.cer")
-];
-
-const https_options = Object.freeze ({
-	key			: fs.readFileSync("https-key.pem"),
-	cert			: fs.readFileSync("https-certificate.pem"),
-	ca			: trusted_CAs,
-	requestCert		: true,
-	rejectUnauthorized	: true,
-});
-
-/* --- static pages --- */
-
-const STATIC_PAGES = Object.freeze ({
-
-/* GET end points */
-
-	"/marketplace/topup.html":
-				fs.readFileSync (
-					"static/topup.html",		"ascii"
-				),
-
-	"/marketplace/marketplace.js":
-				fs.readFileSync (
-					"static/marketplace.js",	"ascii"
-				),
-
-	"/marketplace/marketplace.css":
-				fs.readFileSync (
-					"static/marketplace.css",	"ascii"
-				),
-
-/* templates */
-
-	"topup-success-1.html"	: fs.readFileSync (
-					"static/topup-success-1.html",	"ascii"
-				),
-	"topup-success-2.html"	: fs.readFileSync (
-					"static/topup-success-2.html",	"ascii"
-				),
-	"topup-failure-1.html"	: fs.readFileSync (
-					"static/topup-failure-1.html",	"ascii"
-				),
-	"topup-failure-2.html"	: fs.readFileSync (
-					"static/topup-failure-2.html",	"ascii"
-				),
-});
-
-const MIME_TYPE = Object.freeze({
-
-	"js"	: "text/javascript",
-	"css"	: "text/css",
-	"html"	: "text/html"
-});
-
-const topup_success_1 = STATIC_PAGES["topup-success-1.html"];
-const topup_success_2 = STATIC_PAGES["topup-success-2.html"];
-
-const topup_failure_1 = STATIC_PAGES["topup-failure-1.html"];
-const topup_failure_2 = STATIC_PAGES["topup-failure-2.html"];
-
 /* --- functions --- */
 
 function print(msg)
 {
 	logger.color("white").log(msg);
-}
-
-function show_statistics ()
-{
-	console.clear();
-
-	print (new Date());
-
-	const now	= Math.floor (Date.now() / 1000);
-	const diff	= now - statistics.start_time;
-
-	print ("---------------------------------------------------");
-	print ("API".padEnd(35) + "Count".padEnd(10) + "Rate");
-	print ("---------------------------------------------------");
-
-	for (const api in statistics.api.count)
-	{
-		const rate = (statistics.api.count[api]/diff).toFixed(3);
-
-		print (
-			api.padEnd(35)					+
-			String(statistics.api.count[api]).padEnd(5)	+
-			"      "					+
-			String(rate)
-		);
-	}
-
-	print ("---------------------------------------------------");
 }
 
 function is_valid_token (token, user = null)
@@ -469,63 +327,6 @@ function base64 (string)
 	return Buffer
 		.from(string)
 		.toString("base64");
-}
-
-function send_telegram_to_provider (consumer_id, provider_id, telegram_id, token_hash, request)
-{
-	pool.query ("SELECT chat_id FROM telegram WHERE id = $1::text LIMIT 1", [telegram_id], (error,results) =>
-	{
-		if (error)
-			send_telegram ("Failed to get chat_id for : " + telegram_id + " : provider " + provider_id);
-		else
-		{
-			const url		= TELEGRAM + "/bot" + telegram_apikey + "/sendMessage";
-
-			const split		= request.id.split("/");
-			const resource		= split.slice(2).join("/");
-
-			const telegram_message	= {
-
-				url		: url,
-				form		: {
-					chat_id		: results.rows[0].chat_id,
-
-					text		: '[ IUDX-AUTH ] #' + token_hash  + '#\n\n"'		+
-									consumer_id				+
-								'" wants to access "'				+
-									resource + '"\n\n'			+
-								"Request details:\n\n"				+
-									JSON.stringify (request,null,"\t"),
-
-					reply_markup	: JSON.stringify ({
-						inline_keyboard	: [[
-							{
-								text		: "\u2714\ufe0f Allow",
-								callback_data	: "allow" 
-							},
-							{
-								text		: "\u2716\ufe0f Deny",
-								callback_data	: "deny"
-							}
-						]]
-					})
-				}
-			};
-
-			http_request.post (telegram_message, (error_1, response, body) => {
-
-				if (error_1)
-				{
-					log ("warn", "EVENT", true, {},
-						"Telegram failed ! response = " +
-							String(response)	+
-						" body = "			+
-							String(body)
-					);
-				}
-			});
-		}
-	});
 }
 
 function send_telegram (message)
@@ -1107,8 +908,6 @@ function basic_security_check (req, res, next)
 	const api			= endpoint.replace(/\/v[1-2]\//,"/v1/");
 	const min_class_required	= MIN_CERT_CLASS_REQUIRED[api];
 
-	process.send(endpoint);
-
 	if (! min_class_required)
 	{
 		return END_ERROR (
@@ -1126,7 +925,6 @@ function basic_security_check (req, res, next)
 		);
 	}
 
-	//const cert		= req.socket.getPeerCertificate(true);
 	const cert		= req.certificate;
 
 	cert.serialNumber	= cert.serialNumber.toLowerCase();
@@ -1159,15 +957,6 @@ function basic_security_check (req, res, next)
 		if (user_notice.untrusted)
 		{
 			res.locals.untrusted = true;
-
-			if (api.startsWith("/marketplace/"))
-			{
-				return END_ERROR (
-					res, 403,
-					"Untrusted Apps cannot call "	+
-					"marketplace APIs"
-				);
-			}
 		}
 
 		if (user_notice["delegated-by"])
@@ -1395,19 +1184,14 @@ function log_conn (req, res, next)
 	const api			= endpoint.replace(/\/v[1-2]\//,"/v1/");
 	const api_details 		= api.split('/').slice(3).join('_');
 
-	// if marketplace APIs called, api_details will be empty
-	if( api_details == "")
-		return next();
-	
 	// if provider/consumer, id is email, else is hostname
 	const id 	= res.locals.email || res.locals.cert.subject.CN.toLowerCase();
 	const type 	= api_details.toUpperCase() + "_REQUEST";
 
-	const details =
-		{
-			"ip"  		 : req.ip,
-			"authentication" : "certificate " + res.locals.cert.issuer.CN,
-			"id"		 : id
+	const details = {
+		"ip"  		 : req.ip,
+		"authentication" : "certificate " + res.locals.cert.issuer.CN,
+		"id"		 : id
 	};
 
 	log("info", type, false, details);
@@ -1477,59 +1261,6 @@ function dns_check (req, res, next)
 	});
 }
 
-function ocsp_check (req, res, next)
-{
-	const cert = res.locals.cert;
-
-	// Skip ocsp check if an IUDX certificate was presented
-
-	if (res.locals.is_iudx_certificate)
-		return next();
-
-	if (! cert.issuerCertificate || ! cert.issuerCertificate.raw)
-	{
-		if (req.socket.isSessionReused())
-		{
-			return next(); // previously ocsp check was passed !
-		}
-		else
-		{
-			return END_ERROR (
-				res, 400,
-				"Something is wrong with your client/browser !"
-			);
-		}
-	}
-
-	const ocsp_request = {
-		cert	: cert.raw,
-		issuer	: cert.issuerCertificate.raw
-	};
-
-	ocsp.check (ocsp_request, (ocsp_error, ocsp_response) =>
-	{
-		if (ocsp_error)
-		{
-			return END_ERROR (
-				res, 403,
-				"Your certificate issuer did "	+
-				"NOT respond to an OCSP request"
-			);
-		}
-
-		if (ocsp_response.type !== "good")
-		{
-			return END_ERROR (
-				res, 403,
-				"Your certificate has been "	+
-				"revoked by your certificate issuer"
-			);
-		}
-
-		return next();	// ocsp check passed
-	});
-}
-
 function to_array (o)
 {
 	if (o instanceof Object)
@@ -1560,7 +1291,6 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 
 	const request_array			= to_array(body.request);
 	const processed_request_array		= [];
-	const manual_authorization_array	= [];
 
 	if (! request_array || request_array.length < 1)
 	{
@@ -1669,19 +1399,12 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 	const providers			= {};
 
 	let num_rules_passed		= 0;
-	let total_data_cost_per_second	= 0.0;
-
-	const payment_info		= {
-		amount		: 0.0,
-		providers	: {}
-	};
 
 	const can_access_regex = res.locals.can_access_regex;
 
 	for (let r of request_array)
 	{
 		let resource;
-		let requires_manual_authorization = false;
 
 		if (typeof r === "string")
 		{
@@ -1979,12 +1702,8 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 					);
 
 					const token_time_in_policy	= result.expiry || 0;
-					const payment_amount		= result.amount || 0.0;
 
-					requires_manual_authorization	= requires_manual_authorization	||
-										result["manual-authorization"];
-
-					if (token_time_in_policy < 1 || payment_amount < 0.0)
+					if (token_time_in_policy < 1)
 					{
 						const error_response = {
 							"message"	: "Unauthorized",
@@ -1997,15 +1716,6 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 
 						return END_ERROR (res, 403, error_response);
 					}
-
-					const cost_per_second		= payment_amount / token_time_in_policy;
-
-					total_data_cost_per_second	+= cost_per_second;
-
-					if (! payment_info.providers[provider_id_hash])
-						payment_info.providers[provider_id_hash] = 0.0;
-
-					payment_info.providers[provider_id_hash] += cost_per_second;
 
 					token_time = Math.min (
 						token_time,
@@ -2040,25 +1750,12 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 			return END_ERROR (res, 400, error_response);
 		}
 
-		if (requires_manual_authorization)
-		{
-			manual_authorization_array.push ({
-				"id"			: resource,
-				"methods"		: r.methods,
-				"apis"			: r.apis,
-				"body"			: r.body,
-				"manual-authorization"	: requires_manual_authorization,
-			});
-		}
-		else
-		{
-			processed_request_array.push ({
-				"id"			: resource,
-				"methods"		: r.methods,
-				"apis"			: r.apis,
-				"body"			: r.body,
-			});
-		}
+		processed_request_array.push ({
+			"id"			: resource,
+			"methods"		: r.methods,
+			"apis"			: r.apis,
+			"body"			: r.body,
+		});
 
 		resource_id_dict[resource] = true;
 
@@ -2083,64 +1780,8 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 		"token"			: token,
 		"token-type"		: "IUDX",
 		"expires-in"		: token_time,
-
-		"//"			: "",
 		"is_token_valid"	: true,
-
-		"payment-info"	: {
-			"amount"	: 0.0,
-			"currency"	: "INR",
-		},
 	};
-
-	if (manual_authorization_array.length > 0)
-	{
-		response["//"]		+= "This token requires manual authorization from the provider. ";
-		response.is_token_valid	= false;
-	}
-
-	const total_payment_amount = total_data_cost_per_second * token_time;
-
-	if (total_payment_amount > 0)
-	{
-		if (res.locals.untrusted)
-		{
-			return END_ERROR (
-				res, 403,
-				"Untrusted Apps cannot get tokens requiring credits"
-			);
-		}
-
-		const query	= "SELECT amount FROM credit"			+
-					" WHERE id = $1::text"			+
-					" AND cert_serial = $2::text"		+
-					" AND cert_fingerprint = $3::text"	+
-					" LIMIT 1";
-
-		const params	= (cert_class > 2) ?
-					[consumer_id, "*", "*"]	:
-					[consumer_id, cert.serialNumber, cert.fingerprint];
-
-		const rows	= pg.querySync (query, params);
-		const credits	= (rows.length === 1) ? rows[0].amount : 0.0;
-
-		if (total_payment_amount > credits)
-		{
-			return END_ERROR (
-				res, 402,
-					"Not enough balance in credits for : "	+
-					total_payment_amount			+
-					" Rupees"
-			);
-		}
-
-		payment_info.amount		= total_payment_amount;
-		response["payment-info"].amount	= total_payment_amount;
-
-		response["//"]		+= "This token requires payment authorization;"	+
-						"please use the 'confirm-payment' API to approve";
-		response.is_token_valid	= false;
-	}
 
 	const num_resource_servers = Object
 					.keys(resource_server_token)
@@ -2166,8 +1807,6 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 	response["server-token"]	= resource_server_token;
 	const sha256_of_token		= sha256(token);
 
-	const paid = total_payment_amount > 0.0 ? false : true;
-
 	const query = "INSERT INTO token VALUES("		+
 			"$1::text,"				+
 			"$2::text,"				+
@@ -2183,11 +1822,7 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 			"$9::jsonb,"				+
 			"$10::jsonb,"				+
 			"$11::jsonb,"				+
-			"$12::jsonb,"				+
-			"$13::boolean,"				+
-			"NULL,"					+ // paid_at
-			"$14::text,"				+ // api_called_from
-			"$15::jsonb"				+ // manual_authorization_array
+			"$12::text"				+ // api_called_from
 	")";
 
 	const params = [
@@ -2202,10 +1837,7 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 		JSON.stringify(sha256_of_resource_server_token),//  9
 		JSON.stringify(providers),			// 10
 		JSON.stringify(geoip),				// 11
-		JSON.stringify(payment_info),			// 12
-		paid,						// 13
-		req.headers.origin,				// 14
-		JSON.stringify(manual_authorization_array)	// 15
+		req.headers.origin,				// 12
 	];
 
 	pool.query (query, params, (error,results) =>
@@ -2215,26 +1847,6 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 			return END_ERROR (
 				res, 500,
 				"Internal error!", error
-			);
-		}
-
-		for (const m of manual_authorization_array)
-		{
-			const split		= m.id.split("/");
-
-			const email_domain	= split[0].toLowerCase();
-			const sha1_of_email	= split[1].toLowerCase();
-
-			const provider_id_hash	= email_domain + "/" + sha1_of_email;
-
-			const telegram_id = m["manual-auth"].split("telegram:")[1];
-
-			send_telegram_to_provider (
-				consumer_id,
-				provider_id_hash,
-				telegram_id,
-				sha256_of_token,
-				m
 			);
 		}
 
@@ -2310,7 +1922,6 @@ app.post("/auth/v[1-2]/token/introspect", (req, res) => {
 		" WHERE id = $1::text"				+
 		" AND token = $2::text"				+
 		" AND revoked = false"				+
-		" AND paid = true"				+
 		" AND expiry > NOW()"				+
 		" LIMIT 1",
 		[
@@ -3268,7 +2879,7 @@ app.post("/auth/v[1-2]/audit/tokens", (req, res) => {
 
 		"SELECT issued_at,expiry,request,cert_serial,"	+
 		" cert_fingerprint,introspected,revoked,"	+
-		" expiry < NOW() as expired,geoip,paid,"	+
+		" expiry < NOW() as expired,geoip,"		+
 		" api_called_from"				+
 		" FROM token"					+
 		" WHERE id = $1::text"				+
@@ -3296,7 +2907,6 @@ app.post("/auth/v[1-2]/audit/tokens", (req, res) => {
 				"certificate-fingerprint"	: row.cert_fingerprint,
 				"request"			: row.request,
 				"geoip"				: row.geoip,
-				"paid"				: row.paid,
 				"api-called-from"		: row.api_called_from
 			});
 		}
@@ -3313,7 +2923,7 @@ app.post("/auth/v[1-2]/audit/tokens", (req, res) => {
 			" revoked,introspected,"			+
 			" providers-> $1::text"				+
 			" AS is_valid_token_for_provider,"		+
-			" expiry < NOW() as expired,geoip,paid,"	+
+			" expiry < NOW() as expired,geoip,"		+
 			" api_called_from"				+
 			" FROM token"					+
 			" WHERE providers-> $1::text"			+
@@ -3370,7 +2980,6 @@ app.post("/auth/v[1-2]/audit/tokens", (req, res) => {
 					"certificate-fingerprint"	: row.cert_fingerprint,
 					"request"			: filtered_request,
 					"geoip"				: row.geoip,
-					"paid"				: row.paid,
 					"api-called-from"		: row.api_called_from
 				});
 			}
@@ -3634,776 +3243,6 @@ app.post("/auth/v[1-2]/certificate-info", (req, res) => {
 	return END_SUCCESS (res,response);
 });
 
-/* --- Marketplace APIs --- */
-
-app.post("/marketplace/v[1-2]/credit/info", (req, res) => {
-
-	const id		= res.locals.email;
-	const cert		= res.locals.cert;
-	const cert_class	= res.locals.cert_class;
-
-	let query		= "SELECT * FROM credit"			+
-					" WHERE id = $1::text"			+
-					" AND cert_fingerprint = $2::text"	+
-					" AND cert_serial = $3::text";
-
-	let serial 	= "*";
-	let fingerprint	= "*";
-
-	if (cert_class < 3) // get the real serial and fingerprint
-	{
-		serial		= cert.serialNumber.toLowerCase();
-		fingerprint	= cert.fingerprint.toLowerCase();
-
-		query += " LIMIT 1";
-	}
-
-	pool.query (
-		query,
-		[
-			id,
-			fingerprint,
-			serial
-		],
-
-	(error, results) =>
-	{
-		if (error)
-			return END_ERROR (res, 500, "Internal error!", error);
-
-		if (results.rowCount === 0)
-			return END_ERROR (res, 400, "No credits available");
-
-		const response = {};
-
-		if (cert_class < 3)
-		{
-			response.credits 		= results.rows[0].amount;
-			response["last-updated"]	= results.rows[0].last_updated;
-
-			return END_SUCCESS (res, response);
-		}
-
-		pool.query ("SELECT * FROM credit WHERE id = $1::text", [id],
-		(other_error, other_results) =>
-		{
-			if (other_error)
-				return END_ERROR (res, 500, "Internal error!", other_error);
-
-			response["other-credits"] = [];
-
-			for (const row of other_results.rows)
-			{
-				if (row.cert_serial === "*" && row.cert_fingerprint === "*")
-				{
-					response.credits 		= results.rows[0].amount;
-					response["last-updated"]	= results.rows[0].last_updated;
-				}
-				else
-				{
-					response["other-credits"].push ({
-						"serial"	: row.cert_serial,
-						"fingerprint"	: row.cert_fingerprint,
-						"credits"	: row.amount,
-						"last-updated"  : row.last_updated
-					});
-				}
-			}
-
-			return END_SUCCESS (res, response);
-		});
-	});
-});
-
-app.post("/marketplace/v[1-2]/credit/topup", (req, res) => {
-
-	const id		= res.locals.email;
-	const body		= res.locals.body;
-	const cert		= res.locals.cert;
-	const cert_class	= res.locals.cert_class;
-
-	if (! body.amount)
-		return END_ERROR (res, 400, "No 'amount' found in the body");
-
-	const amount = parseFloat(body.amount);
-
-	if (isNaN(amount) || amount < 0 || amount > 1000)
-		return END_ERROR (res, 400, "'amount' must be a positive number <= 1000");
-
-	let serial;
-	let fingerprint;
-
-	if (cert_class < 3)
-	{
-		if (body.fingerprint || body.serial)
-		{
-			return END_ERROR (
-				res, 400,
-				"'fingerprint' or 'serial' can only be"	+
-				" provided when using a class-3 "	+
-				" or above certificate"
-			);
-		}
-
-		serial		= cert.serialNumber.toLowerCase();
-		fingerprint	= cert.fingerprint.toLowerCase();
-	}
-	else
-	{
-		/*
-			For a class-3 user, by default, the topup amount
-			is not associated with serial or fingerprint.
-
-			i.e. denoted by "*"
-			unless 'serial' and 'fingerprint' is provided in body.
-		*/
-
-		serial		= "*";
-		fingerprint 	= "*";
-
-		if (body.serial && body.fingerprint)
-		{
-			if (! is_string_safe(body.serial))
-				return END_ERROR (res, 400, "Invalid 'serial'");
-
-			if (! is_string_safe(body.fingerprint,":")) // fingerprint contains ':'
-				return END_ERROR (res, 400, "Invalid 'fingerprint'");
-
-			serial		= body.serial.toLowerCase();
-			fingerprint	= body.fingerprint.toLowerCase();
-		}
-	}
-
-	const now		= Math.floor (Date.now() / 1000);
-	const expire		= now + 1800; // after 30 mins
-
-	const success_url	= "https://" + SERVER_NAME + "/marketplace/topup-success";
-
-	const first_name	= cert.subject.GN || "Unknown";
-	const last_name		= cert.subject.SN || "unknown";
-
-	const full_name		= first_name + " " + last_name;
-
-	const post_body = {
-
-		"type"			: "link",
-		"amount"		: amount * 100.0,
-		"description"		: "IUDX credits topup for : " + id,
-		"view_less"		: 1,
-		"currency"		: "INR",
-		"expire_by"		: expire,
-		"email_notify"		: 0,
-		"callback_url"		: success_url,
-		"callback_method"	: "get",
-
-		"customer"		: {
-			"email"		: id,
-			"name"		: full_name
-		},
-	};
-
-	const options = {
-		url	: rzpay_url,
-		headers	: {"Content-Type": "application/json"},
-		json	: true,
-		body	: post_body
-	};
-
-	http_request.post(options, (error, response, body) => {
-
-		if (error)
-		{
-			return END_ERROR (
-				res, 500, "Payment failed", error
-			);
-		}
-
-		if (response.statusCode !== 200)
-		{
-			return END_ERROR (
-				res, 500,
-				"Payment failed. Invalid status from RazorPay",
-				response
-			);
-		}
-
-		if (! body.short_url)
-		{
-			return END_ERROR (
-				res, 500,
-				"Payment failed. RazorPay did send payment url",
-				body
-			);
-		}
-
-		const link		= { link : body.short_url };
-		const invoice_number	= body.id;
-
-		const query = "INSERT INTO topup_transaction"		+
-					" VALUES ("			+
-						"$1::text,"		+
-						"$2::text,"		+
-						"$3::text,"		+
-						"$4::int,"		+
-						"to_timestamp($5::int),"+
-						"$6::text,"		+
-						"false,"		+
-						"'{}'::jsonb"		+
-					")";
-
-		const params = [
-				id,					// 1
-				serial,					// 2
-				fingerprint,				// 3
-				amount,					// 4
-				now,					// 5
-				invoice_number				// 6
-		];
-
-		pool.query (query, params, (insert_error, insert_results) =>
-		{
-			if (insert_error || insert_results.rowCount === 0)
-			{
-				return END_ERROR (
-					res, 500, "Internal error!", insert_error
-				);
-			}
-
-			return END_SUCCESS (res, link);
-		});
-	});
-});
-
-app.get("/marketplace/topup-success", (req, res) => {
-
-	const cert		= res.locals.cert;
-	const cert_class	= res.locals.cert_class;
-
-	const invoice_number	= req.query.razorpay_invoice_id;
-	const invoice_status	= req.query.razorpay_invoice_status;
-
-	if (! invoice_number || invoice_status !== "paid")
-	{
-		const error_response = {
-			"message"	: "Payment was not completed for invoice",
-			"invalid-input"	: {
-				invoice					: xss_safe(invoice_number),
-				time					: new Date(),
-				cert_serial_used_for_payment		: cert.serialNumber.toLowerCase(),
-				cert_fingerprint_used_for_payment	: cert.fingerprint.toLowerCase(),
-				cert_class_used_for_payment		: cert_class
-			}
-		};
-
-		const response_mid =
-			"<script>"					+
-				"jsonViewer.showJSON("			+
-					JSON.stringify(error_response)	+
-				");"					+
-			"</script>";
-
-		const page = topup_failure_1 + response_mid + topup_failure_2;
-
-		res.setHeader("Content-Type", "text/html");
-		res.status(400).end(page);
-
-		return;
-	}
-
-	const payload = [
-			req.query.razorpay_invoice_id,
-			req.query.razorpay_invoice_receipt,
-			req.query.razorpay_invoice_status,
-			req.query.razorpay_payment_id
-	].join("|");
-
-	const expected_signature = crypto
-					.createHmac('sha256',rzpay_key_secret)
-					.update(payload)
-					.digest('hex');
-
-	if (req.query.razorpay_signature !== expected_signature)
-	{
-		const error_response = {
-			"message"	: "Invalid razorpay signature",
-			"invalid-input"	: {
-				invoice					: xss_safe(invoice_number),
-				time					: new Date(),
-				razorpay_signature			: xss_safe(req.query.razorpay_signature),
-				razorpay_invoice_id			: xss_safe(req.query.razorpay_invoice_id),
-				razorpay_invoice_receipt		: xss_safe(req.query.razorpay_invoice_receipt),
-				razorpay_invoice_status			: xss_safe(req.query.razorpay_invoice_status),
-				razorpay_payment_id			: xss_safe(req.query.razorpay_payment_id),
-				cert_serial_used_for_payment		: cert.serialNumber.toLowerCase(),
-				cert_fingerprint_used_for_payment	: cert.fingerprint.toLowerCase(),
-				cert_class_used_for_payment		: cert_class
-			}
-		};
-
-		const response_mid =
-			"<script>"					+
-				"jsonViewer.showJSON("			+
-					JSON.stringify(error_response)	+
-				");"					+
-			"</script>";
-
-		const page = topup_failure_1 + response_mid + topup_failure_2;
-
-		res.setHeader("Content-Type", "text/html");
-		res.status(400).end(page);
-
-		return;
-	}
-
-	const payment_details = {};
-
-	for (const key in req.query)
-		payment_details[key] = req.query[key];
-
-	payment_details.origin	= req.headers.origin;
-	payment_details.referer = req.headers.referrer;
-
-	const query	= "SELECT"					+
-				" update_credit($1::text,$2::jsonb)"	+
-				" AS details";
-
-	const params	= [invoice_number, payment_details];
-
-	pool.query(query, params, (error, results) =>
-	{
-		if (error || results.rowCount === 0)
-		{
-			log ("err", "EVENT", false, {}, error);
-
-			const error_response = {
-				"message"	: "Internal error in topup confirmation",
-				"invalid-input"	: {
-					invoice					: xss_safe(invoice_number),
-					time					: new Date(),
-					cert_serial_used_for_payment		: cert.serialNumber.toLowerCase(),
-					cert_fingerprint_used_for_payment	: cert.fingerprint.toLowerCase(),
-					cert_class_used_for_payment		: cert_class
-				}
-			};
-
-			const response_mid =
-				"<script>"					+
-					"jsonViewer.showJSON("			+
-						JSON.stringify(error_response)	+
-					");"					+
-				"</script>";
-
-			const page = topup_failure_1 + response_mid + topup_failure_2;
-
-			res.setHeader("Content-Type", "text/html");
-			res.status(400).end(page);
-
-			return;
-		}
-
-		const details = results.rows[0].details;
-
-		if (! details || Object.keys(details).length === 0)
-		{
-			const error_response = {
-				"message"	: "Invalid invoice number",
-				"invalid-input"	: {
-					invoice					: xss_safe(invoice_number),
-					time					: new Date(),
-					cert_serial_used_for_payment		: cert.serialNumber.toLowerCase(),
-					cert_fingerprint_used_for_payment	: cert.fingerprint.toLowerCase(),
-					cert_class_used_for_payment		: cert_class
-				}
-			};
-
-			const response_mid =
-				"<script>"					+
-					"jsonViewer.showJSON("			+
-						JSON.stringify(error_response)	+
-					");"					+
-				"</script>";
-
-			const page = topup_failure_1 + response_mid + topup_failure_2;
-
-			res.setHeader("Content-Type", "text/html");
-			res.status(400).end(page);
-
-			return;
-		}
-
-		details.cert_serial_used_for_payment		= cert.serialNumber.toLowerCase();
-		details.cert_fingerprint_used_for_payment	= cert.fingerprint.toLowerCase();
-		details.cert_class_used_for_payment		= cert_class;
-
-		const response = JSON.parse(JSON.stringify(req.query));
-
-		for (const key in details)
-		{
-			response[key] = details[key];
-		}
-
-		const response_mid =
-				"<script>"					+
-					"jsonViewer.showJSON("			+
-						JSON.stringify(response)	+
-					");"					+
-				"</script>";
-
-		const page = topup_success_1 + response_mid + topup_success_2;
-
-		res.setHeader("Content-Type", "text/html");
-		res.status(200).end(page);
-	});
-});
-
-app.post("/marketplace/v[1-2]/confirm-payment", (req, res) => {
-
-	const id	    	= res.locals.email;
-	const body	    	= res.locals.body;
-	const cert		= res.locals.cert;
-	const cert_class	= res.locals.cert_class;
-
-	if (! body.token)
-		return END_ERROR (res, 400, "No 'token' found in the body");
-
-	if (! is_valid_token(body.token,id))
-		return END_ERROR (res, 400, "Invalid 'token'");
-
-	const token		= body.token;
-	const sha256_of_token	= sha256(token);
-
-	const cert_serial	= cert.serialNumber.toLowerCase();
-	const cert_fingerprint	= cert.fingerprint.toLowerCase();
-
-	pool.query (
-
-		"SELECT (payment_info->>'amount') AS amount"	+
-		" FROM token"					+
-		" WHERE id = $1::text"				+
-		" AND token = $2::text"				+
-		" AND cert_serial = $3::text"			+
-		" AND cert_fingerprint = $4::text"		+
-		" AND (payment_info->>'amount')::int > 0"	+
-		" AND paid = false"				+
-		" AND expiry > NOW()"				+
-		" LIMIT 1",
-		[
-			id,					// 1
-			sha256_of_token,			// 2
-			cert_serial,				// 3
-			cert_fingerprint			// 4
-		],
-		(error, results) =>
-		{
-
-			if (results.rowCount === 0)
-				return END_ERROR (res, 400, "Invalid 'token'");
-
-			const amount	= results.rows[0].amount;
-
-			/*
-				The below serial and fingerprint variables
-				are from the "credit" and "topup_transaction"
-				table, and may not be the "real" certificate's
-				serial and fingerprint.
-			*/
-
-			let serial	= cert_serial;
-			let fingerprint	= cert_fingerprint;
-
-			if (cert_class > 2)
-			{
-				serial		= "*";
-				fingerprint	= "*";
-			}
-
-			const query = "SELECT confirm_payment("		+
-					"$1::text,"			+
-					"$2::numeric,"			+
-					"$3::text,"			+
-					"$4::text,"			+
-					"$5::text,"			+
-					"$6::text"			+
-				") AS payment_confirmed";
-
-			const params	= [
-				id,					// 1
-				amount,					// 2
-				cert_serial,				// 3
-				cert_fingerprint,			// 4
-				serial,					// 5
-				fingerprint,				// 6
-			];
-
-			pool.query(query, params, (function_error, function_results) =>
-			{
-				if (function_error)
-					return END_ERROR (res, 500, "Internal error!", function_error);
-
-				if (function_results.rowCount === 0)
-					return END_ERROR (res, 402, "Not enough balance!");
-
-				if (! function_results.rows[0].payment_confirmed)
-					return END_ERROR (res, 400, "Payment could not be confirmed");
-
-				return END_SUCCESS (res);
-			});
-		}
-	);
-});
-
-app.post("/marketplace/v[1-2]/audit/credits", (req, res) => {
-
-	const id	    	= res.locals.email;
-	const body	    	= res.locals.body;
-	const cert		= res.locals.cert;
-	const cert_class	= res.locals.cert_class;
-
-	if (! body.hours)
-		return END_ERROR (res, 400, "No 'hours' found in the body");
-
-	const hours = parseInt (body.hours,10);
-
-	// 5 yrs max
-	if (isNaN(hours) || hours < 1 || hours > 43800) {
-		return END_ERROR (res, 400, "'hours' must be a positive number");
-	}
-
-	let serial;
-	let fingerprint;
-
-	if (cert_class > 2)
-	{
-		serial		= "*";
-		fingerprint	= "*";
-	}
-	else
-	{
-		serial		= cert.serialNumber.toLowerCase();
-		fingerprint	= cert.fingerprint.toLowerCase();
-	}
-
-	pool.query (
-
-		"SELECT amount,time,invoice_number"		+
-			" FROM topup_transaction"		+
-			" WHERE id = $1::text"			+
-			" AND cert_serial = $2::text" 		+
-			" AND cert_fingerprint = $3::text"	+
-			" AND paid = true"	 		+
-			" AND time >= (NOW() - $4::interval) ",
-		[
-			id,
-			serial,
-			fingerprint,
-			hours + " hours"
-		],
-	(error, results) =>
-	{
-		if (error)
-			return END_ERROR (res, 500, "Internal error!", error);
-
-		const as_consumer		= [];
-		const as_provider		= [];
-		const other_transactions	= [];
-
-		for (const row of results.rows)
-		{
-			as_consumer.push ({
-				"transaction"		: "topup",
-				"amount"		: row.amount,
-				"time"			: row.time,
-				"invoice-number"	: row.invoice_number,
-			});
-		}
-
-		if (cert_class < 3)
-		{
-			const response = {
-				"as-consumer" : as_consumer
-			};
-
-			return END_SUCCESS (res, response);
-		}
-
-		pool.query (
-			"SELECT * FROM topup_transaction"	+
-			" WHERE id = $1::text"			+
-			" AND paid = true"			+
-			" AND time >= (NOW() - $2::interval)"	+
-			" AND cert_serial != '*'"		+
-			" AND cert_fingerprint != '*'",
-			[
-				id,
-				hours + " hours"
-			],
-
-		(error_1, results_1) =>
-		{
-			if (error_1)
-				return END_ERROR (res, 500, "Internal error!", error_1);
-
-			for (const row of results_1.rows)
-			{
-				other_transactions.push ({
-					"transaction"	: "topup",
-					"amount"	: row.amount,
-					"time"		: row.time,
-					"serial"	: row.cert_serial,
-					"fingerprint"	: row.cert_fingerprint
-				});
-			}
-
-			const email_domain	= id.split("@")[0].toLowerCase();
-			const sha1_of_email	= sha1(id);
-
-			const provider_id_hash	= email_domain + "/" + sha1_of_email;
-
-			pool.query (
-				"SELECT paid_at,"						+
-					" (payment_info ->>'providers')::jsonb->> $1::text"	+
-					" AS money"						+
-					" FROM token"						+
-					" WHERE amount > 0.0"					+
-					" AND > (payment_info->>'amount')"			+
-					" AND paid = true",
-				[
-					provider_id_hash
-				],
-			(error_2, results_2) =>
-			{
-				if (error_2)
-					return END_ERROR (res, 500, "Internal error!", error_2);
-
-				for (const row of results_2.rows)
-				{
-					as_provider.push ({
-						"transaction"	: "received",
-						"amount"	: row.money,
-						"time"		: row.paid_at
-					});
-				}
-
-				const response = {
-					"as-consumer"		: as_consumer,
-					"as-provider"		: as_consumer,
-					"other-transactions"	: other_transactions
-				};
-
-				return END_SUCCESS(res, response);
-			});
-		});
-	});
-});
-
-app.post("/marketplace/v[1-2]/credit/transfer", (req, res) => {
-
-	const id	= res.locals.email;
-	const body    	= res.locals.body;
-
-	if (! body["from-fingerprint"])
-		return END_ERROR (res, 400, "'from-fingerprint' field not found in body");
-
-	if (! is_string_safe(body["from-fingerprint"],":"))
-		return END_ERROR (res, 400, "Invalid 'from-fingerprint'");
-
-	const from_fingerprint = body["from-fingerprint"];
-
-	if (! body["to-fingerprint"])
-		return END_ERROR (res, 400, "'to-fingerprint' field not found in body");
-
-	if (! is_string_safe(body["to-fingerprint"],":"))
-		return END_ERROR (res, 400, "Invalid 'to-fingerprint'");
-
-	const to_fingerprint = body["to-fingerprint"];
-
-	if (from_fingerprint === to_fingerprint)
-		return END_ERROR (res, 400, "'from-fingerprint' and 'to-fingerprint' cannot be same");
-
-	if (! body["to-serial"])
-		return END_ERROR (res, 400, "'to-serial' field not found in body");
-
-	if (! is_string_safe(body["to-serial"]))
-		return END_ERROR (res, 400, "Invalid 'to-serial'");
-
-	const to_serial = body.to["to-serial"];
-
-	if (! body.amount)
-		return END_ERROR (res, 400, "'amount' field not found in body");
-
-	const amount = parseFloat(body.amount, 10);
-
-	if (isNaN(amount) || amount < 0 || amount > 1000)
-		return END_ERROR (res, 400, "'amount' is not a valid number");
-
-	pool.query (
-
-		"SELECT amount FROM credit"	+
-		" WHERE id = $1::text" 		+
-		" AND cert_serial = $2::text"	+
-		" AND amount >=  $3::numeric",
-		[
-			id,
-			from_fingerprint,
-			amount
-		],
-		(error, results) =>
-		{
-			if (error)
-			{
-				return END_ERROR (
-					res, 500,
-					"Internal error!", error
-				);
-			}
-
-			if (results.rowCount === 0)
-			{
-				return END_ERROR (
-					res, 400,
-					"Not enough balance in 'from-fingerprint'"
-				);
-			}
-
-			pool.query (
-				"SELECT transfer_credits("	+
-					"$1::text,"		+
-					"$1::numeric,"		+
-					"$1::text,"		+
-					"$1::text"		+
-					"$1::text"		+
-				") as credits_transfered",
-				[
-					id,
-					amount,
-					from_fingerprint,
-					to_fingerprint,
-					to_serial
-				],
-			(error_1, results_1) =>
-			{
-				if (error_1 || results_1.rowCount === 0)
-				{
-					return END_ERROR (
-						res, 500,
-						"Internal error!", error_1
-					);
-				}
-
-				if (! results_1.credits_transfered)
-				{
-					return END_ERROR (
-						res, 400,
-						"Could not transfer credits"
-					);
-				}
-
-				return END_SUCCESS (res);
-			});
-		}
-	);
-});
-
 /* --- Invalid requests --- */
 
 app.all("/*", (req, res) => {
@@ -4513,26 +3352,9 @@ if (cluster.isMaster)
 
 	log("info", "EVENT", false, {}, "Master started with pid " + process.pid);
 
-	const ALL_END_POINTS	= Object.keys(MIN_CERT_CLASS_REQUIRED).sort();
-
-	for (const e of ALL_END_POINTS)
-		statistics.api.count[e] = 0;
-
-	statistics.start_time = Math.floor (Date.now() / 1000);
-
 	for (let i = 0; i < NUM_CPUS; i++) {
 		cluster.fork();
 	}
-
-	cluster.on ("fork", (worker) => {
-		worker.on ("message", (endpoint) => {
-
-			if (ALL_END_POINTS.indexOf(endpoint) === -1)
-				endpoint = "invalid-api";
-
-			statistics.api.count[endpoint] += 1;
-		});
-	});
 
 	cluster.on ("exit", (worker) => {
 
@@ -4549,12 +3371,9 @@ if (cluster.isMaster)
 		);
 	}
 
-	//show_statistics();
-	//setInterval (show_statistics, 5000);
 }
 else
 {
-	//https.createServer(https_options,app).listen(443,"0.0.0.0");
 	http.createServer(app).listen(3000, "0.0.0.0");
 
 	drop_worker_privileges();
