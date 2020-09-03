@@ -31,6 +31,7 @@ const x509			= require('x509')
 const Pool			= require("pg").Pool;
 const http			= require("http");
 const assert			= require("assert").strict;
+const forge			= require("node-forge");
 const chroot			= require("chroot");
 const crypto			= require("crypto");
 const logger			= require("node-color-log");
@@ -40,6 +41,7 @@ const express			= require("express");
 const timeout			= require("connect-timeout");
 const aperture			= require("./node-aperture");
 const safe_regex		= require("safe-regex");
+const nodemailer		= require("nodemailer");
 const geoip_lite		= require("geoip-lite");
 const bodyParser		= require("body-parser");
 const compression		= require("compression");
@@ -116,6 +118,29 @@ const telegram_chat_id	= fs.readFileSync ("telegram.chatid","ascii").trim();
 const telegram_url	= TELEGRAM + "/bot" + telegram_apikey +
 				"/sendMessage?chat_id="	+ telegram_chat_id +
 				"&text=";
+/* --- nodemailer --- */
+
+let transporter;
+
+const mailer_config 	= JSON.parse(fs.readFileSync("mailer_config.json","utf-8"));
+const mailer_options 	= {
+	host	: mailer_config.host,
+	port	: mailer_config.port,
+	auth	: {
+		user : mailer_config.username,
+		pass : mailer_config.password
+	},
+	tls: {rejectUnauthorized: false}
+};
+
+transporter = nodemailer.createTransport(mailer_options);
+
+transporter.verify(function(error, success) {
+	if (error)
+		log("err", "MAILER_EVENT", true, {}, error.toString());
+	else
+		log("info", "MAILER_EVENT", false, {}, success.toString());
+});
 
 /* --- postgres --- */
 
