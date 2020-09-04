@@ -27,7 +27,7 @@ const fs			= require("fs");
 const os			= require("os");
 const dns			= require("dns");
 const cors			= require("cors");
-const x509			= require('x509')
+const x509			= require('x509');
 const Pool			= require("pg").Pool;
 const http			= require("http");
 const assert			= require("assert").strict;
@@ -92,6 +92,8 @@ const MIN_CERT_CLASS_REQUIRED	= Object.freeze ({
 	"/auth/v1/group/add"			: 3,
 	"/auth/v1/group/delete"			: 3,
 	"/auth/v1/group/list"			: 3,
+	"/auth/v1/admin/provider/registrations"	: 3,
+	"/auth/v1/admin/provider/registrations/status": 3,
 });
 
 /* --- environment variables--- */
@@ -114,6 +116,9 @@ const TELEGRAM		= "https://api.telegram.org";
 
 const telegram_apikey	= fs.readFileSync ("telegram.apikey","ascii").trim();
 const telegram_chat_id	= fs.readFileSync ("telegram.chatid","ascii").trim();
+const admin_list = JSON.parse(fs.readFileSync("passwords/admins.json", "ascii").trim()).admins;
+const root_cert = forge.pki.certificateFromPem(fs.readFileSync("passwords/cert.pem"));
+const root_key = forge.pki.privateKeyFromPem(fs.readFileSync("passwords/key.pem"));
 
 const telegram_url	= TELEGRAM + "/bot" + telegram_apikey +
 				"/sendMessage?chat_id="	+ telegram_chat_id +
@@ -152,7 +157,7 @@ const password	= {
 
 /* --- log file --- */
 
-const log_file = fs.createWriteStream('/var/log/debug.log', {flags : 'a'});
+const log_file = fs.createWriteStream('./debug.log', {flags : 'a'});
 
 // async postgres connection
 const pool = new Pool ({
@@ -1325,6 +1330,41 @@ function to_array (o)
 	{
 		return [o];
 	}
+}
+
+function sign_csr(raw_csr, user)
+{
+	const cert_class = user.type === "provider" ? "class:3" : "class2";
+	forge.pki.oids['id-qt-unotice'] = '1.3.6.1.5.5.7.2.2';
+	const csr = forge.pki.certificationRequestFromPem(raw_csr);
+	if (!csr.verify()) { return null; }
+	let cert = forge.pki.createCertificate();
+	cert.publicKey = csr.publicKey;
+	cert.setIssuer(root_cert.subject.attributes);
+	cert.serialNumber = crypto.randomBytes(20).toString('hex');
+	cert.validity.notBefore = new Date();
+	cert.validity.notAfter = new Date();
+	cert.validity.notAfter.setFullYear(cert.validity.notBefore.getFullYear() + 1);
+	let attrs = [
+		{
+			name: "commonName",
+			value: "IUDX Provider",
+		},
+		{
+			name: "emailAddress",
+			value: user.email,
+		},
+		{
+			name: "id-qt-unotice",
+			value: cert_class,
+		},
+	];
+	cert.setSubject(attrs);
+	cert.sign(root_key, forge.md.sha256.create());
+	if (root_cert.verify(cert)) {
+		return forge.pki.certificateToPem(cert);
+	}
+	return null;
 }
 
 /* --- Auth APIs --- */
@@ -3292,6 +3332,123 @@ app.post("/auth/v[1-2]/certificate-info", (req, res) => {
 	};
 
 	return END_SUCCESS (res,response);
+});
+
+/* --- Auth Admin APIs --- */
+
+app.get("/auth/v[1-2]/admin/provider/registrations", (req, res) => {
+	const email = res.locals.email;
+	if (!admin_list.includes(email)) {
+		return END_ERROR (res, 403, "Not allowed");
+	}
+	const filter = req.query.filter || "pending";
+	let users, organizations;
+	try {
+		users = pg.querySync("SELECT * FROM consent.users WHERE approved = $1::consent.status", [filter]);
+		let organization_ids = [...new Set(users.map(row => row.organization_id))];
+		let params = organization_ids.map((_, i) => '$' + (i + 1)).join(',');
+		organizations = pg.querySync("SELECT * FROM consent.organizations WHERE id IN (" + params + ");", organization_ids);
+	} catch(e) {
+		return END_ERROR (res, 400, "Invalid filter value");
+	}
+	const result = users.map(user => {
+		const organization = organizations.filter(org => user.organization_id === org.id)[0] || null;
+		const res = {
+			id: user.id,
+			title: user.title,
+			first_name: user.first_name,
+			last_name: user.last_name,
+			type: user.type,
+			email: user.email,
+			phone: user.phone,
+			status: user.approved,
+		};
+		if (organization === null) {
+			res.organization = null;
+		} else {
+			res.organization = {
+				name: organization.name,
+				website: organization.website,
+				city: organization.city,
+				state: organization.state,
+				country: organization.country
+			};
+		}
+		return res;
+	});
+	return END_SUCCESS (res, result);
+});
+
+app.put("/auth/v[1-2]/admin/provider/registrations/status", (req, res) => {
+	const email = res.locals.email;
+	if (!admin_list.includes(email)) { return END_ERROR (res, 403, "Not allowed"); }
+	const user_id = req.query.user_id || null;
+	const status = req.query.status || null;
+	if (user_id === null || status === null || !(["approved", "rejected"].includes(status))) {
+		return END_ERROR (res, 400, "Missing or invalid information");
+	}
+	let user, csr, org;
+	try {
+		user = pg.querySync("SELECT * FROM consent.users WHERE id = $1::integer",[user_id])[0] || null;
+		csr = pg.querySync("SELECT * FROM consent.certificates WHERE user_id = $1::integer", [user_id])[0] || null;
+		org = pg.querySync("SELECT * FROM consent.organizations WHERE id = $1::integer", [user.organization_id])[0] || null;
+		if (user === null || csr === null) { return END_ERROR(res, 404, "User information not found"); }
+		if (user.approved !== "pending") { return END_ERROR (res, 400, "User registration flow is complete"); }
+	} catch (e) {
+		return END_ERROR (res, 400, "Missing or invalid information");
+	}
+
+	if (status === "rejected") {
+		// Update users table with approved = rejected and return updated user
+		pg.querySync("UPDATE consent.users SET approved = $1::consent.status, updated_at = now() WHERE id = $2::integer", [status, user.id]);
+		user = pg.querySync("SELECT * FROM consent.users, updated_at = now() WHERE id = $1::integer",[user_id])[0];
+		return END_SUCCESS(200, {
+			id: user.id,
+			title: user.title,
+			first_name: user.first_name,
+			last_name: user.last_name,
+			type: user.type,
+			email: user.email,
+			phone: user.phone,
+			status: user.approved,
+		});
+	}
+
+	let signed_cert;
+	try {
+		signed_cert = sign_csr(csr.csr, user);
+		if (signed_cert === null) { throw "Unable to generate certificate"; }
+	} catch (e) {
+		return END_ERROR(res, 500, "Certificate Error", e.message);
+	}
+
+	// Update users table with approved = approved
+	// Update certificates table with cert = signed_cert
+	pg.querySync("UPDATE consent.users SET approved = $1::consent.status WHERE id = $2::integer", [status, user_id]);
+	pg.querySync("UPDATE consent.certificates SET cert = $1::text WHERE id = $2::integer", [signed_cert, user_id]);
+	user = pg.querySync("SELECT * FROM consent.users WHERE id = $1::integer",[user_id])[0];
+
+	// Send email to user with cert attached and return updated user
+	const message = {
+		from: '"IUDX Admin" <noreply@iudx.org.in>',
+		to: user.email,
+		subject: "New Provider Registration",
+		text: "Congratulations! Your IUDX Provider Registration is complete.\n\n" +
+			"Please use the attached cert.pem file for all future API calls and to login at the Provider Dashboard.\n\n" +
+			"Thank You!",
+		attachments: [{ filename: "cert.pem", content: signed_cert }],
+	};
+	transporter.sendMail(message);
+	return END_SUCCESS (res, {
+		id: user.id,
+		title: user.title,
+		first_name: user.first_name,
+		last_name: user.last_name,
+		type: user.type,
+		email: user.email,
+		phone: user.phone,
+		status: user.approved,
+	});
 });
 
 /* --- Consent APIs --- */

@@ -7,3 +7,6 @@ doc/result_
 doc/traces/
 *.password
 *.pem
+.idea/
+debug.log
+.nvmrc
