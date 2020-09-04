@@ -3405,9 +3405,10 @@ app.put("/auth/v[1-2]/admin/provider/registrations/status", (req, res) => {
 
 	if (status === "rejected") {
 		// Update users table with approved = rejected and return updated user
-		pg.querySync("UPDATE consent.users SET approved = $1::consent.status, updated_at = now() WHERE id = $2::integer", [status, user.id]);
-		user = pg.querySync("SELECT * FROM consent.users, updated_at = now() WHERE id = $1::integer",[user_id])[0];
-		return END_SUCCESS(200, {
+		user = pg.querySync("UPDATE consent.users SET approved = $1::consent.status, updated_at = NOW() WHERE " +
+			" id = $2::integer RETURNING *", [status, user.id])[0];
+
+		return END_SUCCESS(res, {
 			id: user.id,
 			title: user.title,
 			first_name: user.first_name,
