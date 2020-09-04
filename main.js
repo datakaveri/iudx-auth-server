@@ -39,6 +39,7 @@ const lodash			= require("lodash");
 const cluster			= require("cluster");
 const express			= require("express");
 const timeout			= require("connect-timeout");
+const domain			= require("getdomain");
 const aperture			= require("./node-aperture");
 const safe_regex		= require("safe-regex");
 const nodemailer		= require("nodemailer");
@@ -52,6 +53,7 @@ const pg			= new pgNativeClient();
 
 const TOKEN_LEN			= 16;
 const TOKEN_LEN_HEX		= 2 * TOKEN_LEN;
+const CSR_SIZE			= 2048;
 
 const EUID			= process.geteuid();
 const is_openbsd		= os.type() === "OpenBSD";
@@ -94,6 +96,9 @@ const MIN_CERT_CLASS_REQUIRED	= Object.freeze ({
 	"/auth/v1/group/list"			: 3,
 	"/auth/v1/admin/provider/registrations"	: 3,
 	"/auth/v1/admin/provider/registrations/status": 3,
+
+/* data provider's APIs */
+	"/consent/v1/provider/registration"	: true,
 });
 
 /* --- environment variables--- */
@@ -157,7 +162,7 @@ const password	= {
 
 /* --- log file --- */
 
-const log_file = fs.createWriteStream('./debug.log', {flags : 'a'});
+const log_file = fs.createWriteStream('/var/log/debug.log', {flags : 'a'});
 
 // async postgres connection
 const pool = new Pool ({
@@ -936,10 +941,6 @@ function basic_security_check (req, res, next)
 		has_started_serving_apis = true;
 	}
 
-	// skip checks for consent APIs
-	if (req.headers.host === CONSENT_URL)
-		return next();
-
 	// replace all version with "/v1/"
 
 	const endpoint			= req.url.split("?")[0];
@@ -962,6 +963,10 @@ function basic_security_check (req, res, next)
 			"Body is not a valid JSON"
 		);
 	}
+
+	// skip checks for consent APIs
+	if (req.headers.host === CONSENT_URL)
+		return next();
 
 	const cert		= req.certificate;
 
@@ -3453,7 +3458,153 @@ app.put("/auth/v[1-2]/admin/provider/registrations/status", (req, res) => {
 
 /* --- Consent APIs --- */
 
-app.post("/consent/v[1-2]/provider/registration", (req, res) => {
+app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
+
+	const id	= res.locals.body.email;
+	const phone 	= res.locals.body.phone;
+	const org 	= res.locals.body.organization;
+	const name 	= res.locals.body.name;
+	const raw_csr	= res.locals.body.csr;
+	let org_id, user_id;
+	let real_domain;
+
+
+	const phone_regex = new RegExp(/^[9876]\d{9}$/);
+
+	if (! name || ! name.title || ! name.firstName || ! name.lastName)
+		return END_ERROR (res, 403, "Invalid data (name)");
+
+	if (! org || ! org.name || ! org.website || ! org.city
+		|| ! org.state || ! org.country)
+		return END_ERROR (res, 403, "Invalid data (organization)");
+
+	if ( org.state.length !== 2 || org.country.length !== 2)
+		return END_ERROR (res, 403, "Invalid data (organization)");
+
+	if (! raw_csr || raw_csr.length > CSR_SIZE)
+		return END_ERROR (res, 403, "Invalid data (csr)");
+
+	if (! is_valid_email(id) || ! phone_regex.test(phone))
+		return END_ERROR (res, 403, "Invalid data (email/phone)");
+
+	if ( (real_domain = domain.get(org.website)) === null)
+		return END_ERROR (res, 403, "Invalid data (organization)");
+
+	try
+	{
+		let csr = forge.pki.certificationRequestFromPem(raw_csr);
+	}
+	catch(error)
+	{
+		return END_ERROR (res, 403, "Invalid data (csr)");
+	}
+
+	try
+	{
+		const exists = await pool.query (
+			" SELECT approved FROM consent.users " +
+			" WHERE email = $1::text",
+			[ id ]);
+
+		if ( exists.rows.length !== 0)
+			return END_ERROR (res, 403, "Email exists");
+
+		const results = await pool.query (
+			" SELECT id FROM consent.organizations " +
+			" WHERE website = $1::text",
+			[ real_domain ]);
+
+		if ( results.rows.length !== 0)
+			org_id = results.rows[0].id;
+	}
+	catch(error)
+	{
+		return END_ERROR (res, 500, "Internal error!", error);
+	}
+
+	if (! org_id)
+	{
+		try {
+
+		const results = await pool.query (
+			" INSERT INTO consent.organizations " 		+
+			" (name, website, city, state, country, " 	+
+			" created_at, updated_at) VALUES ("		+
+			" $1::text,  $2::text, "			+
+			" $3::text, $4::text, $5::text, "		+
+			" NOW(), NOW() ) RETURNING id",
+			[
+				org.name,				//$1
+				real_domain,				//$2
+				org.city,				//$3
+				org.state.toUpperCase(),		//$4
+				org.country.toUpperCase()		//$5
+			]);
+
+			org_id = results.rows[0].id;
+		}
+		catch(error)
+		{
+			return END_ERROR (res, 500, "Internal error!", error);
+		}
+	}
+
+	try {
+		const user = await pool.query (
+			" INSERT INTO consent.users "			+
+			" (title, first_name, last_name, "		+
+			" type, email, phone, approved, "		+
+			" organization_id, created_at, "		+
+			" updated_at) VALUES ( "			+
+			" $1::text, $2::text, $3::text, "		+
+			" $4::consent.role, $5::text, $6::text, "	+
+			" $7::consent.status, $8::int, NOW(), NOW() )"	+
+			" RETURNING id",
+			[
+				name.title,			//$1
+				name.firstName,			//$2
+				name.lastName,			//$3
+				"provider",			//$4
+				id,				//$5
+				phone,				//$6
+				"pending",			//$7
+				org_id,				//$8
+			]);
+
+		user_id = user.rows[0].id;
+
+		const cert = await pool.query (
+			" INSERT INTO consent.certificates "	+
+			" (user_id, csr, cert, created_at, "	+
+			" updated_at) VALUES ( "		+
+			" $1::int, $2::text, $3::text, "	+
+			" NOW(), NOW() )",
+			[
+				user_id,			//$1
+				raw_csr,			//$2
+				null,				//$3
+			]);
+	}
+	catch(error)
+	{
+		return END_ERROR (res, 500, "Internal error!", error);
+	}
+
+	const mail = {
+		from	: 'DataKaveri <no-reply@dk.org>',
+		to	: id,
+		subject	: "Provider Registration Successful !!!",
+		text	: " Hello " + name.firstName + ". Your"		+
+			  " provider registration request has been" 	+
+			  " accepted, and is pending approval. "
+	};
+
+	transporter.sendMail(mail, function (error, info) {
+		if (error)
+			log("err", "MAILER_EVENT", true, {}, error.toString());
+		else
+			log("info", "MAIL_SENT", false, info);
+	});
 
 	return END_SUCCESS (res);
 
