@@ -33,6 +33,7 @@ CREATE TABLE consent.organizations (
 );
 
 CREATE UNIQUE INDEX idx_organizations_id ON consent.organizations(id);
+CREATE UNIQUE INDEX idx_organizations_website ON consent.organizations(website);
 
 CREATE TABLE consent.users (
 
