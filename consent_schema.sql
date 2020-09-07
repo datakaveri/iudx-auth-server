@@ -15,6 +15,7 @@ SET default_with_oids = false;
 CREATE SCHEMA consent;
 
 GRANT ALL ON SCHEMA consent to postgres;
+GRANT USAGE ON SCHEMA consent TO auth;
 
 CREATE TYPE consent.status AS ENUM ('rejected', 'pending', 'approved');
 CREATE TYPE consent.role AS ENUM ('provider', 'consumer');
@@ -32,6 +33,7 @@ CREATE TABLE consent.organizations (
 );
 
 CREATE UNIQUE INDEX idx_organizations_id ON consent.organizations(id);
+CREATE UNIQUE INDEX idx_organizations_website ON consent.organizations(website);
 
 CREATE TABLE consent.users (
 
