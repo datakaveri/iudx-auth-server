@@ -3452,7 +3452,6 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 	let org_id, user_id;
 	let real_domain;
 
-
 	const phone_regex = new RegExp(/^[9876]\d{9}$/);
 
 	if (! name || ! name.title || ! name.firstName || ! name.lastName)
@@ -3486,8 +3485,9 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 	try
 	{
 		const exists = await pool.query (
-			" SELECT approved FROM consent.users " +
-			" WHERE email = $1::text",
+			" SELECT status FROM consent.role, consent.users " 	+
+			" WHERE consent.role.user_id = consent.users.id " 	+
+			" AND email = $1::text AND role = 'provider'",
 			[ id ]);
 
 		if ( exists.rows.length !== 0)
@@ -3537,25 +3537,33 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 		const user = await pool.query (
 			" INSERT INTO consent.users "			+
 			" (title, first_name, last_name, "		+
-			" type, email, phone, approved, "		+
-			" organization_id, created_at, "		+
-			" updated_at) VALUES ( "			+
+			" email, phone, organization_id,  "		+
+			" created_at ,updated_at) VALUES ( "		+
 			" $1::text, $2::text, $3::text, "		+
-			" $4::consent.role, $5::text, $6::text, "	+
-			" $7::consent.status, $8::int, NOW(), NOW() )"	+
+			" $4::text, $5::text, $6::int, NOW(), NOW() )"	+
 			" RETURNING id",
 			[
 				name.title,			//$1
 				name.firstName,			//$2
 				name.lastName,			//$3
-				"provider",			//$4
-				id,				//$5
-				phone,				//$6
-				"pending",			//$7
-				org_id,				//$8
+				id,				//$4
+				phone,				//$5
+				org_id,				//$6
 			]);
 
 		user_id = user.rows[0].id;
+
+		const role = await pool.query (
+			" INSERT INTO consent.role "			+
+			" (user_id, role, status, created_at, "		+
+			" updated_at) VALUES ( "			+
+			" $1::int, $2::consent.role_enum, "		+
+			" $3::consent.status_enum, NOW(), NOW() )",
+			[
+				user_id,			//$1
+				'provider',			//$2
+				'pending',			//$3
+			]);
 
 		const cert = await pool.query (
 			" INSERT INTO consent.certificates "	+
