@@ -3332,7 +3332,9 @@ app.get("/auth/v[1-2]/admin/provider/registrations", (req, res) => {
 	const filter = req.query.filter || "pending";
 	let users, organizations;
 	try {
-		users = pg.querySync("SELECT * FROM consent.users WHERE approved = $1::consent.status", [filter]);
+		users = pg.querySync("SELECT * FROM consent.users, consent.role" 		+
+				     " WHERE consent.users.id = consent.role.user_id "		+
+				     " AND status = $1::consent.status_enum", [filter]);
 		let organization_ids = [...new Set(users.map(row => row.organization_id))];
 		let params = organization_ids.map((_, i) => '$' + (i + 1)).join(',');
 		organizations = pg.querySync("SELECT * FROM consent.organizations WHERE id IN (" + params + ");", organization_ids);
@@ -3342,14 +3344,14 @@ app.get("/auth/v[1-2]/admin/provider/registrations", (req, res) => {
 	const result = users.map(user => {
 		const organization = organizations.filter(org => user.organization_id === org.id)[0] || null;
 		const res = {
-			id: user.id,
+			id: user.user_id,
 			title: user.title,
 			first_name: user.first_name,
 			last_name: user.last_name,
-			type: user.type,
+			role: user.role,
 			email: user.email,
 			phone: user.phone,
-			status: user.approved,
+			status: user.status,
 		};
 		if (organization === null) {
 			res.organization = null;
@@ -3375,31 +3377,33 @@ app.put("/auth/v[1-2]/admin/provider/registrations/status", (req, res) => {
 	if (user_id === null || status === null || !(["approved", "rejected"].includes(status))) {
 		return END_ERROR (res, 400, "Missing or invalid information");
 	}
-	let user, csr, org;
+	let user, csr, org, role;
 	try {
-		user = pg.querySync("SELECT * FROM consent.users WHERE id = $1::integer",[user_id])[0] || null;
+		user = pg.querySync("SELECT * FROM consent.users, consent.role "	+
+				    " WHERE consent.users.id = consent.role.user_id "	+
+				    " AND consent.users.id = $1::integer",[user_id])[0] || null;
 		csr = pg.querySync("SELECT * FROM consent.certificates WHERE user_id = $1::integer", [user_id])[0] || null;
 		org = pg.querySync("SELECT * FROM consent.organizations WHERE id = $1::integer", [user.organization_id])[0] || null;
 		if (user === null || csr === null) { return END_ERROR(res, 404, "User information not found"); }
-		if (user.approved !== "pending") { return END_ERROR (res, 400, "User registration flow is complete"); }
+		if (user.status !== "pending") { return END_ERROR (res, 400, "User registration flow is complete"); }
 	} catch (e) {
 		return END_ERROR (res, 400, "Missing or invalid information");
 	}
 
 	if (status === "rejected") {
-		// Update users table with approved = rejected and return updated user
-		user = pg.querySync("UPDATE consent.users SET approved = $1::consent.status, updated_at = NOW() WHERE " +
-			" id = $2::integer RETURNING *", [status, user.id])[0];
+		// Update role table with status = rejected and return updated user
+		role = pg.querySync("UPDATE consent.role SET status = $1::consent.status_enum, updated_at = NOW() "	+
+			" WHERE user_id = $2::integer RETURNING *", [status, user.id])[0];
 
 		return END_SUCCESS(res, {
 			id: user.id,
 			title: user.title,
 			first_name: user.first_name,
 			last_name: user.last_name,
-			type: user.type,
+			role: role.role,
 			email: user.email,
 			phone: user.phone,
-			status: user.approved,
+			status: role.status,
 		});
 	}
 
@@ -3411,10 +3415,11 @@ app.put("/auth/v[1-2]/admin/provider/registrations/status", (req, res) => {
 		return END_ERROR(res, 500, "Certificate Error", e.message);
 	}
 
-	// Update users table with approved = approved
+	// Update role table with status = approved
 	// Update certificates table with cert = signed_cert
-	pg.querySync("UPDATE consent.users SET approved = $1::consent.status WHERE id = $2::integer", [status, user_id]);
-	pg.querySync("UPDATE consent.certificates SET cert = $1::text WHERE id = $2::integer", [signed_cert, user_id]);
+	role = pg.querySync("UPDATE consent.role SET status = $1::consent.status_enum " +
+			    " WHERE user_id = $2::integer RETURNING *", [status, user_id])[0];
+	pg.querySync("UPDATE consent.certificates SET cert = $1::text WHERE user_id = $2::integer", [signed_cert, user_id]);
 	user = pg.querySync("SELECT * FROM consent.users WHERE id = $1::integer",[user_id])[0];
 
 	// Send email to user with cert attached and return updated user
@@ -3433,10 +3438,10 @@ app.put("/auth/v[1-2]/admin/provider/registrations/status", (req, res) => {
 		title: user.title,
 		first_name: user.first_name,
 		last_name: user.last_name,
-		type: user.type,
+		role: role.role,
 		email: user.email,
 		phone: user.phone,
-		status: user.approved,
+		status: role.status,
 	});
 });
 
