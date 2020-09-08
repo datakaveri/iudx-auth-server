@@ -94,11 +94,11 @@ const MIN_CERT_CLASS_REQUIRED	= Object.freeze ({
 	"/auth/v1/group/add"			: 3,
 	"/auth/v1/group/delete"			: 3,
 	"/auth/v1/group/list"			: 3,
-	"/auth/v1/admin/provider/registrations"	: 3,
-	"/auth/v1/admin/provider/registrations/status": 3,
+	"/auth/v1/admin/provider/registrations"		: -Infinity,
+	"/auth/v1/admin/provider/registrations/status"	: -Infinity,
 
 /* data provider's APIs */
-	"/consent/v1/provider/registration"	: true,
+	"/consent/v1/provider/registration"	: -Infinity,
 });
 
 /* --- environment variables--- */
