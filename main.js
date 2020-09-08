@@ -861,6 +861,35 @@ function body_to_json (body)
 }
 
 /* ---
+  Check role/privilege of any registered user.
+  If user has particular role, return user ID.
+  Else return null.
+		--- */
+
+function check_privilege(email, role, callback)
+{
+	pool.query(" SELECT * FROM consent.users, consent.role" 		+
+		   " WHERE consent.users.id = consent.role.user_id "		+
+		   " AND consent.users.email = $1::text "			+
+		   " AND role = $2::consent.role_enum"				+
+		   " AND status = $3::consent.status_enum",
+			[
+				email,				//$1
+				role,				//$2
+				'approved'			//$3
+			],
+	(error, results) =>
+	{
+		if (error)
+			callback(error);
+		else if (results.rows.length === 0)
+			callback(null, null);
+		else
+			callback(null, results.rows[0].user_id);
+	});
+}
+
+/* ---
   Set aperture policies for a specific provider
   provider_id is email address of provider,
   rules is an array of strings.
@@ -3785,6 +3814,7 @@ else
 	drop_worker_privileges();
 
 	log("info", "WORKER_EVENT", false, {},"Worker started with pid " + process.pid);
+
 }
 
 // EOF
