@@ -87,6 +87,7 @@ const MIN_CERT_CLASS_REQUIRED	= Object.freeze ({
 	"/auth/v1/token/revoke-all"		: 3,
 
 	"/auth/v1/acl"				: 3,
+	"/auth/v1/acl/set"			: 3,
 	"/auth/v1/acl/revert"			: 3,
 	"/auth/v1/acl/append"			: 3,
 
@@ -862,12 +863,10 @@ function body_to_json (body)
 /* ---
   Set aperture policies for a specific provider
   provider_id is email address of provider,
-  rules is an array of strings. origin is
-  req.headers.origin to support api_called_from
-  field
+  rules is an array of strings.
 		--- */
 
-function set_acl(provider_id, rules, origin)
+function set_acl(provider_id, rules, callback)
 {
 
 	let policy_in_json;
@@ -882,9 +881,11 @@ function set_acl(provider_id, rules, origin)
 	}
 	catch (x)
 	{
-		const err = String(x);
-		log("warn", "APERTURE_ERROR", false, {}, err);
-		return false;
+		let error = new Error("Syntax error in policy. ");
+		log("warn", "APERTURE_ERROR", false, {}, x.message);
+		error.http_code = 500;
+		callback(error);
+		return;
 	}
 
 	const email_domain	= provider_id.split("@")[1];
@@ -904,7 +905,12 @@ function set_acl(provider_id, rules, origin)
 	(error, results) =>
 	{
 		if (error)
-			return false;
+		{
+			let error = new Error("Internal error!");
+			error.http_code = 500;
+			callback(error);
+			return;
+		}
 
 		let query;
 		let params;
@@ -922,7 +928,7 @@ function set_acl(provider_id, rules, origin)
 			params	= [
 				base64policy,				// 1
 				JSON.stringify(policy_in_json),		// 2
-				origin,					// 3
+				null,					// 3
 				provider_id_hash			// 4
 			];
 		}
@@ -941,7 +947,7 @@ function set_acl(provider_id, rules, origin)
 				provider_id_hash,			// 1
 				base64policy,				// 2
 				JSON.stringify(policy_in_json),		// 3
-				origin					// 4
+				null					// 4
 			];
 		}
 
@@ -949,7 +955,10 @@ function set_acl(provider_id, rules, origin)
 		{
 			if (error_1 || results_1.rowCount === 0)
 			{
-				return false;
+				let error = new Error("Internal error!");
+				error.http_code = 500;
+				callback(error);
+				return;
 			}
 
 			const details = {
@@ -958,8 +967,7 @@ function set_acl(provider_id, rules, origin)
 			};
 
 			log("info", "CREATED_POLICY", true, details);
-
-			return true;
+			callback(null);
 		});
 	});
 }
@@ -2639,6 +2647,40 @@ app.post("/auth/v[1-2]/token/revoke-all", (req, res) => {
 			);
 		}
 	);
+});
+
+app.post("/auth/v[1-2]/acl/set", (req, res) => {
+
+	const body		= res.locals.body;
+	const provider_id	= res.locals.email;
+
+	if (! body.policy)
+		return END_ERROR (res, 400, "No 'policy' found in request");
+
+	if (typeof body.policy !== "string")
+		return END_ERROR (res, 400, "'policy' must be a string");
+
+	const policy		= body.policy.trim();
+	const policy_lowercase	= policy.toLowerCase();
+
+	if (
+		(policy_lowercase.search(" like ")  >= 0) ||
+		(policy_lowercase.search("::regex") >= 0)
+	)
+	{
+		return END_ERROR (res, 400, "RegEx in 'policy' is not supported");
+	}
+
+	const rules = policy.split(";");
+
+	set_acl(provider_id, rules, (err) =>
+	{
+		if (err)
+			return END_ERROR (res, err.http_code, err.message);
+		else
+			return END_SUCCESS (res);
+	});
+
 });
 
 app.post("/auth/v[1-2]/acl/append", (req, res) => {
