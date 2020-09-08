@@ -87,7 +87,6 @@ const MIN_CERT_CLASS_REQUIRED	= Object.freeze ({
 	"/auth/v1/token/revoke-all"		: 3,
 
 	"/auth/v1/acl"				: 3,
-	"/auth/v1/acl/set"			: 3,
 	"/auth/v1/acl/revert"			: 3,
 	"/auth/v1/acl/append"			: 3,
 
@@ -858,6 +857,111 @@ function body_to_json (body)
 	{
 		return null;
 	}
+}
+
+/* ---
+  Set aperture policies for a specific provider
+  provider_id is email address of provider,
+  rules is an array of strings. origin is
+  req.headers.origin to support api_called_from
+  field
+		--- */
+
+function set_acl(provider_id, rules, origin)
+{
+
+	let policy_in_json;
+
+	try
+	{
+		policy_in_json = rules.map (
+			(r) => {
+				return (parser.parse(r.trim()));
+			}
+		);
+	}
+	catch (x)
+	{
+		const err = String(x);
+		log("warn", "APERTURE_ERROR", false, {}, err);
+		return false;
+	}
+
+	const email_domain	= provider_id.split("@")[1];
+	const sha1_of_email	= sha1(provider_id);
+
+	const provider_id_hash	= email_domain + "/" + sha1_of_email;
+
+	const base64policy	= base64(rules.join(";"));
+
+	pool.query (
+
+		"SELECT 1 FROM policy WHERE id = $1::text LIMIT 1",
+		[
+			provider_id_hash,	// 1
+		],
+
+	(error, results) =>
+	{
+		if (error)
+			return false;
+
+		let query;
+		let params;
+
+		if (results.rows.length > 0)
+		{
+			query	= "UPDATE policy"			+
+					" SET policy = $1::text,"	+
+					" policy_in_json = $2::jsonb,"	+
+					" previous_policy = policy,"	+
+					" last_updated = NOW(),"	+
+					" api_called_from = $3::text"	+
+					" WHERE id = $4::text";
+
+			params	= [
+				base64policy,				// 1
+				JSON.stringify(policy_in_json),		// 2
+				origin,					// 3
+				provider_id_hash			// 4
+			];
+		}
+		else
+		{
+			query	= "INSERT INTO policy VALUES("	+
+					"$1::text,"		+
+					"$2::text,"		+
+					"$3::jsonb,"		+
+					"NULL,"			+
+					"NOW(),"		+
+					"$4::text"		+
+			")";
+
+			params	= [
+				provider_id_hash,			// 1
+				base64policy,				// 2
+				JSON.stringify(policy_in_json),		// 3
+				origin					// 4
+			];
+		}
+
+		pool.query (query, params, (error_1, results_1) =>
+		{
+			if (error_1 || results_1.rowCount === 0)
+			{
+				return false;
+			}
+
+			const details = {
+				"provider"  : provider_id,
+				"policy"    : rules
+			};
+
+			log("info", "CREATED_POLICY", true, details);
+
+			return true;
+		});
+	});
 }
 
 /* ---
@@ -2535,127 +2639,6 @@ app.post("/auth/v[1-2]/token/revoke-all", (req, res) => {
 			);
 		}
 	);
-});
-
-app.post("/auth/v[1-2]/acl/set", (req, res) => {
-
-	const body		= res.locals.body;
-	const provider_id	= res.locals.email;
-
-	if (! body.policy)
-		return END_ERROR (res, 400, "No 'policy' found in request");
-
-	if (typeof body.policy !== "string")
-		return END_ERROR (res, 400, "'policy' must be a string");
-
-	const policy		= body.policy.trim();
-	const policy_lowercase	= policy.toLowerCase();
-
-	if (
-		(policy_lowercase.search(" like ")  >= 0) ||
-		(policy_lowercase.search("::regex") >= 0)
-	)
-	{
-		return END_ERROR (res, 400, "RegEx in 'policy' is not supported");
-	}
-
-	const rules = policy.split(";");
-
-	let policy_in_json;
-
-	try
-	{
-		policy_in_json = rules.map (
-			(r) => {
-				return (parser.parse(r.trim()));
-			}
-		);
-	}
-	catch (x)
-	{
-		const err = String(x);
-		return END_ERROR (res, 400, "Syntax error in policy. " + err);
-	}
-
-	const email_domain	= provider_id.split("@")[1];
-	const sha1_of_email	= sha1(provider_id);
-
-	const provider_id_hash	= email_domain + "/" + sha1_of_email;
-
-	const base64policy	= base64(policy);
-
-	pool.query (
-
-		"SELECT 1 FROM policy WHERE id = $1::text LIMIT 1",
-		[
-			provider_id_hash,	// 1
-		],
-
-	(error, results) =>
-	{
-		if (error)
-			return END_ERROR (res, 500, "Internal error!", error);
-
-		let query;
-		let params;
-
-		if (results.rows.length > 0)
-		{
-			query	= "UPDATE policy"			+
-					" SET policy = $1::text,"	+
-					" policy_in_json = $2::jsonb,"	+
-					" previous_policy = policy,"	+
-					" last_updated = NOW(),"	+
-					" api_called_from = $3::text"	+
-					" WHERE id = $4::text";
-
-			params	= [
-				base64policy,				// 1
-				JSON.stringify(policy_in_json),		// 2
-				req.headers.origin,			// 3
-				provider_id_hash			// 4
-			];
-		}
-		else
-		{
-			query	= "INSERT INTO policy VALUES("	+
-					"$1::text,"		+
-					"$2::text,"		+
-					"$3::jsonb,"		+
-					"NULL,"			+
-					"NOW(),"		+
-					"$4::text"		+
-			")";
-
-			params	= [
-				provider_id_hash,			// 1
-				base64policy,				// 2
-				JSON.stringify(policy_in_json),		// 3
-				req.headers.origin			// 4
-			];
-		}
-
-		pool.query (query, params, (error_1, results_1) =>
-		{
-			if (error_1 || results_1.rowCount === 0)
-			{
-				return END_ERROR (
-					res, 500,
-						"Internal error!",
-						error_1
-				);
-			}
-
-			const details = {
-				"provider"  : provider_id,
-				"policy"    : rules
-			};
-
-			log("info", "CREATED_POLICY", true, details);
-
-			return END_SUCCESS (res);
-		});
-	});
 });
 
 app.post("/auth/v[1-2]/acl/append", (req, res) => {
