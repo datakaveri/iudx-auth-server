@@ -17,8 +17,9 @@ CREATE SCHEMA consent;
 GRANT ALL ON SCHEMA consent to postgres;
 GRANT USAGE ON SCHEMA consent TO auth;
 
-CREATE TYPE consent.status AS ENUM ('rejected', 'pending', 'approved');
-CREATE TYPE consent.role AS ENUM ('provider', 'consumer');
+CREATE TYPE consent.status_enum AS ENUM ('rejected', 'pending', 'approved');
+CREATE TYPE consent.role_enum 	AS ENUM ('data ingester', 'onboarder', 'consumer', 'provider', 'admin');
+CREATE TYPE consent.access_item AS ENUM ('resourcegroup');
 
 CREATE TABLE consent.organizations (
 
@@ -41,18 +42,25 @@ CREATE TABLE consent.users (
 	title		character varying				NOT NULL,
 	first_name 	character varying				NOT NULL,
 	last_name	character varying				NOT NULL,
-	type		consent.role					NOT NULL,
 	email		character varying				NOT NULL,
 	phone		character varying(10)				NOT NULL,
-	approved	consent.status					NOT NULL,
 	organization_id	integer REFERENCES consent.organizations(id)		,
 	created_at	timestamp without time zone			NOT NULL,
 	updated_at	timestamp without time zone			NOT NULL
 );
 
 CREATE UNIQUE INDEX idx_users_id ON consent.users(id);
-
 CREATE UNIQUE INDEX idx_users_email ON consent.users(email);
+
+CREATE TABLE consent.role (
+
+	id		integer GENERATED ALWAYS AS IDENTITY		PRIMARY KEY,
+	user_id		integer REFERENCES consent.users(id)		NOT NULL,
+	role		consent.role_enum				NOT NULL,
+	status		consent.status_enum				NOT NULL,
+	created_at	timestamp without time zone			NOT NULL,
+	updated_at	timestamp without time zone			NOT NULL
+);
 
 CREATE TABLE consent.certificates (
 
@@ -64,10 +72,38 @@ CREATE TABLE consent.certificates (
 	updated_at	timestamp without time zone			NOT NULL
 );
 
+CREATE TABLE consent.access (
+
+	id			integer GENERATED ALWAYS AS IDENTITY	PRIMARY KEY,
+	provider_id		integer REFERENCES consent.users(id)	NOT NULL,
+	role_id			integer REFERENCES consent.role(id)	ON DELETE SET NULL,
+	policy_text		character varying			NOT NULL,
+	access_item_id		integer 					,
+	access_item_type	consent.access_item				,
+	created_at		timestamp without time zone		NOT NULL,
+	updated_at		timestamp without time zone		NOT NULL
+);
+
+CREATE TABLE consent.resourcegroup (
+
+	id			integer GENERATED ALWAYS AS IDENTITY	PRIMARY KEY,
+	provider_id		integer REFERENCES consent.users(id)	NOT NULL,
+	cat_id			character varying			NOT NULL,
+	created_at		timestamp without time zone		NOT NULL,
+	updated_at		timestamp without time zone		NOT NULL
+);
+
 ALTER TABLE consent.organizations	OWNER TO postgres;
 ALTER TABLE consent.users		OWNER TO postgres;
+ALTER TABLE consent.role		OWNER TO postgres;
 ALTER TABLE consent.certificates	OWNER TO postgres;
+ALTER TABLE consent.access		OWNER TO postgres;
+ALTER TABLE consent.resourcegroup	OWNER TO postgres;
 
 GRANT SELECT,INSERT,UPDATE ON TABLE consent.organizations	 TO auth;
 GRANT SELECT,INSERT,UPDATE ON TABLE consent.users		 TO auth;
 GRANT SELECT,INSERT,UPDATE ON TABLE consent.certificates	 TO auth;
+
+GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE consent.role		 TO auth;
+GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE consent.resourcegroup TO auth;
+GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE consent.access	 TO auth;

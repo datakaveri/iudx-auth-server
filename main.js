@@ -94,11 +94,11 @@ const MIN_CERT_CLASS_REQUIRED	= Object.freeze ({
 	"/auth/v1/group/add"			: 3,
 	"/auth/v1/group/delete"			: 3,
 	"/auth/v1/group/list"			: 3,
-	"/auth/v1/admin/provider/registrations"	: 3,
-	"/auth/v1/admin/provider/registrations/status": 3,
+	"/auth/v1/admin/provider/registrations"		: -Infinity,
+	"/auth/v1/admin/provider/registrations/status"	: -Infinity,
 
 /* data provider's APIs */
-	"/consent/v1/provider/registration"	: true,
+	"/consent/v1/provider/registration"	: -Infinity,
 });
 
 /* --- environment variables--- */
@@ -858,6 +858,147 @@ function body_to_json (body)
 	{
 		return null;
 	}
+}
+
+/* ---
+  Check role/privilege of any registered user.
+  If user has particular role, return user ID.
+  Else return null.
+		--- */
+
+function check_privilege(email, role, callback)
+{
+	pool.query(" SELECT * FROM consent.users, consent.role" 		+
+		   " WHERE consent.users.id = consent.role.user_id "		+
+		   " AND consent.users.email = $1::text "			+
+		   " AND role = $2::consent.role_enum"				+
+		   " AND status = $3::consent.status_enum",
+			[
+				email,				//$1
+				role,				//$2
+				'approved'			//$3
+			],
+	(error, results) =>
+	{
+		if (error)
+			callback(error);
+		else if (results.rows.length === 0)
+			callback(null, null);
+		else
+			callback(null, results.rows[0].user_id);
+	});
+}
+
+/* ---
+  Set aperture policies for a specific provider
+  provider_id is email address of provider,
+  rules is an array of strings.
+		--- */
+
+function set_acl(provider_id, rules, callback)
+{
+
+	let policy_in_json;
+
+	try
+	{
+		policy_in_json = rules.map (
+			(r) => {
+				return (parser.parse(r.trim()));
+			}
+		);
+	}
+	catch (x)
+	{
+		let error = new Error("Syntax error in policy. ");
+		log("warn", "APERTURE_ERROR", false, {}, x.message);
+		error.http_code = 500;
+		callback(error);
+		return;
+	}
+
+	const email_domain	= provider_id.split("@")[1];
+	const sha1_of_email	= sha1(provider_id);
+
+	const provider_id_hash	= email_domain + "/" + sha1_of_email;
+
+	const base64policy	= base64(rules.join(";"));
+
+	pool.query (
+
+		"SELECT 1 FROM policy WHERE id = $1::text LIMIT 1",
+		[
+			provider_id_hash,	// 1
+		],
+
+	(error, results) =>
+	{
+		if (error)
+		{
+			let error = new Error("Internal error!");
+			error.http_code = 500;
+			callback(error);
+			return;
+		}
+
+		let query;
+		let params;
+
+		if (results.rows.length > 0)
+		{
+			query	= "UPDATE policy"			+
+					" SET policy = $1::text,"	+
+					" policy_in_json = $2::jsonb,"	+
+					" previous_policy = policy,"	+
+					" last_updated = NOW(),"	+
+					" api_called_from = $3::text"	+
+					" WHERE id = $4::text";
+
+			params	= [
+				base64policy,				// 1
+				JSON.stringify(policy_in_json),		// 2
+				null,					// 3
+				provider_id_hash			// 4
+			];
+		}
+		else
+		{
+			query	= "INSERT INTO policy VALUES("	+
+					"$1::text,"		+
+					"$2::text,"		+
+					"$3::jsonb,"		+
+					"NULL,"			+
+					"NOW(),"		+
+					"$4::text"		+
+			")";
+
+			params	= [
+				provider_id_hash,			// 1
+				base64policy,				// 2
+				JSON.stringify(policy_in_json),		// 3
+				null					// 4
+			];
+		}
+
+		pool.query (query, params, (error_1, results_1) =>
+		{
+			if (error_1 || results_1.rowCount === 0)
+			{
+				let error = new Error("Internal error!");
+				error.http_code = 500;
+				callback(error);
+				return;
+			}
+
+			const details = {
+				"provider"  : provider_id,
+				"policy"    : rules
+			};
+
+			log("info", "CREATED_POLICY", true, details);
+			callback(null);
+		});
+	});
 }
 
 /* ---
@@ -2561,101 +2702,14 @@ app.post("/auth/v[1-2]/acl/set", (req, res) => {
 
 	const rules = policy.split(";");
 
-	let policy_in_json;
-
-	try
+	set_acl(provider_id, rules, (err) =>
 	{
-		policy_in_json = rules.map (
-			(r) => {
-				return (parser.parse(r.trim()));
-			}
-		);
-	}
-	catch (x)
-	{
-		const err = String(x);
-		return END_ERROR (res, 400, "Syntax error in policy. " + err);
-	}
-
-	const email_domain	= provider_id.split("@")[1];
-	const sha1_of_email	= sha1(provider_id);
-
-	const provider_id_hash	= email_domain + "/" + sha1_of_email;
-
-	const base64policy	= base64(policy);
-
-	pool.query (
-
-		"SELECT 1 FROM policy WHERE id = $1::text LIMIT 1",
-		[
-			provider_id_hash,	// 1
-		],
-
-	(error, results) =>
-	{
-		if (error)
-			return END_ERROR (res, 500, "Internal error!", error);
-
-		let query;
-		let params;
-
-		if (results.rows.length > 0)
-		{
-			query	= "UPDATE policy"			+
-					" SET policy = $1::text,"	+
-					" policy_in_json = $2::jsonb,"	+
-					" previous_policy = policy,"	+
-					" last_updated = NOW(),"	+
-					" api_called_from = $3::text"	+
-					" WHERE id = $4::text";
-
-			params	= [
-				base64policy,				// 1
-				JSON.stringify(policy_in_json),		// 2
-				req.headers.origin,			// 3
-				provider_id_hash			// 4
-			];
-		}
+		if (err)
+			return END_ERROR (res, err.http_code, err.message);
 		else
-		{
-			query	= "INSERT INTO policy VALUES("	+
-					"$1::text,"		+
-					"$2::text,"		+
-					"$3::jsonb,"		+
-					"NULL,"			+
-					"NOW(),"		+
-					"$4::text"		+
-			")";
-
-			params	= [
-				provider_id_hash,			// 1
-				base64policy,				// 2
-				JSON.stringify(policy_in_json),		// 3
-				req.headers.origin			// 4
-			];
-		}
-
-		pool.query (query, params, (error_1, results_1) =>
-		{
-			if (error_1 || results_1.rowCount === 0)
-			{
-				return END_ERROR (
-					res, 500,
-						"Internal error!",
-						error_1
-				);
-			}
-
-			const details = {
-				"provider"  : provider_id,
-				"policy"    : rules
-			};
-
-			log("info", "CREATED_POLICY", true, details);
-
 			return END_SUCCESS (res);
-		});
 	});
+
 });
 
 app.post("/auth/v[1-2]/acl/append", (req, res) => {
@@ -3349,7 +3403,9 @@ app.get("/auth/v[1-2]/admin/provider/registrations", (req, res) => {
 	const filter = req.query.filter || "pending";
 	let users, organizations;
 	try {
-		users = pg.querySync("SELECT * FROM consent.users WHERE approved = $1::consent.status", [filter]);
+		users = pg.querySync("SELECT * FROM consent.users, consent.role" 		+
+				     " WHERE consent.users.id = consent.role.user_id "		+
+				     " AND status = $1::consent.status_enum", [filter]);
 		let organization_ids = [...new Set(users.map(row => row.organization_id))];
 		let params = organization_ids.map((_, i) => '$' + (i + 1)).join(',');
 		organizations = pg.querySync("SELECT * FROM consent.organizations WHERE id IN (" + params + ");", organization_ids);
@@ -3359,14 +3415,14 @@ app.get("/auth/v[1-2]/admin/provider/registrations", (req, res) => {
 	const result = users.map(user => {
 		const organization = organizations.filter(org => user.organization_id === org.id)[0] || null;
 		const res = {
-			id: user.id,
+			id: user.user_id,
 			title: user.title,
 			first_name: user.first_name,
 			last_name: user.last_name,
-			type: user.type,
+			role: user.role,
 			email: user.email,
 			phone: user.phone,
-			status: user.approved,
+			status: user.status,
 		};
 		if (organization === null) {
 			res.organization = null;
@@ -3392,31 +3448,33 @@ app.put("/auth/v[1-2]/admin/provider/registrations/status", (req, res) => {
 	if (user_id === null || status === null || !(["approved", "rejected"].includes(status))) {
 		return END_ERROR (res, 400, "Missing or invalid information");
 	}
-	let user, csr, org;
+	let user, csr, org, role;
 	try {
-		user = pg.querySync("SELECT * FROM consent.users WHERE id = $1::integer",[user_id])[0] || null;
+		user = pg.querySync("SELECT * FROM consent.users, consent.role "	+
+				    " WHERE consent.users.id = consent.role.user_id "	+
+				    " AND consent.users.id = $1::integer",[user_id])[0] || null;
 		csr = pg.querySync("SELECT * FROM consent.certificates WHERE user_id = $1::integer", [user_id])[0] || null;
 		org = pg.querySync("SELECT * FROM consent.organizations WHERE id = $1::integer", [user.organization_id])[0] || null;
 		if (user === null || csr === null) { return END_ERROR(res, 404, "User information not found"); }
-		if (user.approved !== "pending") { return END_ERROR (res, 400, "User registration flow is complete"); }
+		if (user.status !== "pending") { return END_ERROR (res, 400, "User registration flow is complete"); }
 	} catch (e) {
 		return END_ERROR (res, 400, "Missing or invalid information");
 	}
 
 	if (status === "rejected") {
-		// Update users table with approved = rejected and return updated user
-		user = pg.querySync("UPDATE consent.users SET approved = $1::consent.status, updated_at = NOW() WHERE " +
-			" id = $2::integer RETURNING *", [status, user.id])[0];
+		// Update role table with status = rejected and return updated user
+		role = pg.querySync("UPDATE consent.role SET status = $1::consent.status_enum, updated_at = NOW() "	+
+			" WHERE user_id = $2::integer RETURNING *", [status, user.id])[0];
 
 		return END_SUCCESS(res, {
 			id: user.id,
 			title: user.title,
 			first_name: user.first_name,
 			last_name: user.last_name,
-			type: user.type,
+			role: role.role,
 			email: user.email,
 			phone: user.phone,
-			status: user.approved,
+			status: role.status,
 		});
 	}
 
@@ -3428,10 +3486,11 @@ app.put("/auth/v[1-2]/admin/provider/registrations/status", (req, res) => {
 		return END_ERROR(res, 500, "Certificate Error", e.message);
 	}
 
-	// Update users table with approved = approved
+	// Update role table with status = approved
 	// Update certificates table with cert = signed_cert
-	pg.querySync("UPDATE consent.users SET approved = $1::consent.status WHERE id = $2::integer", [status, user_id]);
-	pg.querySync("UPDATE consent.certificates SET cert = $1::text WHERE id = $2::integer", [signed_cert, user_id]);
+	role = pg.querySync("UPDATE consent.role SET status = $1::consent.status_enum " +
+			    " WHERE user_id = $2::integer RETURNING *", [status, user_id])[0];
+	pg.querySync("UPDATE consent.certificates SET cert = $1::text WHERE user_id = $2::integer", [signed_cert, user_id]);
 	user = pg.querySync("SELECT * FROM consent.users WHERE id = $1::integer",[user_id])[0];
 
 	// Send email to user with cert attached and return updated user
@@ -3450,10 +3509,10 @@ app.put("/auth/v[1-2]/admin/provider/registrations/status", (req, res) => {
 		title: user.title,
 		first_name: user.first_name,
 		last_name: user.last_name,
-		type: user.type,
+		role: role.role,
 		email: user.email,
 		phone: user.phone,
-		status: user.approved,
+		status: role.status,
 	});
 });
 
@@ -3468,7 +3527,6 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 	const raw_csr	= res.locals.body.csr;
 	let org_id, user_id;
 	let real_domain;
-
 
 	const phone_regex = new RegExp(/^[9876]\d{9}$/);
 
@@ -3503,8 +3561,9 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 	try
 	{
 		const exists = await pool.query (
-			" SELECT approved FROM consent.users " +
-			" WHERE email = $1::text",
+			" SELECT status FROM consent.role, consent.users " 	+
+			" WHERE consent.role.user_id = consent.users.id " 	+
+			" AND email = $1::text AND role = 'provider'",
 			[ id ]);
 
 		if ( exists.rows.length !== 0)
@@ -3554,25 +3613,33 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 		const user = await pool.query (
 			" INSERT INTO consent.users "			+
 			" (title, first_name, last_name, "		+
-			" type, email, phone, approved, "		+
-			" organization_id, created_at, "		+
-			" updated_at) VALUES ( "			+
+			" email, phone, organization_id,  "		+
+			" created_at ,updated_at) VALUES ( "		+
 			" $1::text, $2::text, $3::text, "		+
-			" $4::consent.role, $5::text, $6::text, "	+
-			" $7::consent.status, $8::int, NOW(), NOW() )"	+
+			" $4::text, $5::text, $6::int, NOW(), NOW() )"	+
 			" RETURNING id",
 			[
 				name.title,			//$1
 				name.firstName,			//$2
 				name.lastName,			//$3
-				"provider",			//$4
-				id,				//$5
-				phone,				//$6
-				"pending",			//$7
-				org_id,				//$8
+				id,				//$4
+				phone,				//$5
+				org_id,				//$6
 			]);
 
 		user_id = user.rows[0].id;
+
+		const role = await pool.query (
+			" INSERT INTO consent.role "			+
+			" (user_id, role, status, created_at, "		+
+			" updated_at) VALUES ( "			+
+			" $1::int, $2::consent.role_enum, "		+
+			" $3::consent.status_enum, NOW(), NOW() )",
+			[
+				user_id,			//$1
+				'provider',			//$2
+				'pending',			//$3
+			]);
 
 		const cert = await pool.query (
 			" INSERT INTO consent.certificates "	+
@@ -3747,6 +3814,7 @@ else
 	drop_worker_privileges();
 
 	log("info", "WORKER_EVENT", false, {},"Worker started with pid " + process.pid);
+
 }
 
 // EOF
