@@ -3488,9 +3488,11 @@ app.put("/auth/v[1-2]/admin/provider/registrations/status", (req, res) => {
 
 	// Update role table with status = approved
 	// Update certificates table with cert = signed_cert
-	role = pg.querySync("UPDATE consent.role SET status = $1::consent.status_enum " +
-			    " WHERE user_id = $2::integer RETURNING *", [status, user_id])[0];
-	pg.querySync("UPDATE consent.certificates SET cert = $1::text WHERE user_id = $2::integer", [signed_cert, user_id]);
+	role = pg.querySync("UPDATE consent.role SET status = $1::consent.status_enum, "    +
+			    " updated_at = NOW() WHERE user_id = $2::integer RETURNING * "
+			    , [status, user_id])[0];
+	pg.querySync("UPDATE consent.certificates SET cert = $1::text, updated_at = NOW() " +
+		     " WHERE user_id = $2::integer", [signed_cert, user_id]);
 	user = pg.querySync("SELECT * FROM consent.users WHERE id = $1::integer",[user_id])[0];
 
 	// Send email to user with cert attached and return updated user
