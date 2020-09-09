@@ -19,7 +19,7 @@ GRANT USAGE ON SCHEMA consent TO auth;
 
 CREATE TYPE consent.status_enum AS ENUM ('rejected', 'pending', 'approved');
 CREATE TYPE consent.role_enum 	AS ENUM ('data ingester', 'onboarder', 'consumer', 'provider', 'admin');
-CREATE TYPE consent.access_item AS ENUM ('resourcegroup');
+CREATE TYPE consent.access_item AS ENUM ('resourcegroup', 'catalogue');
 
 CREATE TABLE consent.organizations (
 

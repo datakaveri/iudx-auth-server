@@ -71,6 +71,13 @@ const MAX_TOKEN_HASH_LEN	= 64;
 
 const MAX_SAFE_STRING_LEN	= 512;
 
+/* for access API */
+const ACCESS_ROLES		= ["data ingester", "consumer", "onboarder"];
+const RESOURCE_ITEM_TYPES	= ["resourcegroup"];
+const CAT_URL			= "catalogue.iudx.io";
+const CAT_API_RULE		= `${CAT_URL}/catalogue/crud`;
+const INGEST_API_RULE		= "/iudx/v1/adapter"
+
 const MIN_CERT_CLASS_REQUIRED	= Object.freeze ({
 
 /* resource server API */
@@ -96,6 +103,7 @@ const MIN_CERT_CLASS_REQUIRED	= Object.freeze ({
 	"/auth/v1/group/list"			: 3,
 	"/auth/v1/admin/provider/registrations"		: -Infinity,
 	"/auth/v1/admin/provider/registrations/status"	: -Infinity,
+	"/auth/v1/provider/access"			: -Infinity,
 
 /* data provider's APIs */
 	"/consent/v1/provider/registration"	: -Infinity,
@@ -866,27 +874,30 @@ function body_to_json (body)
   Else return null.
 		--- */
 
-function check_privilege(email, role, callback)
+async function check_privilege(email, role, callback)
 {
-	pool.query(" SELECT * FROM consent.users, consent.role" 		+
-		   " WHERE consent.users.id = consent.role.user_id "		+
-		   " AND consent.users.email = $1::text "			+
-		   " AND role = $2::consent.role_enum"				+
-		   " AND status = $3::consent.status_enum",
+	try
+	{
+		const result = await pool.query(
+					" SELECT * FROM consent.users, consent.role" 		+
+					" WHERE consent.users.id = consent.role.user_id "	+
+					" AND consent.users.email = $1::text "			+
+					" AND role = $2::consent.role_enum"			+
+					" AND status = $3::consent.status_enum",
 			[
 				email,				//$1
 				role,				//$2
 				'approved'			//$3
-			],
-	(error, results) =>
-	{
-		if (error)
-			callback(error);
-		else if (results.rows.length === 0)
-			callback(null, null);
-		else
-			callback(null, results.rows[0].user_id);
-	});
+			]);
+
+		if (result.rows.length === 0)
+			throw new Error("Invalid");
+
+		return result.rows[0].user_id;
+	}
+	catch(error) {
+		throw error;
+	}
 }
 
 /* ---
@@ -3391,6 +3402,197 @@ app.post("/auth/v[1-2]/certificate-info", (req, res) => {
 	};
 
 	return END_SUCCESS (res,response);
+});
+
+app.post("/auth/v[1-2]/provider/access", async (req, res) => {
+
+	const provider_email = res.locals.email;
+	let provider_uid, accesser_uid, access_item_id;
+	let rule, resource_name;
+	let rules_array = [];
+
+	try { provider_uid = await check_privilege(provider_email, "provider"); }
+	catch(error) { return END_ERROR (res, 403, "Not allowed!"); }
+
+	const email_domain	= provider_email.split("@")[1];
+	const sha1_of_email	= sha1(provider_email);
+	const provider_id_hash	= email_domain + "/" + sha1_of_email;
+
+	const accesser_email 	= res.locals.body.user_email;
+	const accesser_role	= res.locals.body.user_role;
+	const resource		= res.locals.body.item_id;
+	let res_type		= res.locals.body.item_type;
+
+	if (! accesser_email || ! accesser_role)
+		return END_ERROR (res, 403, "Invalid data");
+
+	if (! is_valid_email(accesser_email) || ! ACCESS_ROLES.includes(accesser_role))
+		return END_ERROR (res, 403, "Invalid data");
+
+	try { accesser_uid = await check_privilege(accesser_email, accesser_role); }
+	catch(error) { return END_ERROR (res, 404, "Invalid accesser"); }
+
+	if (accesser_role === "consumer" || accesser_role === "data ingester")
+	{
+		if (! resource || ! res_type)
+			return END_ERROR (res, 403, "Invalid data");
+
+		if ((resource.match(/\//g) || []).length < 3)
+			return END_ERROR (res, 403, "Invalid Resource ID");
+
+		if (! is_string_safe(resource, "*_") || resource.indexOf("..") >= 0)
+			return END_ERROR (res, 403, "Invalid Resource ID");
+
+		if (! resource.startsWith(provider_id_hash))
+			return END_ERROR (res, 403, "Invalid Resource ID");
+
+		if (! RESOURCE_ITEM_TYPES.includes(res_type))
+			return END_ERROR (res, 403, "Invalid type");
+
+		// create resource id that aperture expects
+		resource_name = resource.replace(provider_id_hash + "/", "");
+
+		// get access item id if it exists
+		try {
+			const result = await pool.query (
+				"SELECT id from consent." + res_type +
+				" WHERE cat_id = $1::text ",
+				[
+					resource
+				]);
+
+			if (result.rows.length !== 0)
+				access_item_id = result.rows[0].id;
+
+		}
+		catch(error)
+		{
+			return END_ERROR (res, 500, "Internal error!");
+		}
+	}
+
+	/* access_item_id for catalogue is 0 by default */
+	if (accesser_role === "onboarder")
+	{
+		access_item_id 	= -1;
+		res_type 	= "catalogue";
+	}
+
+	/* if rule exists for particular provider+accesser+role+
+	   resource/catalogue */
+	if (access_item_id)
+	{
+		try {
+			const result = await pool.query (
+				"SELECT * from consent.role, consent.access"		+
+				" WHERE consent.role.id = consent.access.role_id"	+
+				" AND access.provider_id = $1::integer"			+
+				" AND role.user_id = $2::integer"			+
+				" AND access.access_item_id = $3::integer"		+
+				" AND role.role = $4::consent.role_enum",
+			[
+				provider_uid,
+				accesser_uid,
+				access_item_id,
+				accesser_role
+			]);
+
+			if (result.rows.length !== 0)
+				return END_ERROR (res, 403, "Rule exists");
+		}
+		catch(error)
+		{
+			return END_ERROR (res, 500, "Internal error!");
+		}
+	}
+
+	switch (accesser_role)
+	{
+		case "onboarder":
+			rule = `${accesser_email} can access ${CAT_API_RULE}`
+			break;
+
+		case "data ingester":
+			rule = `${accesser_email} can access ${resource_name}/* if api = "${INGEST_API_RULE}"`
+			break;
+
+		case "consumer":
+			rule = `${accesser_email} can access ${resource_name}/*`
+			break;
+
+		default:
+			return END_ERROR (res, 500, "Internal error!");
+	}
+
+	try {
+		if (! access_item_id)
+		{
+			const access_item = await pool.query (
+				"INSERT INTO consent." + res_type 			+
+				" (provider_id, cat_id, created_at, updated_at) "	+
+				" VALUES ($1::integer, $2::text, NOW(), NOW())"		+
+				"RETURNING id",
+				[
+					provider_uid,
+					resource
+				]);
+
+			access_item_id = access_item.rows[0].id;
+		}
+
+		const role_id = await pool.query (
+			"SELECT id from consent.role WHERE"	+
+			" user_id = $1::integer "		+
+			" AND role = $2::consent.role_enum",
+			[
+				accesser_uid,
+				accesser_role
+			]);
+
+		const access = await pool.query (
+			"INSERT into consent.access (provider_id, "		+
+			" role_id, policy_text, access_item_id, "		+
+			" access_item_type, created_at, updated_at)"		+
+			" VALUES ($1::integer, $2::integer, "			+
+			" $3::text, $4::integer, $5::consent.access_item,"	+
+			" NOW(), NOW())",
+			[
+				provider_uid,
+				role_id.rows[0].id,
+				rule,
+				access_item_id,
+				res_type,
+			]);
+	}
+	catch(error)
+	{
+		return END_ERROR (res, 500, "Internal error!");
+	}
+
+	try {
+		const rules = await pool.query (
+			"SELECT policy_text FROM consent.access"	+
+			" WHERE provider_id = $1::integer",
+			[
+				provider_uid
+			]);
+
+		rules_array = rules.rows.map(
+				(row) => { return row['policy_text']; });
+	}
+	catch(error)
+	{
+		return END_ERROR (res, 500, "Internal error!");
+	}
+
+	set_acl(provider_email, rules_array, (err) =>
+	{
+		if (err)
+			return END_ERROR (res, err.http_code, err.message);
+		else
+			return END_SUCCESS (res);
+	});
+
 });
 
 /* --- Auth Admin APIs --- */
