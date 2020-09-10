@@ -159,4 +159,14 @@ class Auth():
                 return self.call("group/list", body)
         #
 
+        def provider_access(self, email, role, res = None, res_type = None):
+        #
+                body = {'user_email' : email,
+                        'user_role' : role,
+                        'item_id'   : res,
+                        'item_type' : res_type
+                        }
+
+                return self.call("provider/access", body)
+        #
 #}
