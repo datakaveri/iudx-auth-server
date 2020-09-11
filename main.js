@@ -76,7 +76,7 @@ const ACCESS_ROLES		= ["data ingester", "consumer", "onboarder"];
 const RESOURCE_ITEM_TYPES	= ["resourcegroup"];
 const CAT_URL			= "catalogue.iudx.io";
 const CAT_API_RULE		= `${CAT_URL}/catalogue/crud`;
-const INGEST_API_RULE		= "/iudx/v1/adapter"
+const INGEST_API_RULE		= "/iudx/v1/adapter";
 
 const MIN_CERT_CLASS_REQUIRED	= Object.freeze ({
 
@@ -103,10 +103,12 @@ const MIN_CERT_CLASS_REQUIRED	= Object.freeze ({
 	"/auth/v1/group/list"			: 3,
 	"/auth/v1/admin/provider/registrations"		: -Infinity,
 	"/auth/v1/admin/provider/registrations/status"	: -Infinity,
+	"/auth/v1/admin/organizations"		: -Infinity,
 	"/auth/v1/provider/access"			: -Infinity,
 
 /* data provider's APIs */
 	"/consent/v1/provider/registration"	: -Infinity,
+	"/consent/v1/organizations"	: -Infinity,
 });
 
 /* --- environment variables--- */
@@ -218,7 +220,7 @@ app.use(
 					{
 						callback (
 							null,
-							origin ? true : false
+							!!origin
 						);
 					}
 	})
@@ -554,10 +556,9 @@ function is_valid_email (email)
 		}
 	}
 
-	if (num_dots < 1)
-		return false;
+	return num_dots >= 1;
 
-	return true;
+
 }
 
 function is_certificate_ok (req, cert, validate_email)
@@ -1062,7 +1063,6 @@ function parse_cert_header(req, res, next)
 	catch(error)
 	{
 		return END_ERROR(res, 403, "Error in parsing certificate");
-		log("err", "CERT_PARSE", false, {}, error);
 	}
 
 	cert.subject   = change_cert_keys(cert.subject);
@@ -3509,15 +3509,15 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 	switch (accesser_role)
 	{
 		case "onboarder":
-			rule = `${accesser_email} can access ${CAT_API_RULE}`
+			rule = `${accesser_email} can access ${CAT_API_RULE}`;
 			break;
 
 		case "data ingester":
-			rule = `${accesser_email} can access ${resource_name}/* if api = "${INGEST_API_RULE}"`
+			rule = `${accesser_email} can access ${resource_name}/* if api = "${INGEST_API_RULE}"`;
 			break;
 
 		case "consumer":
-			rule = `${accesser_email} can access ${resource_name}/*`
+			rule = `${accesser_email} can access ${resource_name}/*`;
 			break;
 
 		default:
@@ -3691,8 +3691,8 @@ app.put("/auth/v[1-2]/admin/provider/registrations/status", (req, res) => {
 	// Update role table with status = approved
 	// Update certificates table with cert = signed_cert
 	role = pg.querySync("UPDATE consent.role SET status = $1::consent.status_enum, "    +
-			    " updated_at = NOW() WHERE user_id = $2::integer RETURNING * "
-			    , [status, user_id])[0];
+			    " updated_at = NOW() WHERE user_id = $2::integer RETURNING * ",
+			     [status, user_id])[0];
 	pg.querySync("UPDATE consent.certificates SET cert = $1::text, updated_at = NOW() " +
 		     " WHERE user_id = $2::integer", [signed_cert, user_id]);
 	user = pg.querySync("SELECT * FROM consent.users WHERE id = $1::integer",[user_id])[0];
@@ -3720,6 +3720,40 @@ app.put("/auth/v[1-2]/admin/provider/registrations/status", (req, res) => {
 	});
 });
 
+app.post("/auth/v[1-2]/admin/organizations", async (req, res) => {
+	const email = res.locals.email;
+	if (!admin_list.includes(email)) {
+		return END_ERROR (res, 403, "Not allowed");
+	}
+	const org = res.locals.body.organization;
+	let real_domain;
+	if (!org || !org.name || !org.website || !org.city || !org.state || !org.country)
+		return END_ERROR (res, 403, "Invalid data (organization)");
+	if ( org.state.length !== 2 || org.country.length !== 2)
+		return END_ERROR (res, 403, "Invalid data (organization)");
+	if ((real_domain = domain.get(org.website)) === null)
+		return END_ERROR (res, 403, "Invalid data (organization)");
+
+	const existing_orgs = await pool.query ("SELECT id FROM consent.organizations WHERE website = $1::text", [real_domain]);
+	if (existing_orgs.rows.length !== 0)
+		return END_ERROR (res, 403, `Invalid data (organization already exists, id: ${existing_orgs.rows[0].id})`);
+
+	const new_org = await pool.query (
+		"INSERT INTO consent.organizations (name, website, city, state, country, created_at, updated_at) " +
+		"VALUES ($1::text,  $2::text, $3::text, $4::text, $5::text, NOW(), NOW()) " +
+		"RETURNING id, name, website, city, state, country, created_at",
+		[
+			org.name,				//$1
+			real_domain,			//$2
+			org.city,				//$3
+			org.state.toUpperCase(),		//$4
+			org.country.toUpperCase()		//$5
+		]
+	);
+
+	return END_SUCCESS(res, { organizations: new_org.rows });
+});
+
 /* --- Consent APIs --- */
 
 app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
@@ -3737,8 +3771,8 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 	if (! name || ! name.title || ! name.firstName || ! name.lastName)
 		return END_ERROR (res, 403, "Invalid data (name)");
 
-	if (! org || ! org.name || ! org.website || ! org.city
-		|| ! org.state || ! org.country)
+	if (! org || ! org.name || ! org.website || ! org.city ||
+		! org.state || ! org.country)
 		return END_ERROR (res, 403, "Invalid data (organization)");
 
 	if ( org.state.length !== 2 || org.country.length !== 2)
@@ -3880,6 +3914,11 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 
 	return END_SUCCESS (res);
 
+});
+
+app.get("/consent/v[1-2]/organizations", async (req, res) => {
+	let { rows } = await pool.query("SELECT id, name FROM consent.organizations");
+	return END_SUCCESS(res, { organizations: rows });
 });
 
 /* --- Invalid requests --- */
