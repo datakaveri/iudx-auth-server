@@ -77,3 +77,17 @@ def provider_reg(email, phone, name, organization, csr):
 
         return call("provider/registration", body)
 #
+
+def role_reg(email, phone, name, roles, org_id = None, csr = None):
+#
+        body = { 
+                    "email"             : email,
+                    "phone"             : phone,
+                    "name"              : name,
+                    "organization"   : org_id,
+                    "csr"               : csr,
+                    "roles"             : roles
+                }
+
+        return call("/registration", body)
+#
