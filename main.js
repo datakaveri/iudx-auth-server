@@ -219,7 +219,7 @@ app.use(
 					{
 						callback (
 							null,
-							origin ? true : false
+							!!origin
 						);
 					}
 	})
@@ -555,10 +555,9 @@ function is_valid_email (email)
 		}
 	}
 
-	if (num_dots < 1)
-		return false;
+	return num_dots >= 1;
 
-	return true;
+
 }
 
 function is_certificate_ok (req, cert, validate_email)
@@ -1063,7 +1062,6 @@ function parse_cert_header(req, res, next)
 	catch(error)
 	{
 		return END_ERROR(res, 403, "Error in parsing certificate");
-		log("err", "CERT_PARSE", false, {}, error);
 	}
 
 	cert.subject   = change_cert_keys(cert.subject);
@@ -3510,15 +3508,15 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 	switch (accesser_role)
 	{
 		case "onboarder":
-			rule = `${accesser_email} can access ${CAT_API_RULE}`
+			rule = `${accesser_email} can access ${CAT_API_RULE}`;
 			break;
 
 		case "data ingester":
-			rule = `${accesser_email} can access ${resource_name}/* if api = "${INGEST_API_RULE}"`
+			rule = `${accesser_email} can access ${resource_name}/* if api = "${INGEST_API_RULE}"`;
 			break;
 
 		case "consumer":
-			rule = `${accesser_email} can access ${resource_name}/*`
+			rule = `${accesser_email} can access ${resource_name}/*`;
 			break;
 
 		default:
@@ -3692,8 +3690,8 @@ app.put("/auth/v[1-2]/admin/provider/registrations/status", (req, res) => {
 	// Update role table with status = approved
 	// Update certificates table with cert = signed_cert
 	role = pg.querySync("UPDATE consent.role SET status = $1::consent.status_enum, "    +
-			    " updated_at = NOW() WHERE user_id = $2::integer RETURNING * "
-			    , [status, user_id])[0];
+			    " updated_at = NOW() WHERE user_id = $2::integer RETURNING * ",
+			     [status, user_id])[0];
 	pg.querySync("UPDATE consent.certificates SET cert = $1::text, updated_at = NOW() " +
 		     " WHERE user_id = $2::integer", [signed_cert, user_id]);
 	user = pg.querySync("SELECT * FROM consent.users WHERE id = $1::integer",[user_id])[0];
@@ -3738,8 +3736,8 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 	if (! name || ! name.title || ! name.firstName || ! name.lastName)
 		return END_ERROR (res, 403, "Invalid data (name)");
 
-	if (! org || ! org.name || ! org.website || ! org.city
-		|| ! org.state || ! org.country)
+	if (! org || ! org.name || ! org.website || ! org.city ||
+		! org.state || ! org.country)
 		return END_ERROR (res, 403, "Invalid data (organization)");
 
 	if ( org.state.length !== 2 || org.country.length !== 2)
