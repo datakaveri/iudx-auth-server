@@ -106,9 +106,10 @@ const MIN_CERT_CLASS_REQUIRED	= Object.freeze ({
 	"/auth/v1/admin/organizations"		: -Infinity,
 	"/auth/v1/provider/access"			: -Infinity,
 
-/* data provider's APIs */
+/* consent APIs */
 	"/consent/v1/provider/registration"	: -Infinity,
-	"/consent/v1/organizations"	: -Infinity,
+	"/consent/v1/organizations"		: -Infinity,
+	"/consent/v1/registration"		: -Infinity
 });
 
 /* --- environment variables--- */
@@ -3914,6 +3915,235 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 
 	return END_SUCCESS (res);
 
+});
+
+app.post("/consent/v[1-2]/registration", async (req, res) => {
+
+	const email	= res.locals.body.email.toLowerCase();
+	const phone 	= res.locals.body.phone;
+	const name 	= res.locals.body.name;
+	const raw_csr	= res.locals.body.csr;
+	let org_id 	= res.locals.body.organization_id;
+	let roles	= res.locals.body.roles;
+
+	let user_id, signed_cert = null;
+	let check_orgid;
+	var existing_user = false;
+
+	const phone_regex = new RegExp(/^[9876]\d{9}$/);
+
+	if (! name || ! name.title || ! name.firstName || ! name.lastName)
+		return END_ERROR (res, 403, "Invalid data (name)");
+
+	if (! is_valid_email(email) || ! phone_regex.test(phone))
+		return END_ERROR (res, 403, "Invalid data (email/phone)");
+
+	if (! Array.isArray(roles) || roles.length === 0)
+		return END_ERROR (res, 403, "Invalid data (roles)");
+
+	// get unique elements
+	roles = [...new Set(roles)];
+
+	if (! roles.every( (val) => ACCESS_ROLES.includes(val)))
+		return END_ERROR (res, 403, "Invalid data (roles)");
+
+	if (roles.includes("onboarder") || roles.includes("data ingester"))
+	{
+		let domain;
+
+		if (! org_id)
+			return END_ERROR (res, 403, "Invalid data (organization ID)");
+
+		org_id = parseInt(org_id, 10);
+
+		if (isNaN(org_id) || org_id < 1)
+			return END_ERROR (res, 403, "Invalid data (organization ID)");
+
+		// check if org registered
+		try {
+			const results = await pool.query (
+				" SELECT * FROM consent.organizations " +
+				" WHERE id = $1::integer",
+				[ org_id ]);
+
+			if (results.rows.length === 0)
+				return END_ERROR (res, 404, "Organization not registered");
+
+			domain = results.rows[0].website;
+		}
+		catch(error)
+		{
+			return END_ERROR (res, 500, "Internal error!", error);
+		}
+
+		let email_domain = email.split('@')[1];
+
+		// check if org domain matches email domain
+		if (email_domain !== domain)
+			return END_ERROR (res, 403, "Invalid data (email)");
+	}
+	else
+		org_id = null; // in the case of consumer
+
+	try { // check if a user exists
+
+		const check_uid = await pool.query (
+			" SELECT * FROM consent.users" 		+
+			" WHERE consent.users.email = $1::text ",
+			[ email ]);
+
+		if (check_uid.rows.length !== 0)
+		{
+			existing_user = true;
+			user_id = check_uid.rows[0].id;
+			check_orgid = check_uid.rows[0].organization_id
+		}
+	}
+	catch(error)
+	{
+		return END_ERROR (res, 500, "Internal error!", error);
+	}
+
+	if (existing_user)
+	{
+		for (const val of roles)
+		{
+			let uid = null;
+
+			try { uid = await check_privilege(email, val); }
+			catch(error) { /* do nothing if role not there */ }
+
+			if (uid !== null)
+				return END_ERROR (res, 403, "Already registered as " + val);
+		};
+
+	}
+	else	// create user
+	{
+		if (! raw_csr || raw_csr.length > CSR_SIZE)
+			return END_ERROR (res, 403, "Invalid data (csr)");
+
+		try
+		{
+			let csr = forge.pki.certificationRequestFromPem(raw_csr);
+		}
+		catch(error)
+		{
+			return END_ERROR (res, 403, "Invalid data (csr)");
+		}
+
+		let user_details = { email : email };
+
+		try {
+			signed_cert = sign_csr(raw_csr, user_details);
+			if (signed_cert === null) { throw "Unable to generate certificate"; }
+		} catch (e) {
+			return END_ERROR(res, 500, "Certificate Error", e.message);
+		}
+
+		try {
+
+			const user = await pool.query (
+				" INSERT INTO consent.users "			+
+				" (title, first_name, last_name, "		+
+				" email, phone, organization_id,  "		+
+				" created_at ,updated_at) VALUES ( "		+
+				" $1::text, $2::text, $3::text, "		+
+				" $4::text, $5::text, $6::int, NOW(), NOW() )"	+
+				" RETURNING id",
+				[
+					name.title,			//$1
+					name.firstName,			//$2
+					name.lastName,			//$3
+					email,				//$4
+					phone,				//$5
+					org_id,				//$6
+				]);
+
+			user_id = user.rows[0].id;
+
+			const cert = await pool.query (
+				" INSERT INTO consent.certificates "	+
+				" (user_id, csr, cert, created_at, "	+
+				" updated_at) VALUES ( "		+
+				" $1::int, $2::text, $3::text, "	+
+				" NOW(), NOW() )",
+				[
+					user_id,			//$1
+					raw_csr,			//$2
+					signed_cert,			//$3
+				]);
+		}
+		catch(error)
+		{
+			return END_ERROR (res, 500, "Internal error!", error);
+		}
+	}
+
+	// update org_id if the user was originally a consumer
+	if (check_orgid === undefined)
+	{
+		try
+		{
+			const update = await pool.query (
+				"UPDATE consent.users SET"		+
+				" organization_id = $1::integer"	+
+				" WHERE email = $2::text",
+				[
+					org_id,
+					email
+				]);
+		}
+		catch(error)
+		{
+			return END_ERROR (res, 500, "Internal error!", error);
+		}
+	}
+
+	// insert roles
+	for (const val of roles)
+	{
+		try {
+			const role = await pool.query (
+				" INSERT INTO consent.role "			+
+				" (user_id, role, status, created_at, "		+
+				" updated_at) VALUES ( "			+
+				" $1::int, $2::consent.role_enum, "		+
+				" $3::consent.status_enum, NOW(), NOW() )",
+				[
+					user_id,			//$1
+					val,				//$2
+					'approved',			//$3
+				]);
+		}
+		catch(error)
+		{
+			return END_ERROR (res, 500, "Internal error!", error);
+		}
+	}
+
+	if (signed_cert !== null)
+	{
+		const mail = {
+			from: '"IUDX Admin" <noreply@iudx.org.in>',
+			to: email,
+			subject: "New " + roles.toString() + " Registration",
+			text: "Congratulations! Your IUDX " + roles.toString() +
+			" Registration is complete.\n\n" +
+			"Please use the attached cert.pem file for all future API calls.\n\n" +
+			"Thank You!",
+			attachments: [{ filename: "cert.pem", content: signed_cert }],
+		};
+
+		transporter.sendMail(mail, function (error, info) {
+			if (error)
+				log("err", "MAILER_EVENT", true, {}, error.toString());
+			else
+				log("info", "MAIL_SENT", false, info);
+		});
+	}
+
+	return END_SUCCESS (res);
 });
 
 app.get("/consent/v[1-2]/organizations", async (req, res) => {
