@@ -1492,7 +1492,7 @@ function to_array (o)
 
 function sign_csr(raw_csr, user)
 {
-	const cert_class = user.type === "provider" ? "class:3" : "class2";
+	const cert_class = user.role === "provider" ? "class:3" : "class2";
 	forge.pki.oids['id-qt-unotice'] = '1.3.6.1.5.5.7.2.2';
 	const csr = forge.pki.certificationRequestFromPem(raw_csr);
 	if (!csr.verify()) { return null; }
