@@ -3759,33 +3759,30 @@ app.post("/auth/v[1-2]/admin/organizations", async (req, res) => {
 
 app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 
-	const id	= res.locals.body.email;
+	const email	= res.locals.body.email.toLowerCase();
 	const phone 	= res.locals.body.phone;
-	const org 	= res.locals.body.organization;
+	let org_id 	= res.locals.body.organization;
 	const name 	= res.locals.body.name;
 	const raw_csr	= res.locals.body.csr;
-	let org_id, user_id;
-	let real_domain;
+	let  user_id;
 
 	const phone_regex = new RegExp(/^[9876]\d{9}$/);
 
 	if (! name || ! name.title || ! name.firstName || ! name.lastName)
 		return END_ERROR (res, 403, "Invalid data (name)");
 
-	if (! org || ! org.name || ! org.website || ! org.city ||
-		! org.state || ! org.country)
-		return END_ERROR (res, 403, "Invalid data (organization)");
-
-	if ( org.state.length !== 2 || org.country.length !== 2)
-		return END_ERROR (res, 403, "Invalid data (organization)");
-
 	if (! raw_csr || raw_csr.length > CSR_SIZE)
 		return END_ERROR (res, 403, "Invalid data (csr)");
 
-	if (! is_valid_email(id) || ! phone_regex.test(phone))
+	if (! is_valid_email(email) || ! phone_regex.test(phone))
 		return END_ERROR (res, 403, "Invalid data (email/phone)");
 
-	if ( (real_domain = domain.get(org.website)) === null)
+	if (! org_id)
+		return END_ERROR (res, 403, "Invalid data (organization)");
+
+	org_id = parseInt(org_id, 10);
+
+	if (isNaN(org_id) || org_id < 1)
 		return END_ERROR (res, 403, "Invalid data (organization)");
 
 	try
@@ -3800,52 +3797,24 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 	try
 	{
 		const exists = await pool.query (
-			" SELECT status FROM consent.role, consent.users " 	+
-			" WHERE consent.role.user_id = consent.users.id " 	+
-			" AND email = $1::text AND role = 'provider'",
-			[ id ]);
+			" SELECT * FROM consent.users " 	+
+			" WHERE email = $1::text",
+			[ email ]);
 
 		if ( exists.rows.length !== 0)
 			return END_ERROR (res, 403, "Email exists");
 
-		const results = await pool.query (
-			" SELECT id FROM consent.organizations " +
-			" WHERE website = $1::text",
-			[ real_domain ]);
+		const org_reg = await pool.query (
+			" SELECT * FROM consent.organizations " +
+			" WHERE id = $1::integer",
+			[ org_id ]);
 
-		if ( results.rows.length !== 0)
-			org_id = results.rows[0].id;
+		if (org_reg.rows.length === 0)
+			return END_ERROR (res, 404, "Organization not registered");
 	}
 	catch(error)
 	{
 		return END_ERROR (res, 500, "Internal error!", error);
-	}
-
-	if (! org_id)
-	{
-		try {
-
-		const results = await pool.query (
-			" INSERT INTO consent.organizations " 		+
-			" (name, website, city, state, country, " 	+
-			" created_at, updated_at) VALUES ("		+
-			" $1::text,  $2::text, "			+
-			" $3::text, $4::text, $5::text, "		+
-			" NOW(), NOW() ) RETURNING id",
-			[
-				org.name,				//$1
-				real_domain,				//$2
-				org.city,				//$3
-				org.state.toUpperCase(),		//$4
-				org.country.toUpperCase()		//$5
-			]);
-
-			org_id = results.rows[0].id;
-		}
-		catch(error)
-		{
-			return END_ERROR (res, 500, "Internal error!", error);
-		}
 	}
 
 	try {
@@ -3861,7 +3830,7 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 				name.title,			//$1
 				name.firstName,			//$2
 				name.lastName,			//$3
-				id,				//$4
+				email,				//$4
 				phone,				//$5
 				org_id,				//$6
 			]);
@@ -3898,8 +3867,8 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 	}
 
 	const mail = {
-		from	: 'DataKaveri <no-reply@dk.org>',
-		to	: id,
+		from: '"IUDX Admin" <noreply@iudx.org.in>',
+		to	: email,
 		subject	: "Provider Registration Successful !!!",
 		text	: " Hello " + name.firstName + ". Your"		+
 			  " provider registration request has been" 	+
