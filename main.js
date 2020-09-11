@@ -3923,7 +3923,7 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 	const phone 	= res.locals.body.phone;
 	const name 	= res.locals.body.name;
 	const raw_csr	= res.locals.body.csr;
-	let org_id 	= res.locals.body.organization_id;
+	let org_id 	= res.locals.body.organization;
 	let roles	= res.locals.body.roles;
 
 	let user_id, signed_cert = null;
@@ -3952,12 +3952,12 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 		let domain;
 
 		if (! org_id)
-			return END_ERROR (res, 403, "Invalid data (organization ID)");
+			return END_ERROR (res, 403, "Invalid data (organization)");
 
 		org_id = parseInt(org_id, 10);
 
 		if (isNaN(org_id) || org_id < 1)
-			return END_ERROR (res, 403, "Invalid data (organization ID)");
+			return END_ERROR (res, 403, "Invalid data (organization)");
 
 		// check if org registered
 		try {
