@@ -103,6 +103,7 @@ const MIN_CERT_CLASS_REQUIRED	= Object.freeze ({
 	"/auth/v1/group/list"			: 3,
 	"/auth/v1/admin/provider/registrations"		: -Infinity,
 	"/auth/v1/admin/provider/registrations/status"	: -Infinity,
+	"/auth/v1/admin/organizations"		: -Infinity,
 	"/auth/v1/provider/access"			: -Infinity,
 
 /* data provider's APIs */
@@ -3717,6 +3718,40 @@ app.put("/auth/v[1-2]/admin/provider/registrations/status", (req, res) => {
 		phone: user.phone,
 		status: role.status,
 	});
+});
+
+app.post("/auth/v[1-2]/admin/organizations", async (req, res) => {
+	const email = res.locals.email;
+	if (!admin_list.includes(email)) {
+		return END_ERROR (res, 403, "Not allowed");
+	}
+	const org = res.locals.body.organization;
+	let real_domain;
+	if (!org || !org.name || !org.website || !org.city || !org.state || !org.country)
+		return END_ERROR (res, 403, "Invalid data (organization)");
+	if ( org.state.length !== 2 || org.country.length !== 2)
+		return END_ERROR (res, 403, "Invalid data (organization)");
+	if ((real_domain = domain.get(org.website)) === null)
+		return END_ERROR (res, 403, "Invalid data (organization)");
+
+	const existing_orgs = await pool.query ("SELECT id FROM consent.organizations WHERE website = $1::text", [real_domain]);
+	if (existing_orgs.rows.length !== 0)
+		return END_ERROR (res, 403, `Invalid data (organization already exists, id: ${existing_orgs.rows[0].id})`);
+
+	const new_org = await pool.query (
+		"INSERT INTO consent.organizations (name, website, city, state, country, created_at, updated_at) " +
+		"VALUES ($1::text,  $2::text, $3::text, $4::text, $5::text, NOW(), NOW()) " +
+		"RETURNING id, name, website, city, state, country, created_at",
+		[
+			org.name,				//$1
+			real_domain,			//$2
+			org.city,				//$3
+			org.state.toUpperCase(),		//$4
+			org.country.toUpperCase()		//$5
+		]
+	);
+
+	return END_SUCCESS(res, { organizations: new_org.rows });
 });
 
 /* --- Consent APIs --- */
