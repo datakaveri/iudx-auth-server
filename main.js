@@ -76,7 +76,7 @@ const ACCESS_ROLES		= ["data ingester", "consumer", "onboarder"];
 const RESOURCE_ITEM_TYPES	= ["resourcegroup"];
 const CAT_URL			= "catalogue.iudx.io";
 const CAT_API_RULE		= `${CAT_URL}/catalogue/crud`;
-const INGEST_API_RULE		= "/iudx/v1/adapter"
+const INGEST_API_RULE		= "/iudx/v1/adapter";
 
 const MIN_CERT_CLASS_REQUIRED	= Object.freeze ({
 
@@ -107,6 +107,7 @@ const MIN_CERT_CLASS_REQUIRED	= Object.freeze ({
 
 /* data provider's APIs */
 	"/consent/v1/provider/registration"	: -Infinity,
+	"/consent/v1/organizations"	: -Infinity,
 });
 
 /* --- environment variables--- */
@@ -3880,6 +3881,11 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 
 	return END_SUCCESS (res);
 
+});
+
+app.get("/consent/v[1-2]/organizations", async (req, res) => {
+	let { rows } = await pool.query("SELECT id, name FROM consent.organizations");
+	return END_SUCCESS(res, { organizations: rows });
 });
 
 /* --- Invalid requests --- */
