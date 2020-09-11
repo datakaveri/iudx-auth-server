@@ -89,11 +89,38 @@ r = role_reg(email, '9454234223', name , ["onboarder", "data ingester", "consume
 assert r['success']     == True
 assert r['status_code'] == 200
 
-website = ''.join(random.choice(string.ascii_lowercase) for _ in range(8)) + '.com'
+new_website = ''.join(random.choice(string.ascii_lowercase) for _ in range(8)) + '.com'
+new_org_id  = add_organization(new_website)
 
-new_org_id = add_organization(website)
-
-# onboarder, ingester cannot register with new org with old email
-r = role_reg(email, '9454234223', name , ["onboarder", "data ingester"], org_id, csr)
+# onboarder, ingester cannot register with org using different domain email
+r = role_reg(email, '9454234223', name , ["onboarder", "data ingester"], new_org_id, csr)
 assert r['success']     == False
 assert r['status_code'] == 403
+
+#### tests with provider role ####
+
+# cannot register because the email was used for lesser role registration
+r = provider_reg(email, '9454234223', name , org_id, csr)
+assert r['success']     == False
+assert r['status_code'] == 403
+
+email_name      = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(6))
+provider_email  = email_name + '@' + website
+
+# provider registers with fresh email
+r = provider_reg(provider_email, '9454234223', name , org_id, csr)
+assert r['success']     == True
+assert r['status_code'] == 200
+
+# provider can get all other roles
+r = role_reg(provider_email, '9454234223', name , ["data ingester"], org_id, csr)
+assert r['success']     == True
+assert r['status_code'] == 200
+
+r = role_reg(provider_email, '9454234223', name , ["onboarder"], org_id, csr)
+assert r['success']     == True
+assert r['status_code'] == 200
+
+r = role_reg(provider_email, '9454234223', name , ["consumer"], org_id, csr)
+assert r['success']     == True
+assert r['status_code'] == 200
