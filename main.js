@@ -413,25 +413,6 @@ function log(level, type, notify, details, message = null)
         log_file.write(output + '\n');
 }
 
-function SERVE_HTML (req,res)
-{
-	const path	= req.url.split("?")[0];
-	const page	= STATIC_PAGES[path];
-
-	if (! page)
-		return false;
-
-	const split	= path.split(".");
-	const extension	= split[split.length - 1].toLowerCase();
-
-	const mime	= MIME_TYPE[extension] || "text/html";
-
-	res.setHeader("Content-Type", mime);
-	res.status(200).end(page);
-
-	return true;
-}
-
 function END_SUCCESS (res, response = null)
 {
 	// if no response is given, just send success
@@ -4132,10 +4113,7 @@ app.all("/*", (req, res) => {
 	}
 	else if (req.method === "GET")
 	{
-		if (! SERVE_HTML(req,res))
-		{
-			return END_ERROR (res, 404, "Page not found." + doc);
-		}
+		return END_ERROR (res, 404, "No such API." + doc );
 	}
 	else
 	{
