@@ -3577,6 +3577,88 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 
 });
 
+app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
+
+	const email = res.locals.email;
+	let provider_uid, rules;
+	var item_details = [];
+
+	try { provider_uid = await check_privilege(email, "provider"); }
+	catch(error) { return END_ERROR (res, 403, "Not allowed"); }
+
+	try {
+		let result = await pool.query (
+			"SELECT a.id, a.created_at, a.updated_at, "		+
+			" a.policy_text, a.access_item_type, a.access_item_id,"	+
+			" email, role FROM consent.access as a, "		+
+			" consent.users, consent.role "				+
+			" WHERE a.role_id = role.id "				+
+			" AND role.user_id = users.id "				+
+			" AND a.provider_id = $1::integer",
+			[ provider_uid ]);
+
+		rules = result.rows;
+	}
+	catch(error)
+	{
+		return END_ERROR (res, 500, "Internal error!", error);
+	}
+
+	const access_items = [...new Set(rules.map((obj) => obj.access_item_type ))];
+
+	for (const item of access_items)
+	{
+		if (item === "catalogue") continue;
+
+		try {
+			const result = await pool.query (
+				"SELECT * FROM consent." + item + " as type, "	+
+				" consent.access"	+
+				" WHERE access_item_type = '" + item +"'"	+
+				" AND access_item_id = type.id"	+
+				" AND access.provider_id = $1::integer",
+				[ provider_uid ]);
+
+			item_details = [...item_details, ...result.rows];
+
+		}
+		catch(error)
+		{
+			return END_ERROR (res, 500, "Internal error!", error);
+		}
+
+	}
+
+	const result = rules.map (rule => {
+
+		const filter_item = item_details.filter (item =>
+			item.access_item_type === rule.access_item_type &&
+				item.access_item_id === rule.access_item_id)[0] || null;
+
+		let response =  {
+			id		: rule.id,
+			email		: rule.email,
+			role		: rule.role,
+			item_type 	: rule.access_item_type,
+			item 		: null,
+			policy 		: rule.policy_text,
+			created		: rule.created_at
+		};
+
+		if (filter_item !== null)
+		{
+			response.item = {
+				cat_id : filter_item.cat_id
+			};
+		}
+
+		return response;
+	});
+
+	return END_SUCCESS (res, result);
+});
+
+
 /* --- Auth Admin APIs --- */
 
 app.get("/auth/v[1-2]/admin/provider/registrations", (req, res) => {
