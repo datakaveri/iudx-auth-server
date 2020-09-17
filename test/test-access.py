@@ -1,18 +1,21 @@
 from init import untrusted
 from init import consumer
 from access import *
+from consent import role_reg
 
-init()
+init_provider()
 
 # use consumer certificate to register
 email   = "barun@iisc.ac.in"
-r       = provider_reg(email, '7529547992', name , org, csr)
+assert reset_role(email) == True
+org_id = add_organization("iisc.ac.in")
 
-# delete all old policies
+# delete all old policies using acl/set API
 policy = "x can access x"
 r = untrusted.set_policy(policy)
 assert r['success'] is True
 
+# provider ID of abc.xyz@rbccps.org
 provider_id = 'rbccps.org/f3dad987e514af08a4ac46cf4a41bd1df645c8cc'
 
 ##### consumer #####
@@ -24,8 +27,9 @@ body        = { "id"    : resource_id + "/someitem"}
 r = consumer.get_token(body)
 assert r['success']     is False
 
-r = change_role(email, 'consumer')
-assert r == True
+r = role_reg(email, '9454234223', name , ["consumer"], None, csr)
+assert r['success']     == True
+assert r['status_code'] == 200
 
 r = untrusted.provider_access(email, 'consumer', resource_id, 'resourcegroup')
 assert r['success']     == True
@@ -59,8 +63,9 @@ body = { "id"    : provider_id + "/catalogue.iudx.io/catalogue/crud" }
 r = consumer.get_token(body)
 assert r['success']     is False
 
-r = change_role(email, 'onboarder')
-assert r == True
+r = role_reg(email, '9454234223', name , ["onboarder"], org_id)
+assert r['success']     == True
+assert r['status_code'] == 200
 
 r = untrusted.provider_access(email, 'onboarder')
 assert r['success']     == True
@@ -83,8 +88,9 @@ body        = {"id" : resource_id + "/someitem", "api" : "/iudx/v1/adapter" }
 r = consumer.get_token(body)
 assert r['success']     is False
 
-r = change_role(email, 'data ingester')
-assert r == True
+r = role_reg(email, '9454234223', name , ["data ingester"], org_id)
+assert r['success']     == True
+assert r['status_code'] == 200
 
 # invalid resource type
 r = untrusted.provider_access(email, 'data ingester', resource_id, 'catalogue')
@@ -118,4 +124,3 @@ assert r['status_code'] == 403
 r = untrusted.provider_access(email, 'data ingester', '/aaaaa/sssss', 'resourcegroup')
 assert r['success']     == False
 assert r['status_code'] == 403
-

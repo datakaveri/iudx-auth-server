@@ -1,13 +1,7 @@
 from consent import provider_reg
+from add_org import add_organization
 import psycopg2
 import random, string
-
-org = { "name"      : "Testing",
-        "website"   : "example.com",
-        "city"      : "Bengaluru",
-        "state"     : "ka",
-        "country"   : "IN"
-        }
 
 name = { "title"        : "Mr.",
          "firstName"    : "Testing",
@@ -29,12 +23,14 @@ except psycopg2.DatabaseError as error:
 
 cursor = conn.cursor()
 
-def init():
+def init_provider():
+
+
+        org_id = add_organization("rbccps.org")
 
         # use abc.xyz@rbccps.org certificate as provider
-
-        r = provider_reg("abc.xyz@rbccps.org", '7529547992', name , org, csr)
         # do not assert, can already be approved
+        r = provider_reg("abc.xyz@rbccps.org", '7529547992', name , org_id, csr)
 
         try:
                 cursor.execute("update consent.role as rr set status = 'approved' from consent.users where " + " users.id = rr.user_id and users.email = 'abc.xyz@rbccps.org'")
@@ -44,14 +40,14 @@ def init():
         except psycopg2.DatabaseError as error:
                 return {}
 
-def change_role(email, role):
+def reset_role(email):
+# set all roles with this email as rejected
         
         try:
-                cursor.execute("update consent.role as rr set status = 'approved',role = '" + role +"' from consent.users where " + " users.id = rr.user_id and users.email = '" + email + "'")
+                cursor.execute("update consent.role as rr set status = 'rejected' from consent.users where users.id = rr.user_id and users.email = '" + email + "'")
                 conn.commit()
 
         except psycopg2.DatabaseError as error:
-            print(error)
             return False
         
         return True 
