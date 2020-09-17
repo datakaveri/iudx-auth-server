@@ -3851,6 +3851,7 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 	try
 	{
 		let csr = forge.pki.certificationRequestFromPem(raw_csr);
+		csr.verify();
 	}
 	catch(error)
 	{
@@ -4058,6 +4059,7 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 		try
 		{
 			let csr = forge.pki.certificationRequestFromPem(raw_csr);
+			csr.verify();
 		}
 		catch(error)
 		{
