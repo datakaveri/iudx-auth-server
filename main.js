@@ -403,7 +403,7 @@ function log(level, type, notify, details, message = null)
 	};
 
 	if (message !== null)
-		log_msg['message'] = message;
+		log_msg.message = message;
 
 	if (level === "err")
 		send_telegram(message);
@@ -1050,12 +1050,12 @@ function parse_cert_header(req, res, next)
 	cert.subject   = change_cert_keys(cert.subject);
 	cert.issuer    = change_cert_keys(cert.issuer);
 
-	cert['fingerprint']		= cert['fingerPrint'];
-	cert['serialNumber']		= cert['serial'];
+	cert.fingerprint		= cert.fingerPrint;
+	cert.serialNumber		= cert.serial;
 	cert.subject['id-qt-unotice']	= cert.subject['Policy Qualifier User Notice'];
 
-	delete(cert['fingerPrint']);
-	delete(cert['serial']);
+	delete(cert.fingerPrint);
+	delete(cert.serial);
 	delete(cert.subject['Policy Qualifier User Notice']);
 
 	req.certificate = cert;
@@ -3560,7 +3560,7 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 			]);
 
 		rules_array = rules.rows.map(
-				(row) => { return row['policy_text']; });
+				(row) => { return row.policy_text; });
 	}
 	catch(error)
 	{
@@ -4028,7 +4028,7 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 		{
 			existing_user = true;
 			user_id = check_uid.rows[0].id;
-			check_orgid = check_uid.rows[0].organization_id
+			check_orgid = check_uid.rows[0].organization_id;
 		}
 	}
 	catch(error)
@@ -4047,7 +4047,7 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 
 			if (uid !== null)
 				return END_ERROR (res, 403, "Already registered as " + val);
-		};
+		}
 
 	}
 	else	// create user
