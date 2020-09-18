@@ -16,6 +16,7 @@
 #done
 
 sudo -u postgres psql -U postgres < schema.sql
+sudo -u postgres psql -U postgres < consent_schema.sql
 
 #rm -rf schema.sql
 #rm -rf setup.postgresql.openbsd
