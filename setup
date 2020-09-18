@@ -40,17 +40,30 @@ do
 	sed -i "s/XXX_$label/$password/" schema.sql 
 done
 
+# move admin file
+mv admins.json passwords/
+
+# copy files to passwords/ for CSR signing
+if [ ! -f cert.pem ]; then
+	openssl req -x509 -nodes -days 365 -subj "/CN=ca.iudx.org.in/emailAddress=ca@iudx.org.in" -newkey rsa:2048 -keyout key.pem -out cert.pem
+fi
+
+mv cert.pem key.pem passwords/
+
 echo your-telegram-api-key		> telegram.apikey
 echo your-telegram-chat-id		> telegram.chatid
 
 chmod 400 telegram.*
 chmod 400 *.sql
-chmod 400 rzpay.*
+
+apt update
+apt upgrade -y
 
 # setup postgresql
 apt install -y postgresql postgresql-contrib
 apt install -y libpq-dev
 
+# TODO : change 12
 until pg_isready
 do
 	pg_ctlcluster 12 main start
@@ -68,21 +81,37 @@ chmod 400 https-key.pem
 openssl req -x509 -nodes -days 365 -subj "/CN=auth.iudx.org.in" -newkey rsa:2048 -keyout https-key.pem -out https-certificate.pem
 
 apt install -y nodejs npm nginx
+apt install -y certbot python3-certbot-nginx
 
-# nginx config (w/o lets encrypt)
+# nginx config
 #
 # nginx allows for only one ssl_client_certificate parameter
 # so the system ca-certificates.crt (to allow lets encrypt certs)
 # must be concatenated with the other .crt files
+
+# We also add the `cert.pem` file to allow any certificates signed by it
+# to be accepted by NGINX
 
 # TODO: Other way to do it would be to move the .crt files to /etc/ssl/certs
 # directory, then run 'update-ca-certificates'. nginx will use the
 # /etc/certs/ca-certificates.crt file directly
 
 mkdir /etc/nginx/certs
-cat /etc/ssl/certs/ca-certificates.crt ca.iudx.org.in.crt CCAIndia2014.cer CCAIndia2015.cer > ca-certs.crt
+cat /etc/ssl/certs/ca-certificates.crt ca.iudx.org.in.crt passwords/cert.pem CCAIndia2014.cer CCAIndia2015.cer > ca-certs.crt
 cp ca-certs.crt /etc/nginx/certs/
-cp nginx.conf /etc/nginx/sites-available/default
+
+source certbot.env
+
+cp nginx.conf /etc/nginx/sites-available/$AUTH_DOMAIN
+sed -i "s/AUTH_DOMAIN/$AUTH_DOMAIN/" /etc/nginx/sites-available/$AUTH_DOMAIN
+ln -s /etc/nginx/sites-available/$AUTH_DOMAIN /etc/nginx/sites-enabled/
+certbot --nginx --non-interactive --agree-tos -m $EMAIL -d $AUTH_DOMAIN --test-cert
+
+cp consent-nginx.conf /etc/nginx/sites-available/$CONSENT_DOMAIN
+sed -i "s/CONSENT_DOMAIN/$CONSENT_DOMAIN/" /etc/nginx/sites-available/$CONSENT_DOMAIN
+ln -s /etc/nginx/sites-available/$CONSENT_DOMAIN /etc/nginx/sites-enabled/
+certbot --nginx --non-interactive --agree-tos -m $EMAIL -d $CONSENT_DOMAIN --test-cert
+
 systemctl restart nginx
 
 i=`systemctl is-active nginx`
@@ -138,4 +167,3 @@ then
 	echo
 	exit
 fi
-
