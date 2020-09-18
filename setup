@@ -74,6 +74,7 @@ then
     sudo -u postgres psql -u postgres < schema.sql
     sudo -u postgres psql -u postgres < consent_schema.sql
 else
+    apt install -y libpq-dev
     apt install -y postgresql-client
     psql -h $POSTGRES_IP -U postgres < schema.sql
     psql -h $POSTGRES_IP -U postgres < consent_schema.sql
@@ -106,17 +107,18 @@ mkdir /etc/nginx/certs
 cat /etc/ssl/certs/ca-certificates.crt ca.iudx.org.in.crt passwords/cert.pem CCAIndia2014.cer CCAIndia2015.cer > ca-certs.crt
 cp ca-certs.crt /etc/nginx/certs/
 
-source certbot.env
+# source the env file
+. ./certbot.env
 
 cp nginx.conf /etc/nginx/sites-available/$AUTH_DOMAIN
 sed -i "s/AUTH_DOMAIN/$AUTH_DOMAIN/" /etc/nginx/sites-available/$AUTH_DOMAIN
 ln -s /etc/nginx/sites-available/$AUTH_DOMAIN /etc/nginx/sites-enabled/
-certbot --nginx --non-interactive --agree-tos -m $EMAIL -d $AUTH_DOMAIN --test-cert
+certbot --nginx --non-interactive --agree-tos -m $EMAIL -d $AUTH_DOMAIN
 
 cp consent-nginx.conf /etc/nginx/sites-available/$CONSENT_DOMAIN
 sed -i "s/CONSENT_DOMAIN/$CONSENT_DOMAIN/" /etc/nginx/sites-available/$CONSENT_DOMAIN
 ln -s /etc/nginx/sites-available/$CONSENT_DOMAIN /etc/nginx/sites-enabled/
-certbot --nginx --non-interactive --agree-tos -m $EMAIL -d $CONSENT_DOMAIN --test-cert
+certbot --nginx --non-interactive --agree-tos -m $EMAIL -d $CONSENT_DOMAIN
 
 systemctl restart nginx
 
