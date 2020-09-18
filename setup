@@ -59,19 +59,25 @@ chmod 400 *.sql
 apt update
 apt upgrade -y
 
-# setup postgresql
-apt install -y postgresql postgresql-contrib
-apt install -y libpq-dev
+if [ "$POSTGRES_IP" = "127.0.0.1" ]
+then
+    # setup postgresql
+    apt install -y postgresql postgresql-contrib
+    apt install -y libpq-dev
 
-# TODO : change 12
-until pg_isready
-do
-	pg_ctlcluster 12 main start
-	sleep 1
-done
-
-chmod u+x setup.postgresql.ubuntu
-./setup.postgresql.ubuntu
+    # TODO : change 12
+    until pg_isready
+    do
+        pg_ctlcluster 12 main start
+        sleep 1
+    done
+    sudo -u postgres psql -u postgres < schema.sql
+    sudo -u postgres psql -u postgres < consent_schema.sql
+else
+    apt install -y postgresql-client
+    psql -h $POSTGRES_IP -U postgres < schema.sql
+    psql -h $POSTGRES_IP -U postgres < consent_schema.sql
+fi
 
 # local setup
 
@@ -133,7 +139,7 @@ cd ..
 npm install
 npm audit fix --force
 
-	until pg_isready -h 127.0.0.1
+	until pg_isready -h $POSTGRES_IP
 	do
 		sleep 1
 	done
