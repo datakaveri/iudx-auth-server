@@ -3675,6 +3675,7 @@ app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
 	const email = res.locals.email;
 	let provider_uid, rules;
 	var item_details = [];
+	var cap_details	 = {};
 
 	try { provider_uid = await check_privilege(email, "provider"); }
 	catch(error) { return END_ERROR (res, 403, "Not allowed"); }
@@ -3697,6 +3698,7 @@ app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
 		return END_ERROR (res, 500, "Internal error!", error);
 	}
 
+	const accessid_arr = rules.map((obj) => obj.id);
 	const access_items = [...new Set(rules.map((obj) => obj.access_item_type ))];
 
 	for (const item of access_items)
@@ -3722,6 +3724,26 @@ app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
 
 	}
 
+	/* get capability details for each access ID */
+	try {
+		const result = await pool.query (
+			"SELECT access_id, capability "		+
+			" FROM consent.capability "		+
+			" WHERE access_id = ANY($1::integer[])",
+			[ accessid_arr ]);
+
+		result.rows.map ( row => {
+			if (! cap_details[row.access_id])
+				cap_details[row.access_id] = [];
+
+			cap_details[row.access_id].push(row.capability);
+		});
+	}
+	catch(error)
+	{
+		return END_ERROR (res, 500, "Internal error!", error);
+	}
+
 	const result = rules.map (rule => {
 
 		const filter_item = item_details.filter (item =>
@@ -3735,7 +3757,8 @@ app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
 			item_type 	: rule.access_item_type,
 			item 		: null,
 			policy 		: rule.policy_text,
-			created		: rule.created_at
+			created		: rule.created_at,
+			capabilities	: cap_details[rule.id] || null
 		};
 
 		if (filter_item !== null)
