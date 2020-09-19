@@ -2080,7 +2080,7 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 			);
 		}
 
-		const expiry_date = new Date(Date.now() + (token_time * 10));
+		const expiry_date = new Date(Date.now() + (token_time * 1000));
 
 		const details =
 		{
