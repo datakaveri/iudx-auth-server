@@ -18,8 +18,9 @@ GRANT ALL ON SCHEMA consent to postgres;
 GRANT USAGE ON SCHEMA consent TO auth;
 
 CREATE TYPE consent.status_enum AS ENUM ('rejected', 'pending', 'approved');
-CREATE TYPE consent.role_enum 	AS ENUM ('data ingester', 'onboarder', 'consumer', 'provider', 'admin');
+CREATE TYPE consent.role_enum 	AS ENUM ('consumer', 'data ingester', 'onboarder', 'provider', 'admin');
 CREATE TYPE consent.access_item AS ENUM ('resourcegroup', 'catalogue');
+CREATE TYPE consent.capability_enum AS ENUM ('latest', 'temporal', 'complex', 'subscription');
 
 CREATE TABLE consent.organizations (
 
@@ -93,12 +94,20 @@ CREATE TABLE consent.resourcegroup (
 	updated_at		timestamp without time zone		NOT NULL
 );
 
+CREATE TABLE consent.capability (
+
+	id			integer GENERATED ALWAYS AS IDENTITY	PRIMARY KEY,
+	access_id		integer REFERENCES consent.access(id)	NOT NULL,
+	capability		consent.capability_enum			NOT NULL
+);
+
 ALTER TABLE consent.organizations	OWNER TO postgres;
 ALTER TABLE consent.users		OWNER TO postgres;
 ALTER TABLE consent.role		OWNER TO postgres;
 ALTER TABLE consent.certificates	OWNER TO postgres;
 ALTER TABLE consent.access		OWNER TO postgres;
 ALTER TABLE consent.resourcegroup	OWNER TO postgres;
+ALTER TABLE consent.capability		OWNER TO postgres;
 
 GRANT SELECT,INSERT,UPDATE ON TABLE consent.organizations	 TO auth;
 GRANT SELECT,INSERT,UPDATE ON TABLE consent.users		 TO auth;
@@ -107,3 +116,4 @@ GRANT SELECT,INSERT,UPDATE ON TABLE consent.certificates	 TO auth;
 GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE consent.role		 TO auth;
 GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE consent.resourcegroup TO auth;
 GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE consent.access	 TO auth;
+GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE consent.capability	 TO auth;
