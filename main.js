@@ -2080,7 +2080,7 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 			);
 		}
 
-		const expiry_date = new Date(Date.now() + (token_time * 10));
+		const expiry_date = new Date(Date.now() + (token_time * 1000));
 
 		const details =
 		{
@@ -3491,15 +3491,15 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 	switch (accesser_role)
 	{
 		case "onboarder":
-			rule = `${accesser_email} can access ${CAT_API_RULE}`;
+			rule = `${accesser_email} can access ${CAT_API_RULE} for 1 week`;
 			break;
 
 		case "data ingester":
-			rule = `${accesser_email} can access ${resource_name}/* if api = "${INGEST_API_RULE}"`;
+			rule = `${accesser_email} can access ${resource_name}/* for 1 week if api = "${INGEST_API_RULE}"`;
 			break;
 
 		case "consumer":
-			rule = `${accesser_email} can access ${resource_name}/*`;
+			rule = `${accesser_email} can access ${resource_name}/* for 1 week`;
 			break;
 
 		default:
