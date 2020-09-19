@@ -72,11 +72,17 @@ const MAX_TOKEN_HASH_LEN	= 64;
 const MAX_SAFE_STRING_LEN	= 512;
 
 /* for access API */
-const ACCESS_ROLES		= ["data ingester", "consumer", "onboarder"];
+const ACCESS_ROLES		= ["consumer", "data ingester", "onboarder"];
 const RESOURCE_ITEM_TYPES	= ["resourcegroup"];
 const CAT_URL			= "catalogue.iudx.io";
 const CAT_API_RULE		= `${CAT_URL}/catalogue/crud`;
 const INGEST_API_RULE		= "/iudx/v1/adapter";
+const CAPABILITIES		= {
+	"latest"	: "/ngsi-ld/v1/entities",
+	"temporal"	: "/ngsi-ld/v1/temporal/entities",
+	"complex"	: "/ngsi-ld/v1/entityOperations/query",
+	"subscription"	: "/ngsi-ld/v1/subscription"
+};
 
 const MIN_CERT_CLASS_REQUIRED	= Object.freeze ({
 
@@ -3403,7 +3409,11 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 	const accesser_email 	= res.locals.body.user_email;
 	const accesser_role	= res.locals.body.user_role;
 	const resource		= res.locals.body.item_id;
+	let capability		= res.locals.body.capability;
 	let res_type		= res.locals.body.item_type;
+
+	let consumer_acc_id	= null;
+	let existing_policy	= null;
 
 	if (! accesser_email || ! accesser_role)
 		return END_ERROR (res, 403, "Invalid data");
@@ -3413,6 +3423,17 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 
 	try { accesser_uid = await check_privilege(accesser_email, accesser_role); }
 	catch(error) { return END_ERROR (res, 404, "Invalid accesser"); }
+
+	if (accesser_role === "consumer")
+	{
+		if (! capability)
+			return END_ERROR (res, 403, "Invalid data (capability)");
+
+		capability = [...new Set(capability)];
+
+		if (! capability.every( (val) => Object.keys(CAPABILITIES).includes(val)))
+			return END_ERROR (res, 403, "Invalid data (capability)");
+	}
 
 	if (accesser_role === "consumer" || accesser_role === "data ingester")
 	{
@@ -3449,7 +3470,7 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 		}
 		catch(error)
 		{
-			return END_ERROR (res, 500, "Internal error!");
+			return END_ERROR (res, 500, "Internal error!", error);
 		}
 	}
 
@@ -3466,25 +3487,46 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 	{
 		try {
 			const result = await pool.query (
-				"SELECT * from consent.role, consent.access"		+
-				" WHERE consent.role.id = consent.access.role_id"	+
-				" AND access.provider_id = $1::integer"			+
+				"SELECT a.id, a.policy_text "				+
+				" FROM consent.role, consent.access as a"		+
+				" WHERE consent.role.id = a.role_id"			+
+				" AND a.provider_id = $1::integer"			+
 				" AND role.user_id = $2::integer"			+
-				" AND access.access_item_id = $3::integer"		+
+				" AND a.access_item_id = $3::integer"			+
 				" AND role.role = $4::consent.role_enum",
 			[
-				provider_uid,
-				accesser_uid,
-				access_item_id,
-				accesser_role
+				provider_uid,			//$1
+				accesser_uid,			//$2
+				access_item_id,			//$3
+				accesser_role			//$4
 			]);
 
-			if (result.rows.length !== 0)
+			if (result.rows.length !== 0 && accesser_role !== "consumer")
 				return END_ERROR (res, 403, "Rule exists");
+
+			/* if consumer exists with this resource-id, only update
+			 * policy for said consumer and do not add a new row in
+			 * the access table */
+
+			if (result.rows.length !==0 && accesser_role === "consumer")
+			{
+				consumer_acc_id	= result.rows[0].id;
+				existing_policy = result.rows[0].policy_text;
+
+				const caps = await pool.query (
+					"SELECT capability from consent.capability"	+
+					" WHERE access_id = $1::integer",
+					[ consumer_acc_id ]);
+
+				let existing_caps = [...new Set(caps.rows.map(row => row.capability))];
+
+				if ( capability.every( (val) => existing_caps.includes(val)))
+					return END_ERROR (res, 403, "Rule exists");
+			}
 		}
 		catch(error)
 		{
-			return END_ERROR (res, 500, "Internal error!");
+			return END_ERROR (res, 500, "Internal error!", error);
 		}
 	}
 
@@ -3506,6 +3548,26 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 			return END_ERROR (res, 500, "Internal error!");
 	}
 
+	/* add capabilities/APIs to policy */
+	if (accesser_role === "consumer")
+	{
+		let join = "if";
+
+		/* if consumer+resourceid exists,
+		 * append to existing policy text */
+		if (consumer_acc_id !== null)
+		{
+			rule = existing_policy;
+			join = "or";
+		}
+
+		for (const cap of capability)
+		{
+			rule = rule + ` ${join} api = "${CAPABILITIES[cap]}"`;
+			join = "or";
+		}
+	}
+
 	try {
 		if (! access_item_id)
 		{
@@ -3515,8 +3577,8 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 				" VALUES ($1::integer, $2::text, NOW(), NOW())"		+
 				"RETURNING id",
 				[
-					provider_uid,
-					resource
+					provider_uid,	//$1
+					resource	//$2
 				]);
 
 			access_item_id = access_item.rows[0].id;
@@ -3527,34 +3589,65 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 			" user_id = $1::integer "		+
 			" AND role = $2::consent.role_enum",
 			[
-				accesser_uid,
-				accesser_role
+				accesser_uid,		//$1
+				accesser_role		//$2
 			]);
 
-		const access = await pool.query (
-			"INSERT into consent.access (provider_id, "		+
-			" role_id, policy_text, access_item_id, "		+
-			" access_item_type, created_at, updated_at)"		+
-			" VALUES ($1::integer, $2::integer, "			+
-			" $3::text, $4::integer, $5::consent.access_item,"	+
-			" NOW(), NOW())",
-			[
-				provider_uid,
-				role_id.rows[0].id,
-				rule,
-				access_item_id,
-				res_type,
-			]);
+		let access;
+
+		/* if consumer_acc_id is not null, there is an existing
+		 * consumer with policy for same resource-id */
+		if (consumer_acc_id === null)
+		{
+			access = await pool.query (
+				"INSERT into consent.access (provider_id, "		+
+				" role_id, policy_text, access_item_id, "		+
+				" access_item_type, created_at, updated_at)"		+
+				" VALUES ($1::integer, $2::integer, "			+
+				" $3::text, $4::integer, $5::consent.access_item,"	+
+				" NOW(), NOW()) RETURNING id",
+				[
+					provider_uid,		//$1
+					role_id.rows[0].id,	//$2
+					rule,			//$3
+					access_item_id,		//$4
+					res_type,		//$5
+				]);
+		}
+		else
+		{
+			access = await pool.query (
+				"UPDATE consent.access SET policy_text = $1::text,"	+
+				" updated_at = NOW() WHERE access.id = $2::integer"	+
+				" RETURNING id",
+				[ rule, consumer_acc_id ]);
+		}
+
+		/* add capabilities to table if consumer */
+		if (accesser_role === "consumer")
+		{
+			let access_id = access.rows[0].id;
+
+			for (const cap of capability)
+			{
+				const result = await pool.query (
+					"INSERT INTO consent.capability "		+
+					" (access_id, capability) VALUES"		+
+					" ($1::integer, $2::consent.capability_enum)",
+					[ access_id, cap ]);
+			}
+		}
 	}
 	catch(error)
 	{
-		return END_ERROR (res, 500, "Internal error!");
+		return END_ERROR (res, 500, "Internal error!", error);
 	}
 
 	try {
 		const rules = await pool.query (
-			"SELECT policy_text FROM consent.access"	+
-			" WHERE provider_id = $1::integer",
+			"SELECT policy_text FROM consent.access,"	+
+			" consent.role WHERE provider_id = $1::integer"	+
+			" AND role.id = access.role_id ORDER BY role",
 			[
 				provider_uid
 			]);
@@ -3564,7 +3657,7 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 	}
 	catch(error)
 	{
-		return END_ERROR (res, 500, "Internal error!");
+		return END_ERROR (res, 500, "Internal error!", error);
 	}
 
 	set_acl(provider_email, rules_array, (err) =>
