@@ -2,6 +2,8 @@ from init import untrusted
 from init import consumer
 from access import *
 from consent import role_reg
+import random
+import string
 
 init_provider()
 
@@ -20,10 +22,11 @@ provider_id = 'rbccps.org/f3dad987e514af08a4ac46cf4a41bd1df645c8cc'
 
 ##### consumer #####
 
-resource_id = provider_id + '/rs.example.com/somegroup'
-body        = { "id"    : resource_id + "/someitem"}
+resource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
+resource_id = provider_id + '/rs.example.com/' + resource_group
 
 # token request should fail
+body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/entities"] }
 r = consumer.get_token(body)
 assert r['success']     is False
 
@@ -31,24 +34,66 @@ r = role_reg(email, '9454234223', name , ["consumer"], None, csr)
 assert r['success']     == True
 assert r['status_code'] == 200
 
-r = untrusted.provider_access(email, 'consumer', resource_id, 'resourcegroup')
-assert r['success']     == True
-assert r['status_code'] == 200
-
-# token request should pass
-r = consumer.get_token(body)
-assert r['success']     is True
-assert None != r['response']['token']
-
-# request for other items in resource group
-body = {"id" : resource_id + "/someitem/someotheritem", "api" : "/iudx/v1/adapter" }
-r = consumer.get_token(body)
-assert r['success']     is True
-
-# rule exists for provider+accesser+role+resource
+# No capabilities
 r = untrusted.provider_access(email, 'consumer', resource_id, 'resourcegroup')
 assert r['success']     == False
 assert r['status_code'] == 403
+
+# Invalid capabilities
+caps = ["hello", "world"]
+r = untrusted.provider_access(email, 'consumer', resource_id, 'resourcegroup', caps)
+assert r['success']     == False
+assert r['status_code'] == 403
+
+caps = ['latest']
+r = untrusted.provider_access(email, 'consumer', resource_id, 'resourcegroup', caps)
+assert r['success']     == True
+assert r['status_code'] == 200
+
+# same capability
+r = untrusted.provider_access(email, 'consumer', resource_id, 'resourcegroup', caps)
+assert r['success']     == False
+assert r['status_code'] == 403
+
+caps = ['temporal'];
+r = untrusted.provider_access(email, 'consumer', resource_id, 'resourcegroup', caps)
+assert r['success']     == True
+assert r['status_code'] == 200
+
+# token request will not pass without API
+body    = { "id"    : resource_id + "/someitem"}
+r       = consumer.get_token(body)
+assert r['success']     is False
+
+body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/entities"] }
+r = consumer.get_token(body)
+assert r['success']     is True
+
+body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/entities", "/ngsi-ld/v1/temporal/entities"] }
+r = consumer.get_token(body)
+assert r['success']     is True
+
+# will not work for other APIs
+body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/entityOperations/query"] }
+r = consumer.get_token(body)
+assert r['success']     is False
+
+caps = ['complex', 'subscription', 'subscription'];
+r = untrusted.provider_access(email, 'consumer', resource_id, 'resourcegroup', caps)
+assert r['success']     == True
+assert r['status_code'] == 200
+
+body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/entityOperations/query"] }
+r = consumer.get_token(body)
+assert r['success']     is True
+
+body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/subscription"] }
+r = consumer.get_token(body)
+assert r['success']     is True
+
+body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/entities", "/ngsi-ld/v1/temporal/entities"] }
+r = consumer.get_token(body)
+assert r['success']     is True
 
 # user does not exist
 r = untrusted.provider_access(email, 'onboarder', resource_id, 'resourcegroup')
@@ -81,7 +126,9 @@ assert r['status_code'] == 403
 
 ##### data ingester #####
 
-resource_id = provider_id + "/rs.example.com/someothergroup"
+resource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
+resource_id = provider_id + "/rs.example.com/" + resource_group
+
 body        = {"id" : resource_id + "/someitem", "api" : "/iudx/v1/adapter" }
 
 # data ingester token request should fail
