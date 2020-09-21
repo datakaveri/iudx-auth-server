@@ -3938,7 +3938,7 @@ app.post("/auth/v[1-2]/admin/organizations", async (req, res) => {
 
 app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 
-	const email	= res.locals.body.email.toLowerCase();
+	let email	= res.locals.body.email;
 	const phone 	= res.locals.body.phone;
 	let org_id 	= res.locals.body.organization;
 	const name 	= res.locals.body.name;
@@ -3955,6 +3955,8 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 
 	if (! is_valid_email(email) || ! phone_regex.test(phone))
 		return END_ERROR (res, 403, "Invalid data (email/phone)");
+
+	email = email.toLowerCase();
 
 	if (! org_id)
 		return END_ERROR (res, 403, "Invalid data (organization)");
@@ -4068,7 +4070,7 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 
 app.post("/consent/v[1-2]/registration", async (req, res) => {
 
-	const email	= res.locals.body.email.toLowerCase();
+	let email	= res.locals.body.email;
 	const phone 	= res.locals.body.phone;
 	const name 	= res.locals.body.name;
 	const raw_csr	= res.locals.body.csr;
@@ -4086,6 +4088,8 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 
 	if (! is_valid_email(email) || ! phone_regex.test(phone))
 		return END_ERROR (res, 403, "Invalid data (email/phone)");
+
+	email = email.toLowerCase();
 
 	if (! Array.isArray(roles) || roles.length === 0)
 		return END_ERROR (res, 403, "Invalid data (roles)");
