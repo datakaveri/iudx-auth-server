@@ -70,6 +70,7 @@ const MIN_TOKEN_HASH_LEN	= 64;
 const MAX_TOKEN_HASH_LEN	= 64;
 
 const MAX_SAFE_STRING_LEN	= 512;
+const PG_MAX_INT		= 2147483647;
 
 /* for access API */
 const ACCESS_ROLES		= ["consumer", "data ingester", "onboarder"];
@@ -3973,7 +3974,7 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 
 	org_id = parseInt(org_id, 10);
 
-	if (isNaN(org_id) || org_id < 1)
+	if (isNaN(org_id) || org_id < 1 || org_id > PG_MAX_INT)
 		return END_ERROR (res, 403, "Invalid data (organization)");
 
 	try
@@ -4119,7 +4120,7 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 
 		org_id = parseInt(org_id, 10);
 
-		if (isNaN(org_id) || org_id < 1)
+		if (isNaN(org_id) || org_id < 1 || org_id > PG_MAX_INT)
 			return END_ERROR (res, 403, "Invalid data (organization)");
 
 		// check if org registered
