@@ -3843,8 +3843,8 @@ app.put("/auth/v[1-2]/admin/provider/registrations/status", (req, res) => {
 	}
 	let user, csr, org, role;
 	try {
-		user = pg.querySync("SELECT * FROM consent.users, consent.role "	+
-				    " WHERE consent.users.id = consent.role.user_id "	+
+		user = pg.querySync("SELECT users.*, role.role, role.status FROM consent.users, consent.role "	+
+				    " WHERE consent.users.id = consent.role.user_id AND role.role = 'provider'"	+
 				    " AND consent.users.id = $1::integer",[user_id])[0] || null;
 		csr = pg.querySync("SELECT * FROM consent.certificates WHERE user_id = $1::integer", [user_id])[0] || null;
 		org = pg.querySync("SELECT * FROM consent.organizations WHERE id = $1::integer", [user.organization_id])[0] || null;
