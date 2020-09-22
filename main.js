@@ -3442,10 +3442,11 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 		if (! resource || ! res_type)
 			return END_ERROR (res, 403, "Invalid data");
 
-		if ((resource.match(/\//g) || []).length < 3)
+		// resource group must have 3 slashes
+		if ((resource.match(/\//g) || []).length !== 3)
 			return END_ERROR (res, 403, "Invalid Resource ID");
 
-		if (! is_string_safe(resource, "*_") || resource.indexOf("..") >= 0)
+		if (! is_string_safe(resource, "_") || resource.indexOf("..") >= 0)
 			return END_ERROR (res, 403, "Invalid Resource ID");
 
 		if (! resource.startsWith(provider_id_hash))
