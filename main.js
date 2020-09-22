@@ -77,11 +77,11 @@ const RESOURCE_ITEM_TYPES	= ["resourcegroup"];
 const CAT_URL			= "catalogue.iudx.io";
 const CAT_API_RULE		= `${CAT_URL}/catalogue/crud`;
 const INGEST_API_RULE		= "/iudx/v1/adapter";
+const LATEST			= (rsg) => `/ngsi-ld/v1/entities/${rsg}`;
 const CAPABILITIES		= {
-	"latest"	: "/ngsi-ld/v1/entities",
-	"temporal"	: "/ngsi-ld/v1/temporal/entities",
-	"complex"	: "/ngsi-ld/v1/entityOperations/query",
-	"subscription"	: "/ngsi-ld/v1/subscription"
+	"temporal"	: ["/ngsi-ld/v1/temporal/entities", LATEST],
+	"complex"	: ["/ngsi-ld/v1/entityOperations/query", LATEST, "/ngsi-ld/v1/entities"],
+	"subscription"	: ["/ngsi-ld/v1/subscription"]
 };
 
 const MIN_CERT_CLASS_REQUIRED	= Object.freeze ({
@@ -3411,9 +3411,9 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 	const resource		= res.locals.body.item_id;
 	let capability		= res.locals.body.capability;
 	let res_type		= res.locals.body.item_type;
+	let req_capability;
 
 	let consumer_acc_id	= null;
-	let existing_policy	= null;
 
 	if (! accesser_email || ! accesser_role)
 		return END_ERROR (res, 403, "Invalid data");
@@ -3433,6 +3433,8 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 
 		if (! capability.every( (val) => Object.keys(CAPABILITIES).includes(val)))
 			return END_ERROR (res, 403, "Invalid data (capability)");
+
+		req_capability = capability;
 	}
 
 	if (accesser_role === "consumer" || accesser_role === "data ingester")
@@ -3440,10 +3442,11 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 		if (! resource || ! res_type)
 			return END_ERROR (res, 403, "Invalid data");
 
-		if ((resource.match(/\//g) || []).length < 3)
+		// resource group must have 3 slashes
+		if ((resource.match(/\//g) || []).length !== 3)
 			return END_ERROR (res, 403, "Invalid Resource ID");
 
-		if (! is_string_safe(resource, "*_") || resource.indexOf("..") >= 0)
+		if (! is_string_safe(resource, "_") || resource.indexOf("..") >= 0)
 			return END_ERROR (res, 403, "Invalid Resource ID");
 
 		if (! resource.startsWith(provider_id_hash))
@@ -3508,10 +3511,9 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 			 * policy for said consumer and do not add a new row in
 			 * the access table */
 
-			if (result.rows.length !==0 && accesser_role === "consumer")
+			if (result.rows.length !== 0 && accesser_role === "consumer")
 			{
 				consumer_acc_id	= result.rows[0].id;
-				existing_policy = result.rows[0].policy_text;
 
 				const caps = await pool.query (
 					"SELECT capability from consent.capability"	+
@@ -3519,9 +3521,17 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 					[ consumer_acc_id ]);
 
 				let existing_caps = [...new Set(caps.rows.map(row => row.capability))];
+				let i; // get index of existing cap
 
-				if ( capability.every( (val) => existing_caps.includes(val)))
-					return END_ERROR (res, 403, "Rule exists");
+				if (! capability.every( (val, index) => {
+					i = index;
+					return ! existing_caps.includes(val)
+				}))
+					return END_ERROR (res, 403, `Rule exists for ${capability[i]}`);
+
+				/* merge old and new capabilities,
+				 * no duplicates should be there */
+				capability = capability.concat(existing_caps);
 			}
 		}
 		catch(error)
@@ -3551,19 +3561,19 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 	/* add capabilities/APIs to policy */
 	if (accesser_role === "consumer")
 	{
-		let join = "if";
+		let join = "if", apis = [], index;
 
-		/* if consumer+resourceid exists,
-		 * append to existing policy text */
-		if (consumer_acc_id !== null)
-		{
-			rule = existing_policy;
-			join = "or";
-		}
+		capability.map(val => apis = apis.concat(CAPABILITIES[val]));
+		apis = [...new Set(apis)];
 
-		for (const cap of capability)
+		/* if latest API is there, then add resource group
+		 * to the template */
+		if ((index = apis.indexOf(LATEST)) !== -1)
+			apis[index] = apis[index](resource);
+
+		for (const i of apis)
 		{
-			rule = rule + ` ${join} api = "${CAPABILITIES[cap]}"`;
+			rule = rule + ` ${join} api = "${i}"`;
 			join = "or";
 		}
 	}
@@ -3623,12 +3633,12 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 				[ rule, consumer_acc_id ]);
 		}
 
-		/* add capabilities to table if consumer */
+		/* add newly requested capabilities to table if consumer */
 		if (accesser_role === "consumer")
 		{
 			let access_id = access.rows[0].id;
 
-			for (const cap of capability)
+			for (const cap of req_capability)
 			{
 				const result = await pool.query (
 					"INSERT INTO consent.capability "		+

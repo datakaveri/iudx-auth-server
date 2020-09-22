@@ -20,7 +20,7 @@ GRANT USAGE ON SCHEMA consent TO auth;
 CREATE TYPE consent.status_enum AS ENUM ('rejected', 'pending', 'approved');
 CREATE TYPE consent.role_enum 	AS ENUM ('consumer', 'data ingester', 'onboarder', 'provider', 'admin');
 CREATE TYPE consent.access_item AS ENUM ('resourcegroup', 'catalogue');
-CREATE TYPE consent.capability_enum AS ENUM ('latest', 'temporal', 'complex', 'subscription');
+CREATE TYPE consent.capability_enum AS ENUM ('temporal', 'complex', 'subscription');
 
 CREATE TABLE consent.organizations (
 
