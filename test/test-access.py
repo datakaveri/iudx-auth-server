@@ -45,7 +45,7 @@ r = untrusted.provider_access(email, 'consumer', resource_id, 'resourcegroup', c
 assert r['success']     == False
 assert r['status_code'] == 403
 
-caps = ['latest']
+caps = ['temporal'];
 r = untrusted.provider_access(email, 'consumer', resource_id, 'resourcegroup', caps)
 assert r['success']     == True
 assert r['status_code'] == 200
@@ -55,21 +55,21 @@ r = untrusted.provider_access(email, 'consumer', resource_id, 'resourcegroup', c
 assert r['success']     == False
 assert r['status_code'] == 403
 
-caps = ['temporal'];
-r = untrusted.provider_access(email, 'consumer', resource_id, 'resourcegroup', caps)
-assert r['success']     == True
-assert r['status_code'] == 200
-
 # token request will not pass without API
 body    = { "id"    : resource_id + "/someitem"}
 r       = consumer.get_token(body)
 assert r['success']     is False
 
-body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/entities"] }
+body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/entities/" + resource_id] }
 r = consumer.get_token(body)
 assert r['success']     is True
 
+# temporal does not have /entities
 body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/entities", "/ngsi-ld/v1/temporal/entities"] }
+r = consumer.get_token(body)
+assert r['success']     is False
+
+body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/temporal/entities"] }
 r = consumer.get_token(body)
 assert r['success']     is True
 
@@ -78,7 +78,23 @@ body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/entityOperation
 r = consumer.get_token(body)
 assert r['success']     is False
 
-caps = ['complex', 'subscription', 'subscription'];
+# temporal rule already exists
+caps = ['subscription', 'temporal'];
+r = untrusted.provider_access(email, 'consumer', resource_id, 'resourcegroup', caps)
+assert r['success']     == False
+assert r['status_code'] == 403
+
+caps = ['subscription'];
+r = untrusted.provider_access(email, 'consumer', resource_id, 'resourcegroup', caps)
+assert r['success']     == True
+assert r['status_code'] == 200
+
+body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/subscription"] }
+r = consumer.get_token(body)
+assert r['success']     is True
+
+# complex
+caps = ['complex']
 r = untrusted.provider_access(email, 'consumer', resource_id, 'resourcegroup', caps)
 assert r['success']     == True
 assert r['status_code'] == 200
@@ -87,13 +103,26 @@ body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/entityOperation
 r = consumer.get_token(body)
 assert r['success']     is True
 
-body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/subscription"] }
-r = consumer.get_token(body)
-assert r['success']     is True
-
 body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/entities", "/ngsi-ld/v1/temporal/entities"] }
 r = consumer.get_token(body)
 assert r['success']     is True
+
+# try all 3 caps
+resource_id = provider_id + '/rs.example.co.in/' + resource_group
+caps = ['complex','subscription', 'temporal']
+r = untrusted.provider_access(email, 'consumer', resource_id, 'resourcegroup', caps)
+assert r['success']     == True
+assert r['status_code'] == 200
+
+apis = ["/ngsi-ld/v1/entityOperations/query", "/ngsi-ld/v1/entities", "/ngsi-ld/v1/temporal/entities","/ngsi-ld/v1/entities/" + resource_id, "/ngsi-ld/v1/subscription"]
+body = {"id" : resource_id + "/someitem", "apis" : apis }
+r = consumer.get_token(body)
+assert r['success']     is True
+
+# rule exists
+r = untrusted.provider_access(email, 'consumer', resource_id, 'resourcegroup', caps)
+assert r['success']     == False
+assert r['status_code'] == 403
 
 # user does not exist
 r = untrusted.provider_access(email, 'onboarder', resource_id, 'resourcegroup')
