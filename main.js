@@ -4088,13 +4088,13 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 	let email	= res.locals.body.email;
 	const phone 	= res.locals.body.phone;
 	const name 	= res.locals.body.name;
-	const raw_csr	= res.locals.body.csr;
+	let raw_csr	= res.locals.body.csr;
 	let org_id 	= res.locals.body.organization;
 	let roles	= res.locals.body.roles;
 
 	let user_id, signed_cert = null;
-	let check_orgid;
-	var existing_user = false;
+	let check_orgid = false;
+	var existing_user = false, certless_user = false;
 
 	const phone_regex = new RegExp(/^[9876]\d{9}$/);
 
@@ -4167,7 +4167,36 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 		{
 			existing_user = true;
 			user_id = check_uid.rows[0].id;
+
+			/* if registered as consumer first, org_id will be undefined */
 			check_orgid = check_uid.rows[0].organization_id;
+
+			/* check if cert field for user is null (rejected/pending
+			 * provider). If yes, use the existing CSR to create the certificate */
+			const check = await pool.query (
+				"SELECT * FROM consent.certificates"		+
+				" WHERE certificates.user_id = $1::integer"	+
+				" AND cert IS NULL",
+				[ user_id ]);
+
+			if (check.rows.length !== 0)
+			{
+				raw_csr 	= check.rows[0].csr;
+				certless_user 	= true;
+			}
+
+			/* check if user is trying to register for role
+			 * that they are already registered for */
+			for (const val of roles)
+			{
+				let uid = null;
+
+				try { uid = await check_privilege(email, val); }
+				catch(error) { /* do nothing if role not there */ }
+
+				if (uid !== null)
+					return END_ERROR (res, 403, "Already registered as " + val);
+			}
 		}
 	}
 	catch(error)
@@ -4175,20 +4204,7 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 		return END_ERROR (res, 500, "Internal error!", error);
 	}
 
-	if (existing_user)
-	{
-		for (const val of roles)
-		{
-			let uid = null;
-
-			try { uid = await check_privilege(email, val); }
-			catch(error) { /* do nothing if role not there */ }
-
-			if (uid !== null)
-				return END_ERROR (res, 403, "Already registered as " + val);
-		}
-	}
-	else	// create user
+	if (! existing_user || certless_user)	// generate certificate
 	{
 		if (! raw_csr || raw_csr.length > CSR_SIZE)
 			return END_ERROR (res, 400, "Invalid data (csr)");
@@ -4211,7 +4227,10 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 		} catch (e) {
 			return END_ERROR(res, 500, "Certificate Error", e.message);
 		}
+	}
 
+	if (! existing_user)
+	{
 		try {
 			const user = await pool.query (
 				" INSERT INTO consent.users "			+
@@ -4250,7 +4269,23 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 		}
 	}
 
-	// update org_id if the user was originally a consumer
+	if (certless_user) // update with certificate
+	{
+		try {
+			const cert = await pool.query (
+				"UPDATE consent.certificates SET "	+
+				" cert = $1::text, updated_at = NOW() " +
+				" WHERE user_id = $2::integer",
+				[ signed_cert, user_id ]);
+		}
+		catch(error)
+		{
+			return END_ERROR (res, 500, "Internal error!", error);
+		}
+	}
+
+	/* update org_id if the user was originally a consumer
+	 * (org_id would be null) */
 	if (check_orgid === undefined)
 	{
 		try
