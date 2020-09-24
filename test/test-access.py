@@ -37,13 +37,13 @@ assert r['status_code'] == 200
 # No capabilities
 r = untrusted.provider_access(email, 'consumer', resource_id, 'resourcegroup')
 assert r['success']     == False
-assert r['status_code'] == 403
+assert r['status_code'] == 400
 
 # Invalid capabilities
 caps = ["hello", "world"]
 r = untrusted.provider_access(email, 'consumer', resource_id, 'resourcegroup', caps)
 assert r['success']     == False
-assert r['status_code'] == 403
+assert r['status_code'] == 400
 
 caps = ['temporal'];
 r = untrusted.provider_access(email, 'consumer', resource_id, 'resourcegroup', caps)
@@ -127,7 +127,7 @@ assert r['status_code'] == 403
 # user does not exist
 r = untrusted.provider_access(email, 'onboarder', resource_id, 'resourcegroup')
 assert r['success']     == False
-assert r['status_code'] == 404
+assert r['status_code'] == 403
 
 ##### onboarder #####
 
@@ -171,7 +171,7 @@ assert r['status_code'] == 200
 # invalid resource type
 r = untrusted.provider_access(email, 'data ingester', resource_id, 'catalogue')
 assert r['success']     == False
-assert r['status_code'] == 403
+assert r['status_code'] == 400
 
 r = untrusted.provider_access(email, 'data ingester', resource_id, 'resourcegroup')
 assert r['success']     == True
@@ -195,8 +195,8 @@ assert r['success']     is True
 # invalid resource ID
 r = untrusted.provider_access(email, 'data ingester', '/aaaaa/sssss/sada/', 'resourcegroup')
 assert r['success']     == False
-assert r['status_code'] == 403
+assert r['status_code'] == 400
 
 r = untrusted.provider_access(email, 'data ingester', '/aaaaa/sssss', 'resourcegroup')
 assert r['success']     == False
-assert r['status_code'] == 403
+assert r['status_code'] == 400

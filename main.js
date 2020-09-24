@@ -70,6 +70,7 @@ const MIN_TOKEN_HASH_LEN	= 64;
 const MAX_TOKEN_HASH_LEN	= 64;
 
 const MAX_SAFE_STRING_LEN	= 512;
+const PG_MAX_INT		= 2147483647;
 
 /* for access API */
 const ACCESS_ROLES		= ["consumer", "data ingester", "onboarder"];
@@ -3400,13 +3401,13 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 	let rules_array = [];
 
 	try { provider_uid = await check_privilege(provider_email, "provider"); }
-	catch(error) { return END_ERROR (res, 403, "Not allowed!"); }
+	catch(error) { return END_ERROR (res, 401, "Not allowed!"); }
 
 	const email_domain	= provider_email.split("@")[1];
 	const sha1_of_email	= sha1(provider_email);
 	const provider_id_hash	= email_domain + "/" + sha1_of_email;
 
-	const accesser_email 	= res.locals.body.user_email;
+	let accesser_email 	= res.locals.body.user_email;
 	const accesser_role	= res.locals.body.user_role;
 	const resource		= res.locals.body.item_id;
 	let capability		= res.locals.body.capability;
@@ -3415,45 +3416,47 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 
 	let consumer_acc_id	= null;
 
-	if (! accesser_email || ! accesser_role)
-		return END_ERROR (res, 403, "Invalid data");
+	if (! accesser_email || ! is_valid_email(accesser_email))
+		return END_ERROR (res, 400, "Invalid data (email)");
 
-	if (! is_valid_email(accesser_email) || ! ACCESS_ROLES.includes(accesser_role))
-		return END_ERROR (res, 403, "Invalid data");
+	accesser_email = accesser_email.toLowerCase();
+
+	if (! accesser_role || ! ACCESS_ROLES.includes(accesser_role))
+		return END_ERROR (res, 400, "Invalid data (role)");
 
 	try { accesser_uid = await check_privilege(accesser_email, accesser_role); }
-	catch(error) { return END_ERROR (res, 404, "Invalid accesser"); }
+	catch(error) { return END_ERROR (res, 403, "Invalid accesser"); }
 
 	if (accesser_role === "consumer")
 	{
 		if (! capability)
-			return END_ERROR (res, 403, "Invalid data (capability)");
+			return END_ERROR (res, 400, "Invalid data (capability)");
 
 		capability = [...new Set(capability)];
 
 		if (! capability.every( (val) => Object.keys(CAPABILITIES).includes(val)))
-			return END_ERROR (res, 403, "Invalid data (capability)");
+			return END_ERROR (res, 400, "Invalid data (capability)");
 
 		req_capability = capability;
 	}
 
 	if (accesser_role === "consumer" || accesser_role === "data ingester")
 	{
-		if (! resource || ! res_type)
-			return END_ERROR (res, 403, "Invalid data");
+		if (! resource)
+			return END_ERROR (res, 400, "Invalid data (item-id)");
+
+		if (! res_type || ! RESOURCE_ITEM_TYPES.includes(res_type))
+			return END_ERROR (res, 400, "Invalid data (item-type)");
 
 		// resource group must have 3 slashes
 		if ((resource.match(/\//g) || []).length !== 3)
-			return END_ERROR (res, 403, "Invalid Resource ID");
+			return END_ERROR (res, 400, "Invalid data (item-id)");
 
 		if (! is_string_safe(resource, "_") || resource.indexOf("..") >= 0)
-			return END_ERROR (res, 403, "Invalid Resource ID");
+			return END_ERROR (res, 400, "Invalid data (item-id)");
 
 		if (! resource.startsWith(provider_id_hash))
-			return END_ERROR (res, 403, "Invalid Resource ID");
-
-		if (! RESOURCE_ITEM_TYPES.includes(res_type))
-			return END_ERROR (res, 403, "Invalid type");
+			return END_ERROR (res, 403, "Provider does not match resource owner");
 
 		// create resource id that aperture expects
 		resource_name = resource.replace(provider_id_hash + "/", "");
@@ -3477,7 +3480,7 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 		}
 	}
 
-	/* access_item_id for catalogue is 0 by default */
+	/* access_item_id for catalogue is -1 by default */
 	if (accesser_role === "onboarder")
 	{
 		access_item_id 	= -1;
@@ -3525,7 +3528,7 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 
 				if (! capability.every( (val, index) => {
 					i = index;
-					return ! existing_caps.includes(val)
+					return ! existing_caps.includes(val);
 				}))
 					return END_ERROR (res, 403, `Rule exists for ${capability[i]}`);
 
@@ -3688,7 +3691,7 @@ app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
 	var cap_details	 = {};
 
 	try { provider_uid = await check_privilege(email, "provider"); }
-	catch(error) { return END_ERROR (res, 403, "Not allowed"); }
+	catch(error) { return END_ERROR (res, 401, "Not allowed"); }
 
 	try {
 		let result = await pool.query (
@@ -3842,8 +3845,8 @@ app.put("/auth/v[1-2]/admin/provider/registrations/status", (req, res) => {
 	}
 	let user, csr, org, role;
 	try {
-		user = pg.querySync("SELECT * FROM consent.users, consent.role "	+
-				    " WHERE consent.users.id = consent.role.user_id "	+
+		user = pg.querySync("SELECT users.*, role.role, role.status FROM consent.users, consent.role "	+
+				    " WHERE consent.users.id = consent.role.user_id AND role.role = 'provider'"	+
 				    " AND consent.users.id = $1::integer",[user_id])[0] || null;
 		csr = pg.querySync("SELECT * FROM consent.certificates WHERE user_id = $1::integer", [user_id])[0] || null;
 		org = pg.querySync("SELECT * FROM consent.organizations WHERE id = $1::integer", [user.organization_id])[0] || null;
@@ -3918,11 +3921,11 @@ app.post("/auth/v[1-2]/admin/organizations", async (req, res) => {
 	const org = res.locals.body.organization;
 	let real_domain;
 	if (!org || !org.name || !org.website || !org.city || !org.state || !org.country)
-		return END_ERROR (res, 403, "Invalid data (organization)");
+		return END_ERROR (res, 400, "Invalid data (organization)");
 	if ( org.state.length !== 2 || org.country.length !== 2)
-		return END_ERROR (res, 403, "Invalid data (organization)");
+		return END_ERROR (res, 400, "Invalid data (organization)");
 	if ((real_domain = domain.get(org.website)) === null)
-		return END_ERROR (res, 403, "Invalid data (organization)");
+		return END_ERROR (res, 400, "Invalid data (organization)");
 
 	const existing_orgs = await pool.query ("SELECT id FROM consent.organizations WHERE website = $1::text", [real_domain]);
 	if (existing_orgs.rows.length !== 0)
@@ -3934,7 +3937,7 @@ app.post("/auth/v[1-2]/admin/organizations", async (req, res) => {
 		"RETURNING id, name, website, city, state, country, created_at",
 		[
 			org.name,				//$1
-			real_domain,			//$2
+			real_domain,				//$2
 			org.city,				//$3
 			org.state.toUpperCase(),		//$4
 			org.country.toUpperCase()		//$5
@@ -3948,7 +3951,7 @@ app.post("/auth/v[1-2]/admin/organizations", async (req, res) => {
 
 app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 
-	const email	= res.locals.body.email.toLowerCase();
+	let email	= res.locals.body.email;
 	const phone 	= res.locals.body.phone;
 	let org_id 	= res.locals.body.organization;
 	const name 	= res.locals.body.name;
@@ -3958,21 +3961,26 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 	const phone_regex = new RegExp(/^[9876]\d{9}$/);
 
 	if (! name || ! name.title || ! name.firstName || ! name.lastName)
-		return END_ERROR (res, 403, "Invalid data (name)");
+		return END_ERROR (res, 400, "Invalid data (name)");
 
 	if (! raw_csr || raw_csr.length > CSR_SIZE)
-		return END_ERROR (res, 403, "Invalid data (csr)");
+		return END_ERROR (res, 400, "Invalid data (csr)");
 
-	if (! is_valid_email(email) || ! phone_regex.test(phone))
-		return END_ERROR (res, 403, "Invalid data (email/phone)");
+	if (! is_valid_email(email))
+		return END_ERROR (res, 400, "Invalid data (email)");
+
+	email = email.toLowerCase();
+
+	if (! phone_regex.test(phone))
+		return END_ERROR (res, 400, "Invalid data (phone)");
 
 	if (! org_id)
-		return END_ERROR (res, 403, "Invalid data (organization)");
+		return END_ERROR (res, 400, "Invalid data (organization)");
 
 	org_id = parseInt(org_id, 10);
 
-	if (isNaN(org_id) || org_id < 1)
-		return END_ERROR (res, 403, "Invalid data (organization)");
+	if (isNaN(org_id) || org_id < 1 || org_id > PG_MAX_INT)
+		return END_ERROR (res, 400, "Invalid data (organization)");
 
 	try
 	{
@@ -3981,7 +3989,7 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 	}
 	catch(error)
 	{
-		return END_ERROR (res, 403, "Invalid data (csr)");
+		return END_ERROR (res, 400, "Invalid data (csr)");
 	}
 
 	try
@@ -3991,7 +3999,7 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 			" WHERE email = $1::text",
 			[ email ]);
 
-		if ( exists.rows.length !== 0)
+		if (exists.rows.length !== 0)
 			return END_ERROR (res, 403, "Email exists");
 
 		const org_reg = await pool.query (
@@ -4000,7 +4008,7 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 			[ org_id ]);
 
 		if (org_reg.rows.length === 0)
-			return END_ERROR (res, 404, "Organization not registered");
+			return END_ERROR (res, 403, "Invalid organization");
 	}
 	catch(error)
 	{
@@ -4073,50 +4081,54 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 	});
 
 	return END_SUCCESS (res);
-
 });
 
 app.post("/consent/v[1-2]/registration", async (req, res) => {
 
-	const email	= res.locals.body.email.toLowerCase();
+	let email	= res.locals.body.email;
 	const phone 	= res.locals.body.phone;
 	const name 	= res.locals.body.name;
-	const raw_csr	= res.locals.body.csr;
+	let raw_csr	= res.locals.body.csr;
 	let org_id 	= res.locals.body.organization;
 	let roles	= res.locals.body.roles;
 
 	let user_id, signed_cert = null;
-	let check_orgid;
-	var existing_user = false;
+	let check_orgid = false;
+	var existing_user = false, certless_user = false;
 
 	const phone_regex = new RegExp(/^[9876]\d{9}$/);
 
 	if (! name || ! name.title || ! name.firstName || ! name.lastName)
-		return END_ERROR (res, 403, "Invalid data (name)");
+		return END_ERROR (res, 400, "Invalid data (name)");
 
-	if (! is_valid_email(email) || ! phone_regex.test(phone))
-		return END_ERROR (res, 403, "Invalid data (email/phone)");
+	if (! is_valid_email(email))
+		return END_ERROR (res, 400, "Invalid data (email)");
 
-	if (! Array.isArray(roles) || roles.length === 0)
-		return END_ERROR (res, 403, "Invalid data (roles)");
+	email = email.toLowerCase();
+
+	if (! phone_regex.test(phone))
+		return END_ERROR (res, 400, "Invalid data (phone)");
+
+	if (! Array.isArray(roles) || roles.length > ACCESS_ROLES.length || roles.length === 0)
+		return END_ERROR (res, 400, "Invalid data (roles)");
 
 	// get unique elements
 	roles = [...new Set(roles)];
 
 	if (! roles.every( (val) => ACCESS_ROLES.includes(val)))
-		return END_ERROR (res, 403, "Invalid data (roles)");
+		return END_ERROR (res, 400, "Invalid data (roles)");
 
 	if (roles.includes("onboarder") || roles.includes("data ingester"))
 	{
 		let domain;
 
 		if (! org_id)
-			return END_ERROR (res, 403, "Invalid data (organization)");
+			return END_ERROR (res, 400, "Invalid data (organization)");
 
 		org_id = parseInt(org_id, 10);
 
-		if (isNaN(org_id) || org_id < 1)
-			return END_ERROR (res, 403, "Invalid data (organization)");
+		if (isNaN(org_id) || org_id < 1 || org_id > PG_MAX_INT)
+			return END_ERROR (res, 400, "Invalid data (organization)");
 
 		// check if org registered
 		try {
@@ -4126,7 +4138,7 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 				[ org_id ]);
 
 			if (results.rows.length === 0)
-				return END_ERROR (res, 404, "Organization not registered");
+				return END_ERROR (res, 403, "Invalid organization");
 
 			domain = results.rows[0].website;
 		}
@@ -4139,7 +4151,7 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 
 		// check if org domain matches email domain
 		if (email_domain !== domain)
-			return END_ERROR (res, 403, "Invalid data (email)");
+			return END_ERROR (res, 403, "Invalid data (domains do not match)");
 	}
 	else
 		org_id = null; // in the case of consumer
@@ -4155,7 +4167,36 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 		{
 			existing_user = true;
 			user_id = check_uid.rows[0].id;
+
+			/* if registered as consumer first, org_id will be undefined */
 			check_orgid = check_uid.rows[0].organization_id;
+
+			/* check if cert field for user is null (rejected/pending
+			 * provider). If yes, use the existing CSR to create the certificate */
+			const check = await pool.query (
+				"SELECT * FROM consent.certificates"		+
+				" WHERE certificates.user_id = $1::integer"	+
+				" AND cert IS NULL",
+				[ user_id ]);
+
+			if (check.rows.length !== 0)
+			{
+				raw_csr 	= check.rows[0].csr;
+				certless_user 	= true;
+			}
+
+			/* check if user is trying to register for role
+			 * that they are already registered for */
+			for (const val of roles)
+			{
+				let uid = null;
+
+				try { uid = await check_privilege(email, val); }
+				catch(error) { /* do nothing if role not there */ }
+
+				if (uid !== null)
+					return END_ERROR (res, 403, "Already registered as " + val);
+			}
 		}
 	}
 	catch(error)
@@ -4163,24 +4204,10 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 		return END_ERROR (res, 500, "Internal error!", error);
 	}
 
-	if (existing_user)
-	{
-		for (const val of roles)
-		{
-			let uid = null;
-
-			try { uid = await check_privilege(email, val); }
-			catch(error) { /* do nothing if role not there */ }
-
-			if (uid !== null)
-				return END_ERROR (res, 403, "Already registered as " + val);
-		}
-
-	}
-	else	// create user
+	if (! existing_user || certless_user)	// generate certificate
 	{
 		if (! raw_csr || raw_csr.length > CSR_SIZE)
-			return END_ERROR (res, 403, "Invalid data (csr)");
+			return END_ERROR (res, 400, "Invalid data (csr)");
 
 		try
 		{
@@ -4189,7 +4216,7 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 		}
 		catch(error)
 		{
-			return END_ERROR (res, 403, "Invalid data (csr)");
+			return END_ERROR (res, 400, "Invalid data (csr)");
 		}
 
 		let user_details = { email : email };
@@ -4200,9 +4227,11 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 		} catch (e) {
 			return END_ERROR(res, 500, "Certificate Error", e.message);
 		}
+	}
 
+	if (! existing_user)
+	{
 		try {
-
 			const user = await pool.query (
 				" INSERT INTO consent.users "			+
 				" (title, first_name, last_name, "		+
@@ -4240,7 +4269,23 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 		}
 	}
 
-	// update org_id if the user was originally a consumer
+	if (certless_user) // update with certificate
+	{
+		try {
+			const cert = await pool.query (
+				"UPDATE consent.certificates SET "	+
+				" cert = $1::text, updated_at = NOW() " +
+				" WHERE user_id = $2::integer",
+				[ signed_cert, user_id ]);
+		}
+		catch(error)
+		{
+			return END_ERROR (res, 500, "Internal error!", error);
+		}
+	}
+
+	/* update org_id if the user was originally a consumer
+	 * (org_id would be null) */
 	if (check_orgid === undefined)
 	{
 		try
