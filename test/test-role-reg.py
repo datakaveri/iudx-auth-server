@@ -21,9 +21,10 @@ email       = email_name + '@gmail.com'
 
 org_id = add_organization(website)
 
+# no role specified
 r = role_reg(email, '9454234223', name , [], None, csr)
 assert r['success']     == False
-assert r['status_code'] == 403
+assert r['status_code'] == 400
 
 r = role_reg(email, '9454234223', name , ["consumer"], None, csr)
 assert r['success']     == True
@@ -52,7 +53,7 @@ assert r['status_code'] == 200
 # invalid roles
 r = role_reg(email, '9454234223', name , ["onboarder", "provider"], org_id, csr)
 assert r['success']     == False
-assert r['status_code'] == 403
+assert r['status_code'] == 400
 
 # register as consumer with organisation mail
 r = role_reg(email, '9454234223', name , ["consumer"], None)
@@ -73,17 +74,17 @@ email = email_name + '@' + website
 # no csr
 r = role_reg(email, '9454234223', name , ["onboarder", "data ingester", "consumer"], org_id)
 assert r['success']     == False
-assert r['status_code'] == 403
+assert r['status_code'] == 400
 
 # bad csr
 r = role_reg(email, '9454234223', name , ["onboarder", "data ingester", "consumer"], org_id, bad_csr)
 assert r['success']     == False
-assert r['status_code'] == 403
+assert r['status_code'] == 400
 
 # invalid org ID
 r = role_reg(email, '9454234223', name , ["onboarder", "data ingester", "consumer"], 210781030, csr)
 assert r['success']     == False
-assert r['status_code'] == 404
+assert r['status_code'] == 403
 
 r = role_reg(email, '9454234223', name , ["onboarder", "data ingester", "consumer"], org_id, csr)
 assert r['success']     == True
