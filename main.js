@@ -3429,7 +3429,8 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 
 	if (accesser_role === "consumer")
 	{
-		if (! capability)
+	    if (! Array.isArray(capability) || capability.length > Object.keys(CAPABILITIES).length 
+			    || capability.length === 0)
 			return END_ERROR (res, 400, "Invalid data (capability)");
 
 		capability = [...new Set(capability)];
