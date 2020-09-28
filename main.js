@@ -2523,7 +2523,7 @@ app.post("/auth/v[1-2]/token/revoke", (req, res) => {
 			if (rows.length === 0)
 			{
 				const error_response = {
-					"message"		: "Invalid 'token hash'",
+					"message"		: "Invalid 'token-hash'",
 					"invalid-input"		: xss_safe(token_hash),
 					"num-tokens-revoked"	: num_tokens_revoked
 				};
