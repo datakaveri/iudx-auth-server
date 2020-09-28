@@ -2523,7 +2523,7 @@ app.post("/auth/v[1-2]/token/revoke", (req, res) => {
 			if (rows.length === 0)
 			{
 				const error_response = {
-					"message"		: "Invalid 'token hash'",
+					"message"		: "Invalid 'token-hash'",
 					"invalid-input"		: xss_safe(token_hash),
 					"num-tokens-revoked"	: num_tokens_revoked
 				};
@@ -3429,7 +3429,8 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 
 	if (accesser_role === "consumer")
 	{
-		if (! capability)
+	    if (! Array.isArray(capability) || capability.length > Object.keys(CAPABILITIES).length 
+			    || capability.length === 0)
 			return END_ERROR (res, 400, "Invalid data (capability)");
 
 		capability = [...new Set(capability)];
