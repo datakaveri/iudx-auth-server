@@ -20,15 +20,13 @@ Install [Ubuntu 20.04](https://releases.ubuntu.com/20.04/)
 6. Update `admins.json` with the email addresses of users who will be admins
 7. Update the `AUTH_SERVER` and `CONSENT_URL` variables in `main.js` to the desired domains
 8. If PostgreSQL is to be installed in a different server:
-	- Run `postgres-setup.sh` on that machine and follow instructions specified in that file
-	- Create an environment variable with the IP address of the PostgreSQL machine on the Auth machine before running `setup`
-
-```
-	export POSTGRES_IP=<ip of that machine>
-```	
-
-	- Update the `DB_SERVER` variable in `main.js`, and the DB connection string in `crl.js`
+	- Run [postgres-setup.sh](postgres-setup.sh) on that machine and follow instructions specified in that file
+	- Create an environment variable with the IP address of the PostgreSQL machine on the Auth machine`
+			```
+			export POSTGRES_IP=<ip of that machine>
+			```
 	- If the environment variable is not set, then PostgreSQL will be installed on the same machine
+	- Update the `DB_SERVER` variable in `main.js`, and the DB connection string in `crl.js`
 9. Finally, run `setup`
 
 ```
