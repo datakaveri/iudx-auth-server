@@ -1,0 +1,367 @@
+{
+	"info": {
+		"_postman_id": "763b6b3e-82c0-4a92-93dd-03c48ccb5696",
+		"name": "Access",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Give Access for Ingester",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "c317755e-0031-4461-95b3-2e47c9e44b25",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"user_email\":\"<ingester_email>\",\r\n  \"user_role\": \"data ingester\",\r\n  \"item_id\": \"<enter resource Id>\",\r\n  \"item_type\": \"resourcegroup\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/provider/access",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"provider",
+						"access"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Give Access for Onboarder",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "28d5dfd7-4285-4ba7-ad11-938adcff1204",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "\r\n{\r\n  \"user_email\": \"<enter onboarder's emails>\",\r\n  \"user_role\": \"onboarder\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/provider/access",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"provider",
+						"access"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Give Access for Consumer (Subscription)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "057538a7-852a-48f9-b0c8-f617a15d67b9",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "prerequest",
+					"script": {
+						"id": "eef7ab48-bf87-49f3-a7b4-96b8be7bd78b",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"user_email\": \"<enter consumer's email>\",\r\n  \"user_role\": \"consumer\",\r\n  \"item_id\": \"<enter resourse id>\",\r\n  \"item_type\": \"resourcegroup\",\r\n  \"capability\" : [\"subscription\"]\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/provider/access",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"provider",
+						"access"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Give Access for Consumer (Complex)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "7bc43a86-ca6e-4ddd-ad02-e7e3c9bd7657",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "prerequest",
+					"script": {
+						"id": "203bbc7b-e279-42a2-b358-9f5473e99957",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"user_email\": \"<enter email>\",\r\n  \"user_role\": \"consumer\",\r\n  \"item_id\": \"<enter resource id>\",\r\n  \"item_type\": \"resourcegroup\",\r\n  \"capability\" : [\"complex\"]\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/provider/access",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"provider",
+						"access"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Give Access for Consumer (Temporal)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "14946fd3-dcb9-44eb-8d9e-4dfc34809502",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "prerequest",
+					"script": {
+						"id": "d3703853-f55e-4623-9cf7-94e95a819957",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"user_email\": \"<enter consumer email>\",\r\n  \"user_role\": \"consumer\",\r\n  \"item_id\": \"<enter resource id>\",\r\n  \"item_type\": \"resourcegroup\",\r\n  \"capability\" : [\"temporal\"]\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/provider/access",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"provider",
+						"access"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Give Consumer all capabilities",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "bb36d1ea-f349-47b0-9eae-f1e7688b298a",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "prerequest",
+					"script": {
+						"id": "4e88080f-93cb-48f8-846d-04c9b9a67dc6",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"user_email\": \"<enter consumer email>\",\r\n  \"user_role\": \"consumer\",\r\n  \"item_id\": \"<enter resource id>\",\r\n  \"item_type\": \"resourcegroup\",\r\n  \"capability\" : [\"temporal\", \"complex\", \"subscription\"]\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/provider/access",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"provider",
+						"access"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get all Access rules",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "f0461a8f-bc75-4f6f-8afe-47973af8332c",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/provider/access",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"provider",
+						"access"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Certificate Info API",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "bc9a4e7e-113d-4baa-aea2-a11a9b1cd276",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/certificate-info",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"certificate-info"
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"protocolProfileBehavior": {}
+}

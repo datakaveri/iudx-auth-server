@@ -1,0 +1,246 @@
+{
+	"info": {
+		"_postman_id": "91dc2ff5-74ef-407f-9ff6-2685257ea6c5",
+		"name": "Provider Approval",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Get Pending Provider Registrations",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "60ca2b07-e19a-44c9-97c7-6be5dba45430",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/admin/provider/registrations",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"admin",
+						"provider",
+						"registrations"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get Approved Provider Registrations",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "aa87e610-b28b-46de-b006-190a1f71b20c",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/admin/provider/registrations?filter=approved",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"admin",
+						"provider",
+						"registrations"
+					],
+					"query": [
+						{
+							"key": "filter",
+							"value": "approved"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get Rejected Provider Registrations",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "012dba43-e227-44e6-af9d-6ad018ef2ea7",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/admin/provider/registrations?filter=rejected",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"admin",
+						"provider",
+						"registrations"
+					],
+					"query": [
+						{
+							"key": "filter",
+							"value": "rejected"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Approve a provider",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "4644e972-1bf1-4b2a-afa4-3437f713c58b",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "PUT",
+				"header": [],
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/admin/provider/registrations/status?user_id=<user_id_of_provider>&status=approved",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"admin",
+						"provider",
+						"registrations",
+						"status"
+					],
+					"query": [
+						{
+							"key": "user_id",
+							"value": "<user_id_of_provider>"
+						},
+						{
+							"key": "status",
+							"value": "approved"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Reject a provider",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "e32e5d1c-150f-4b67-b5c4-4d2cf45a62ca",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "PUT",
+				"header": [],
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/admin/provider/registrations/status?user_id=<user_id_of_provider>&status=rejected",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"admin",
+						"provider",
+						"registrations",
+						"status"
+					],
+					"query": [
+						{
+							"key": "user_id",
+							"value": "<user_id_of_provider>"
+						},
+						{
+							"key": "status",
+							"value": "rejected"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Certificate Info API",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "988dbbc3-0e8f-4103-a760-9aeb7a3c67e5",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/certificate-info",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"certificate-info"
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"protocolProfileBehavior": {}
+}

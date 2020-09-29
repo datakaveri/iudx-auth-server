@@ -1,0 +1,178 @@
+{
+	"info": {
+		"_postman_id": "e066c6c0-e424-4adc-a292-e4c1df752f9e",
+		"name": "Audit and revoke",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Revoke all tokens",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "a71d7418-3c13-417e-b61c-6d851f015b14",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"fingerprint\":\"<enter cert fingerprint>\",\n    \"serial\":\"<enter certificate serial>\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/token/revoke-all",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"token",
+						"revoke-all"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Revoke a token",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "c1492ace-a53b-4e99-9ea3-1669826280c0",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"token-hashes\":[\"<add strings of token hashes>\"]\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/token/revoke",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"token",
+						"revoke"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Audit tokens",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "7dda62d5-a5b8-4b42-9f4e-a9f4980e203e",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "prerequest",
+					"script": {
+						"id": "6e7debc7-d658-4b39-9fd3-3bb27f8f9587",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"hours\": 1\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/audit/tokens",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"audit",
+						"tokens"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Certificate Info API",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "7b2d51d3-9bae-461d-9d48-7cf76f0cd05b",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/certificate-info",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"certificate-info"
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"protocolProfileBehavior": {}
+}

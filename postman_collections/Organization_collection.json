@@ -1,0 +1,161 @@
+{
+	"info": {
+		"_postman_id": "c4191d8c-43a8-4e4f-acc7-3681d420cec6",
+		"name": "Organization API",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Register an organization",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"id": "540bcfbe-1f97-4c48-872d-ebe8c935f2f2",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"id": "c7c386d3-4d0d-4619-bb2b-acec7c6f4af0",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"organization\": {\n        \"name\": \"<organization name>\",\n        \"website\": \"<organization website>\",\n        \"city\": \"<city>\",\n        \"state\": \"<state in 2-letter form>\",\n        \"country\": \"IN\"\n    }\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/admin/organizations",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"admin",
+						"organizations"
+					],
+					"query": [
+						{
+							"key": "",
+							"value": null,
+							"disabled": true
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get all Organizations",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"id": "f10110d2-eb2c-403b-ae73-dd435a2071a3",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"id": "f6aeee0e-a061-431b-9b01-b9ed0ad4a1b8",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "GET",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{CONSENT_ENDPOINT}}/v1/organizations",
+					"protocol": "https",
+					"host": [
+						"{{CONSENT_ENDPOINT}}"
+					],
+					"path": [
+						"v1",
+						"organizations"
+					],
+					"query": [
+						{
+							"key": "",
+							"value": null,
+							"disabled": true
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Certificate Info API",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "e7301ef5-720f-4bb4-bb9f-c9e837e70a27",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/certificate-info",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"certificate-info"
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"protocolProfileBehavior": {}
+}

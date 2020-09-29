@@ -1,0 +1,259 @@
+{
+	"info": {
+		"_postman_id": "202bd881-d3e1-4fc7-89c6-9bec5ff76c56",
+		"name": "Token",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Get token for onboarder (catalogue)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "8e770f2b-ab22-49e2-939d-86b9cb015ff3",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"request\": [\r\n        {\r\n            \"id\": \"<provider_domain>/<provider email SHA1>/<catalogue URL>/catalogue/crud\"\r\n        }\r\n    ]\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/token",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"token"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get token for multiple IDs, multiple APIs",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "b008a365-3ec0-4c34-9c31-c62cc3df15b3",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"request\": [\r\n        {\r\n            \"id\": \"<resource id>/*\",\r\n            \"apis\": [\r\n                \"/ngsi-ld/v1/entities\",\r\n                \"/ngsi-ld/v1/entities/<resource id>\",\r\n                \"/ngsi-ld/v1/entityOperations/query\"\r\n            ]\r\n        },\r\n         {\r\n            \"id\": \"<resource id>/item-1\",\r\n            \"apis\": [\r\n                \"/ngsi-ld/v1/entities\",\r\n                \"/ngsi-ld/v1/entities/<resource id>\"\r\n            ]\r\n        },\r\n           {\r\n            \"id\": \"<resource id>/item-2\",\r\n            \"apis\": [\r\n                \"/ngsi-ld/v1/subscription\"\r\n            ]\r\n        }\r\n    ]\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/token",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"token"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get token for ingester (resource group)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "6a910bff-bd81-44fe-8f54-16387b696198",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"request\": [\r\n        {\r\n            \"id\": \"<resource id>/*\",\r\n            \"apis\": [\r\n                \"/iudx/v1/adapter\"\r\n            ]\r\n        }\r\n    ]\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/token",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"token"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get token for ingester (resource item)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "7ec0a662-cd64-428c-9b8e-210545e38430",
+						"exec": [
+							"pm.test(\"Get token for ingester rule\", function () {\r",
+							"    pm.response.to.have.status(200);\r",
+							"    pm.response.to.not.be.error;\r",
+							"    pm.response.to.have.jsonBody(\"token\");\r",
+							"    var resp = pm.response.json();\r",
+							"    pm.expect(resp['expires-in']).to.be.eq(604800);\r",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"request\": [\r\n        {\r\n            \"id\": \"<resource id>/some-item-in-resource-group\",\r\n            \"apis\": [\r\n                \"/iudx/v1/adapter\"\r\n            ]\r\n        }\r\n    ]\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/token",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"token"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get token for temporal",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "de7927d2-d02d-4a4c-b71a-dc6c1cae37ee",
+						"exec": [
+							"pm.test(\"Get token for temporal (item)\", function () {\r",
+							"    pm.response.to.have.status(200);\r",
+							"    pm.response.to.not.be.error;\r",
+							"    pm.response.to.have.jsonBody(\"token\");\r",
+							"    var resp = pm.response.json();\r",
+							"    pm.expect(resp['expires-in']).to.be.eq(604800);\r",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"request\": [\r\n        {\r\n            \"id\": \"<resource id>\",\r\n            \"apis\": [\r\n                \"/ngsi-ld/v1/temporal/entities\",\r\n                \"/ngsi-ld/v1/entities/<resource id>\"\r\n            ]\r\n        }\r\n    ]\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/token",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"token"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Certificate Info API",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "1af47b4d-1c7a-458b-803f-7b9877366ae9",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/certificate-info",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"certificate-info"
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"protocolProfileBehavior": {}
+}
