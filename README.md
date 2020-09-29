@@ -26,6 +26,7 @@ Install [Ubuntu 20.04](https://releases.ubuntu.com/20.04/)
 ```
 	export POSTGRES_IP=<ip of that machine>
 ```	
+
 	- Update the `DB_SERVER` variable in `main.js`, and the DB connection string in `crl.js`
 	- If the environment variable is not set, then PostgreSQL will be installed on the same machine
 9. Finally, run `setup`
