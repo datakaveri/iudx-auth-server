@@ -1,0 +1,94 @@
+{
+	"info": {
+		"_postman_id": "47a4f8b7-68f5-4322-88ba-d58ed040d329",
+		"name": "Introspect",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Introspect a token",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "a465f2dd-c114-484a-a427-e99c7de61bf1",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"token\":\"<enter token>\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/token/introspect",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"token",
+						"introspect"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Certificate Info API",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "f26f23ec-17f2-4b29-a8b6-4e79d1c9f0dd",
+						"exec": [
+							"pm.test(\"Certificate information\", function() {",
+							"    pm.expect(pm.response.code).to.eq(200);",
+							"    var resp = pm.response.json();",
+							"    var serial = pm.environment.get(\"CERT_SERIAL\");",
+							"    var fp = pm.environment.get(\"CERT_FP\");",
+							"    pm.expect(resp.id).to.be.eq(\"postman.other-roles@datakaveri.org\");",
+							"    pm.expect(resp[\"certificate-class\"]).to.be.eq(2);",
+							"    pm.expect(resp.serial).to.be.eq(serial);",
+							"    pm.expect(resp.fingerprint).to.be.eq(fp);",
+							"}",
+							")"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/certificate-info",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"certificate-info"
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"protocolProfileBehavior": {}
+}

@@ -1,0 +1,267 @@
+{
+	"info": {
+		"_postman_id": "5f1c47bc-ae26-4041-8ce3-66360fe11118",
+		"name": "Registration",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Consumer Registration",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "72444795-4e44-4560-aebf-e7e6e0ff1002",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "prerequest",
+					"script": {
+						"id": "2f737fec-5189-4a04-b27b-cc6a8a7e8325",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n\"name\" : {\r\n\"title\" : \"<titile>\",\r\n\"firstName\" : \"<firstname>\",\r\n\"lastName\"\t: \"<lastname>\"\r\n},\r\n\"email\" :\"<enter email>\",\r\n\"phone\" :\"<number>\",\r\n\"csr\" :\"<csr goes here>\",\r\n\"roles\" : [\"consumer\"]\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{CONSENT_ENDPOINT}}/v1/registration",
+					"protocol": "https",
+					"host": [
+						"{{CONSENT_ENDPOINT}}"
+					],
+					"path": [
+						"v1",
+						"registration"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Onboarder Registration",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "b15c9f20-f025-4c37-a7e9-db3af246f5cf",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "prerequest",
+					"script": {
+						"id": "e4de5553-dd2c-4364-87fe-2dcf1e37a3c2",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n\"name\" : {\r\n\"title\" : \"<title>\",\r\n\"firstName\" : \"<firstname>\",\r\n\"lastName\"\t: \"<lastname>\"\r\n},\r\n\"email\" :\"<enter email>\",\r\n\"organization\" : 42,\r\n\"phone\" :\"<phone number>\",\r\n\"csr\" :\"<csr goes here>\",\r\n\"roles\" : [\"onboarder\"]\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{CONSENT_ENDPOINT}}/v1/registration",
+					"protocol": "https",
+					"host": [
+						"{{CONSENT_ENDPOINT}}"
+					],
+					"path": [
+						"v1",
+						"registration"
+					]
+				},
+				"description": "Replace \"organization\" with valid organzation ID obtained from GET organizations API"
+			},
+			"response": []
+		},
+		{
+			"name": "Ingester Registration",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "0a6ce8ef-b5b3-41aa-9fa7-4dcad86d973e",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "prerequest",
+					"script": {
+						"id": "1adc7e15-ef93-41d4-b813-c0bd3666cf40",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n\"name\" : {\r\n\"title\" : \"<title>\",\r\n\"firstName\" : \"<firstname>\",\r\n\"lastName\"\t: \"<lastname>\"\r\n},\r\n\"email\" :\"<enter email>\",\r\n\"organization\" : 42,\r\n\"phone\" :\"<phone number>\",\r\n\"csr\" :\"<csr goes here>\",\r\n\"roles\" : [\"data ingester\"]\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{CONSENT_ENDPOINT}}/v1/registration",
+					"protocol": "https",
+					"host": [
+						"{{CONSENT_ENDPOINT}}"
+					],
+					"path": [
+						"v1",
+						"registration"
+					]
+				},
+				"description": "Replace \"organization\" with valid organzation ID obtained from GET organizations API"
+			},
+			"response": []
+		},
+		{
+			"name": "Provider Registration",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "c0f2e404-6c3d-4931-a558-10f49ff4cc70",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "prerequest",
+					"script": {
+						"id": "d2d4f3f6-2c05-4691-9c79-302e8ff1f533",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"name\" : {\n        \"title\" : \"<title>\",\n        \"firstName\" : \"<firstname>\",\n        \"lastName\" : \"<lastname>\"\n    },\n    \"email\" : \"<enter email>\",\n    \"phone\" : \"<phone numer>\",\n    \"organization\" : 42,\n    \"csr\" : \"<csr goes here>\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{CONSENT_ENDPOINT}}/v1/provider/registration",
+					"protocol": "https",
+					"host": [
+						"{{CONSENT_ENDPOINT}}"
+					],
+					"path": [
+						"v1",
+						"provider",
+						"registration"
+					]
+				},
+				"description": "Replace \"organization\" with valid organzation ID obtained from GET organizations API"
+			},
+			"response": []
+		},
+		{
+			"name": "Get all Organizations",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"id": "db12e2c9-c03d-45b3-a8ed-05201a2bdc68",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"id": "b2fb2cd5-73fa-43b9-aaef-dca455644775",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "GET",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{CONSENT_ENDPOINT}}/v1/organizations",
+					"protocol": "https",
+					"host": [
+						"{{CONSENT_ENDPOINT}}"
+					],
+					"path": [
+						"v1",
+						"organizations"
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"protocolProfileBehavior": {}
+}
