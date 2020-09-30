@@ -208,7 +208,6 @@ assert r['success']     == True
 assert r['status_code'] == 200
 rules = r['response']
 for r in rules:
-        print(r['capabilities'])
         if r['email'] == email and r['role'] == 'consumer':
                 assert set(r['capabilities']).issubset(set(['temporal', 'subscription', 'complex']))
                 assert len(r['capabilities']) <= 3 and len(r['capabilities']) >= 1
