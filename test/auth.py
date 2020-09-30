@@ -18,7 +18,7 @@ class Auth():
                 self.credentials        = (certificate, key)
         #
 
-        def call(self, api, body=None):
+        def call(self, api, body=None, method = "POST", params=None):
         #
                 ret = True # success
 
@@ -26,11 +26,13 @@ class Auth():
 
                 body = json.dumps(body)
                 url = self.url + api_type + "/v1/" + api
-                response = requests.post (
+                response = requests.request (
+                        method      = method,
                         url         = url,
                         verify      = self.ssl_verify,
                         cert        = self.credentials,
                         data        = body,
+                        params      = params,
                         headers     = {"content-type":"application/json"}
                 )
 
@@ -170,4 +172,30 @@ class Auth():
 
                 return self.call("provider/access", body)
         #
+
+        def get_provider_access(self):
+        #
+                return self.call("provider/access", {}, "GET")
+        #
+
+        def organization_reg(self, org):
+        #
+                body = {'organization' : org
+                        }
+
+                return self.call("admin/organizations", body)
+        #
+
+        def get_provider_regs(self, filtr=None):
+        #
+                params = {"filter" : filtr}
+                return self.call("admin/provider/registrations", {}, "GET", params)
+        #
+
+        def update_provider_status(self, uid, status):
+        #
+                params = {"id" : uid, "status" : status}
+                return self.call("admin/provider/registrations", {}, "GET", params)
+        #
+
 #}

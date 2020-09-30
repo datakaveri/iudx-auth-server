@@ -117,6 +117,7 @@ assert r['status_code'] == 200
 apis = ["/ngsi-ld/v1/entityOperations/query", "/ngsi-ld/v1/entities", "/ngsi-ld/v1/temporal/entities","/ngsi-ld/v1/entities/" + resource_id, "/ngsi-ld/v1/subscription"]
 body = {"id" : resource_id + "/someitem", "apis" : apis }
 r = consumer.get_token(body)
+
 assert r['success']     is True
 
 # rule exists
@@ -200,3 +201,19 @@ assert r['status_code'] == 400
 r = untrusted.provider_access(email, 'data ingester', '/aaaaa/sssss', 'resourcegroup')
 assert r['success']     == False
 assert r['status_code'] == 400
+
+# get all rules
+r = untrusted.get_provider_access()
+assert r['success']     == True
+assert r['status_code'] == 200
+rules = r['response']
+for r in rules:
+        print(r['capabilities'])
+        if r['email'] == email and r['role'] == 'consumer':
+                assert set(r['capabilities']).issubset(set(['temporal', 'subscription', 'complex']))
+                assert len(r['capabilities']) <= 3 and len(r['capabilities']) >= 1
+        if r['email'] == email and r['role'] == 'onboarder':
+                assert r['item_type'] == 'catalogue'
+        if r['email'] == email and r['role'] == 'data ingester':
+                assert r['policy'].endswith('"/iudx/v1/adapter"')
+

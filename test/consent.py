@@ -14,7 +14,7 @@ if "AUTH_SERVER" in os.environ and os.environ["AUTH_SERVER"] == "localhost":
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 #
 
-def call(api, body=None):
+def call(api, body=None, method = "POST"):
 #
         ret = True # success
 
@@ -23,7 +23,8 @@ def call(api, body=None):
         body = json.dumps(body)
 
         url = "https://" + CONSENT_ENDPOINT + "/v1/" + api
-        response = requests.post (
+        response = requests.request (
+                method      = method,
                 url         = url,
                 verify      = ssl_verify,
                 data        = body,
@@ -90,4 +91,10 @@ def role_reg(email, phone, name, roles, org_id = None, csr = None):
                 }
 
         return call("/registration", body)
+#
+
+def get_orgs():
+#
+        body ={}
+        return call("/organizations", body, "GET")
 #
