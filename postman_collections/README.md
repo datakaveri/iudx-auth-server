@@ -1,8 +1,5 @@
 ## Postman Collections
 
-* Access_collection.json	     Introspect_collection.json    ProviderApproval_collection.json  Registration_collection.json
-AuditRevoke_collection.json  Organization_collection.json  README.md			     Token_collection.json
-
 * [Organization_collection.json](Organization_collection.json) contains the Admin Organization Registration APIs
 * [Registration_collection.json](Registration_collection.json) contains the Registration APIs for Providers and other roles (Consumers, Data Ingesters, Onboarders) and also the GET organizations API 
 * [ProviderApproval_collection.json](ProviderApproval_collection.json) contains the Admin Provider Approval APIs
