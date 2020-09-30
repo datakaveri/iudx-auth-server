@@ -898,7 +898,6 @@ async function check_privilege(email, role, callback)
 
 function set_acl(provider_id, rules, callback)
 {
-
 	let policy_in_json;
 
 	try
@@ -3429,8 +3428,9 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 
 	if (accesser_role === "consumer")
 	{
-	    if (! Array.isArray(capability) || capability.length > Object.keys(CAPABILITIES).length 
-			    || capability.length === 0)
+		if (! Array.isArray(capability) || 
+			capability.length > Object.keys(CAPABILITIES).length ||
+			capability.length === 0)
 			return END_ERROR (res, 400, "Invalid data (capability)");
 
 		capability = [...new Set(capability)];
@@ -3862,6 +3862,14 @@ app.put("/auth/v[1-2]/admin/provider/registrations/status", (req, res) => {
 		role = pg.querySync("UPDATE consent.role SET status = $1::consent.status_enum, updated_at = NOW() "	+
 			" WHERE user_id = $2::integer RETURNING *", [status, user.id])[0];
 
+		const details	=
+			{
+				"id"  		: user.id,
+				"organization" 	: org.name,
+			};
+
+		log("info", "PROVIDER_REJECTED", false, details);
+
 		return END_SUCCESS(res, {
 			id: user.id,
 			title: user.title,
@@ -3901,7 +3909,21 @@ app.put("/auth/v[1-2]/admin/provider/registrations/status", (req, res) => {
 			"Thank You!",
 		attachments: [{ filename: "cert.pem", content: signed_cert }],
 	};
-	transporter.sendMail(message);
+	transporter.sendMail(message, function (error, info) {
+		if (error)
+			log("err", "MAILER_EVENT", true, {}, error.toString());
+		else
+			log("info", "MAIL_SENT", false, info);
+	});
+
+	const details	=
+		{
+			"id"  		: user.id,
+			"organization" 	: org.name,
+		};
+
+	log("info", "PROVIDER_APPROVED", false, details);
+
 	return END_SUCCESS (res, {
 		id: user.id,
 		title: user.title,
@@ -3944,6 +3966,13 @@ app.post("/auth/v[1-2]/admin/organizations", async (req, res) => {
 			org.country.toUpperCase()		//$5
 		]
 	);
+
+	const details	=
+		{
+			"name"  	: org.name,
+		};
+
+	log("info", "ORG_CREATED", false, details);
 
 	return END_SUCCESS(res, { organizations: new_org.rows });
 });
@@ -4080,6 +4109,14 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 		else
 			log("info", "MAIL_SENT", false, info);
 	});
+
+	const details	=
+		{
+			"email"  	: email,
+			"org_id"	: org_id
+		};
+
+	log("info", "PROVIDER_REGISTERED", false, details);
 
 	return END_SUCCESS (res);
 });
@@ -4348,6 +4385,15 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 				log("info", "MAIL_SENT", false, info);
 		});
 	}
+
+	const details	=
+		{
+			"id"  	: email,
+			"roles"	: roles,
+			"org_id": org_id
+		};
+
+	log("info", "USER_REGISTERED", false, details);
 
 	return END_SUCCESS (res);
 });
