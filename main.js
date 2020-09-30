@@ -1092,7 +1092,7 @@ function basic_security_check (req, res, next)
 		return END_ERROR (
 			res, 404,
 				"No such page/API. Please visit : "	+
-				"<http://auth.iudx.org.in> for documentation."
+				"<https://authdocs.iudx.org.in> for documentation."
 		);
 	}
 
@@ -4407,7 +4407,7 @@ app.get("/consent/v[1-2]/organizations", async (req, res) => {
 
 app.all("/*", (req, res) => {
 
-	const doc = " Please visit <http://" + SERVER_NAME + "> for documentation";
+	const doc = " Please visit <https://authdocs.iudx.org.in> for documentation";
 
 	if (req.method === "POST")
 	{
