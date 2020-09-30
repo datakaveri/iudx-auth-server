@@ -1,3 +1,4 @@
+![IUDX](./images/iudx.png)
 # India Urban Data eXchange (IUDX) Authentication, Authorization, and Accounting (AAA) Server
 
 IUDX-AAA is the Authentication, Authorization, and Accounting server for accessing [IUDX](https://www.iudx.org.in) services.
@@ -47,6 +48,12 @@ Install [Ubuntu 20.04](https://releases.ubuntu.com/20.04/)
 	./setup
 ``` 
 
+for a test instance of IUDX-AAA, add `test` to the command. Please read Section 5 for more details.
+
+```
+	./setup test
+``` 
+
 ## 3. After install
 
 * The Auth server is configured as Systemd services during setup. Hence, systemctl commands can be used to stop, start, etc. the server.
@@ -80,3 +87,24 @@ The tables used in the project are:
 
 For more information, please check the [schema.sql](schema.sql) and [consent_schema.sql](consent_schema.sql) files.
 
+## 5. Testing
+
+In order to create a proper testing environment, a fake CA is created and configured to the IUDX-AAA. Due to this, it is highly recommended not to use a test instance in production. All tests are written in Python3. The _requests_ and _psycopg2_ Python packages are required to run tests:
+
+```
+pip3 install psycopy2
+pip3 install requests
+```
+To run the tests in the `tests/` directory, run:
+
+```
+./set-local.sh
+export AUTH_SERVER=localhost
+./run
+```
+
+A collection of tests have been written for _pytest_ (`pip3 install pytest`). In the `tests` directory, run:
+
+```
+pytest
+```
