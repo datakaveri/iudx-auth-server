@@ -49,18 +49,13 @@ Install [Ubuntu 20.04](https://releases.ubuntu.com/20.04/)
 
 ## 3. After install
 
-* The Auth server and CRL scripts are configured as Systemd services during setup. Hence, systemctl commands can be used to stop, start, etc. the server and script.
+* The Auth server is configured as Systemd services during setup. Hence, systemctl commands can be used to stop, start, etc. the server.
 
 ```
 	sudo systemctl status auth-server.service		// check status of Auth server
 	sudo systemctl stop auth-server.service		
 	sudo systemctl start auth-server.service		
 	sudo systemctl restart auth-server.service		
-
-	sudo systemctl status crl-script.service		// check status of CRL script
-	sudo systemctl stop crl-script.service		
-	sudo systemctl start crl-script.service		
-	sudo systemctl restart crl-script.service		
 ```
 
 * The NGINX configs for the Auth ([nginx.conf](nginx.conf)) and Consent ([consent-nginx.conf](consent-nginx.conf)) endpoints will be placed in `/etc/nginx/sites-available` and renamed to the Auth and Consent domains configured in `certbot.env`

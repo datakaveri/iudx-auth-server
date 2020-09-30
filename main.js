@@ -4124,7 +4124,7 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 app.post("/consent/v[1-2]/registration", async (req, res) => {
 
 	let email	= res.locals.body.email;
-	const phone 	= res.locals.body.phone;
+	let phone 	= res.locals.body.phone;
 	const name 	= res.locals.body.name;
 	let raw_csr	= res.locals.body.csr;
 	let org_id 	= res.locals.body.organization;
@@ -4144,8 +4144,11 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 
 	email = email.toLowerCase();
 
-	if (! phone_regex.test(phone))
+	if (phone && (! phone_regex.test(phone)))
 		return END_ERROR (res, 400, "Invalid data (phone)");
+
+	if (! phone)
+		phone = "0000000000";	    // phone has not null constraint
 
 	if (! Array.isArray(roles) || roles.length > ACCESS_ROLES.length || roles.length === 0)
 		return END_ERROR (res, 400, "Invalid data (roles)");
