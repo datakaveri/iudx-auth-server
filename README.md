@@ -1,3 +1,4 @@
+![IUDX](./images/iudx.png)
 # India Urban Data eXchange (IUDX) Authentication, Authorization, and Accounting (AAA) Server
 
 IUDX-AAA is the Authentication, Authorization, and Accounting server for accessing [IUDX](https://www.iudx.org.in) services.
