@@ -223,7 +223,7 @@ app.use(timeout("5s"));
 app.use(
 	cors ({
 		credentials	:	true,
-		methods		:	["POST"],
+		methods		:	["POST", "GET", "PUT"],
 		origin		:	(origin, callback) =>
 					{
 						callback (
@@ -638,16 +638,15 @@ function is_secure (req, res, cert, validate_email = true)
 
 		if (
 			(! origin_domain.endsWith(".iudx.org.in"))	&&
-			(! origin_domain.endsWith(".datasetu.org"))	&&
-			(  origin_domain !== "datasetu.org"	)
+			(! origin_domain.endsWith(".iudx.io"))
 		)
 		{
 			return "Invalid 'origin' header; this website is not"	+
-				" whitelisted to call this API";
+				" permitted to call this API";
 		}
 
 		res.header("Access-Control-Allow-Origin", req.headers.origin);
-		res.header("Access-Control-Allow-Methods","POST");
+		res.header("Access-Control-Allow-Methods","POST, PUT, GET");
 	}
 
 	const error = is_certificate_ok (req,cert,validate_email);
@@ -4132,7 +4131,8 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 
 	let user_id, signed_cert = null;
 	let check_orgid = false;
-	var existing_user = false, certless_user = false;
+	let existing_user = false;
+	let message;
 
 	const phone_regex = new RegExp(/^[9876]\d{9}$/);
 
@@ -4197,7 +4197,7 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 	else
 		org_id = null; // in the case of consumer
 
-	try { // check if a user exists
+	try { // check if the user exists
 
 		const check_uid = await pool.query (
 			" SELECT * FROM consent.users" 		+
@@ -4212,19 +4212,16 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 			/* if registered as consumer first, org_id will be undefined */
 			check_orgid = check_uid.rows[0].organization_id;
 
-			/* check if cert field for user is null (rejected/pending
-			 * provider). If yes, use the existing CSR to create the certificate */
+			/* check if user has registered as provider before
+			 * If yes, do not allow creation of new roles for that user */
 			const check = await pool.query (
-				"SELECT * FROM consent.certificates"		+
-				" WHERE certificates.user_id = $1::integer"	+
-				" AND cert IS NULL",
+				"SELECT * FROM consent.role"		+
+				" WHERE role.user_id = $1::integer"	+
+				" AND role = 'provider'",
 				[ user_id ]);
 
 			if (check.rows.length !== 0)
-			{
-				raw_csr 	= check.rows[0].csr;
-				certless_user 	= true;
-			}
+				return END_ERROR (res, 403, "Email exists");
 
 			/* check if user is trying to register for role
 			 * that they are already registered for */
@@ -4238,6 +4235,9 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 				if (uid !== null)
 					return END_ERROR (res, 403, "Already registered as " + val);
 			}
+
+			message = "Since you have registered before, please continue " +
+				  "to use the certificate that was sent before.";
 		}
 	}
 	catch(error)
@@ -4245,7 +4245,7 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 		return END_ERROR (res, 500, "Internal error!", error);
 	}
 
-	if (! existing_user || certless_user)	// generate certificate
+	if (! existing_user)	// generate certificate
 	{
 		if (! raw_csr || raw_csr.length > CSR_SIZE)
 			return END_ERROR (res, 400, "Invalid data (csr)");
@@ -4268,10 +4268,7 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 		} catch (e) {
 			return END_ERROR(res, 500, "Certificate Error", e.message);
 		}
-	}
 
-	if (! existing_user)
-	{
 		try {
 			const user = await pool.query (
 				" INSERT INTO consent.users "			+
@@ -4308,21 +4305,8 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 		{
 			return END_ERROR (res, 500, "Internal error!", error);
 		}
-	}
 
-	if (certless_user) // update with certificate
-	{
-		try {
-			const cert = await pool.query (
-				"UPDATE consent.certificates SET "	+
-				" cert = $1::text, updated_at = NOW() " +
-				" WHERE user_id = $2::integer",
-				[ signed_cert, user_id ]);
-		}
-		catch(error)
-		{
-			return END_ERROR (res, 500, "Internal error!", error);
-		}
+		message = "A certificate has been generated and sent to your email";
 	}
 
 	/* update org_id if the user was originally a consumer
@@ -4389,6 +4373,8 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 		});
 	}
 
+	const response = {success : true, message : message};
+
 	const details	=
 		{
 			"id"  	: email,
@@ -4398,7 +4384,7 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 
 	log("info", "USER_REGISTERED", false, details);
 
-	return END_SUCCESS (res);
+	return END_SUCCESS (res, response);
 });
 
 app.get("/consent/v[1-2]/organizations", async (req, res) => {
@@ -4422,7 +4408,7 @@ app.all("/*", (req, res) => {
 	}
 	else
 	{
-		return END_ERROR (res, 405, "Method must be POST." + doc);
+		return END_ERROR (res, 405, "Method must be POST, PUT or GET" + doc);
 	}
 });
 

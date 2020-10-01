@@ -113,15 +113,15 @@ r = provider_reg(provider_email, '9454234223', name , org_id, csr)
 assert r['success']     == True
 assert r['status_code'] == 200
 
-# provider can get all other roles
+# provider cannot register other roles
 r = role_reg(provider_email, '9454234223', name , ["data ingester"], org_id, csr)
-assert r['success']     == True
-assert r['status_code'] == 200
+assert r['success']     == False
+assert r['status_code'] == 403
 
 r = role_reg(provider_email, '9454234223', name , ["onboarder"], org_id, csr)
-assert r['success']     == True
-assert r['status_code'] == 200
+assert r['success']     == False
+assert r['status_code'] == 403
 
 r = role_reg(provider_email, '9454234223', name , ["consumer"], org_id, csr)
-assert r['success']     == True
-assert r['status_code'] == 200
+assert r['success']     == False
+assert r['status_code'] == 403
