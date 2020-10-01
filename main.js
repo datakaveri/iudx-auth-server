@@ -4132,7 +4132,8 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 
 	let user_id, signed_cert = null;
 	let check_orgid = false;
-	var existing_user = false;
+	let existing_user = false;
+	let message;
 
 	const phone_regex = new RegExp(/^[9876]\d{9}$/);
 
@@ -4235,6 +4236,9 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 				if (uid !== null)
 					return END_ERROR (res, 403, "Already registered as " + val);
 			}
+
+			message = "Since you have registered before, please continue " +
+				  "to use the certificate that was sent before.";
 		}
 	}
 	catch(error)
@@ -4302,6 +4306,8 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 		{
 			return END_ERROR (res, 500, "Internal error!", error);
 		}
+
+		message = "A certificate has been generated and sent to your email";
 	}
 
 	/* update org_id if the user was originally a consumer
@@ -4368,6 +4374,8 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 		});
 	}
 
+	const response = {success : true, message : message};
+
 	const details	=
 		{
 			"id"  	: email,
@@ -4377,7 +4385,7 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 
 	log("info", "USER_REGISTERED", false, details);
 
-	return END_SUCCESS (res);
+	return END_SUCCESS (res, response);
 });
 
 app.get("/consent/v[1-2]/organizations", async (req, res) => {
