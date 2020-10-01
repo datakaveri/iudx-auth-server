@@ -136,16 +136,16 @@ def test_provider_reg():
         assert r['success']     == True
         assert r['status_code'] == 200
 
-def test_provider_reg_other_roles():
+def test_provider_cannot_get_other_roles():
         # provider can get all other role
         r = role_reg(provider_email, '9454234223', name , ["data ingester"], org_id, csr)
-        assert r['success']     == True
-        assert r['status_code'] == 200
+        assert r['success']     == False
+        assert r['status_code'] == 403
 
         r = role_reg(provider_email, '9454234223', name , ["onboarder"], org_id, csr)
-        assert r['success']     == True
-        assert r['status_code'] == 200
+        assert r['success']     == False
+        assert r['status_code'] == 403
 
         r = role_reg(provider_email, '9454234223', name , ["consumer"], org_id, csr)
-        assert r['success']     == True
-        assert r['status_code'] == 200
+        assert r['success']     == False
+        assert r['status_code'] == 403
