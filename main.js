@@ -223,7 +223,7 @@ app.use(timeout("5s"));
 app.use(
 	cors ({
 		credentials	:	true,
-		methods		:	["POST"],
+		methods		:	["POST", "GET", "PUT"],
 		origin		:	(origin, callback) =>
 					{
 						callback (
@@ -638,16 +638,15 @@ function is_secure (req, res, cert, validate_email = true)
 
 		if (
 			(! origin_domain.endsWith(".iudx.org.in"))	&&
-			(! origin_domain.endsWith(".datasetu.org"))	&&
-			(  origin_domain !== "datasetu.org"	)
+			(! origin_domain.endsWith(".iudx.io"))
 		)
 		{
 			return "Invalid 'origin' header; this website is not"	+
-				" whitelisted to call this API";
+				" permitted to call this API";
 		}
 
 		res.header("Access-Control-Allow-Origin", req.headers.origin);
-		res.header("Access-Control-Allow-Methods","POST");
+		res.header("Access-Control-Allow-Methods","POST, PUT, GET");
 	}
 
 	const error = is_certificate_ok (req,cert,validate_email);
@@ -4409,7 +4408,7 @@ app.all("/*", (req, res) => {
 	}
 	else
 	{
-		return END_ERROR (res, 405, "Method must be POST." + doc);
+		return END_ERROR (res, 405, "Method must be POST, PUT or GET" + doc);
 	}
 });
 
