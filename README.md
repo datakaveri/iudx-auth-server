@@ -108,3 +108,7 @@ A collection of tests have been written for _pytest_ (`pip3 install pytest`). In
 ```
 pytest
 ```
+
+## 6. License
+
+[MIT](./LICENSE)

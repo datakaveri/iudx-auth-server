@@ -33,7 +33,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/iudx/iudx-auth-server.git"
+    "url": "git+https://github.com/datakaveri/iudx-auth-server.git"
   },
   "keywords": [
     "iudx",
@@ -45,10 +45,10 @@
     "iisc",
     "rbccps"
   ],
-  "author": "Arun Babu (arun-babu.com), Bryan Robert (bryanrobert at iisc.ac.in)",
-  "license": "ISC",
+  "author": "IUDX",
+  "license": "MIT",
   "bugs": {
-    "url": "https://github.com/iudx/iudx-auth-server/issues"
+    "url": "https://github.com/datakaveri/iudx-auth-server/issues"
   },
-  "homepage": "http://auth.iudx.org.in"
+  "homepage": "https://iudx.org.in"
 }
