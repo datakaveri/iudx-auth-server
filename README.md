@@ -23,7 +23,7 @@ Install [Ubuntu 20.04](https://releases.ubuntu.com/20.04/)
 
 2. Change directory to `iudx-auth-server`
 
-3. The setup will configure SSL certificates for the Auth and Consent endpoints using Certbot automatically. Add your email address and the domain names for the Auth endpoint and Consent endpoint to the `certbot.env` file 
+3. The setup will configure SSL certificates for the Auth and Consent endpoints using Certbot automatically. Add your email address and the domain names for the Auth endpoint and Consent endpoint to the `certbot.env` file. The default domains are `auth.iudx.org.in` and `cons.iudx.org.in` respectively. **For a test instance, please do not change this file**
 
 4. IUDX-AAA sends certificates via email. In order to send emails, update `mailer_config.json` with your SMTP server details
 
@@ -89,17 +89,26 @@ For more information, please check the [schema.sql](schema.sql) and [consent_sch
 
 ## 5. Testing
 
-In order to create a proper testing environment, a fake CA is created and configured to the IUDX-AAA. Due to this, it is highly recommended not to use a test instance in production. All tests are written in Python3. The _requests_ and _psycopg2_ Python packages are required to run tests:
+
+In order to create a proper testing environment, a fake CA is created and configured to the IUDX-AAA. **Due to this, it is highly recommended to not use a test instance in production.**
+
+All tests are run on localhost. The domains `auth.iudx.org.in` and `cons.iudx.org.in` are added to the `/etc/hosts` file as _127.0.0.1_ to facilitate testing on localhost. Using the fake CA, certificates are created and placed in the /root directory. These certificates are used to test the various APIs.
+
+1. All tests are written in Python3. The _requests_ and _psycopg2_ Python packages are required to run tests:
 
 ```
-pip3 install psycopy2
+apt install python3-pip
+pip3 install psycopg2
 pip3 install requests
 ```
-To run the tests in the `tests/` directory, run:
+
+2. Add the email `abc.xyz@rbccps.org` to `passwords/admins.json` to facilitate testing of the admin APIs. Restart the Auth server (`systemctl restart auth-server`)
+
+3. NGINX is configured to perform rate-limiting on the Auth and Consent endpoints. To avoid this during testing, increase the request limit in `/etc/nginx/sites-available/auth.iudx.org.in` and `/etc/nginx/sites-available/cons.iudx.org.in` . Restart NGINX (`systemctl restart nginx`)
+
+4. To execute the tests, run:
 
 ```
-./set-local.sh
-export AUTH_SERVER=localhost
 ./run
 ```
 

@@ -15,11 +15,9 @@ example_dot_com		= Auth(home + "e-server.pem",	 home + "e-server.key.pem",	auth_
 restricted_consumer	= Auth(home + "restricted.pem",	 home + "restricted.key.pem",	auth_server)
 fake_resource_server	= Auth(home + "f-server.pem",	 home + "f-server.key.pem",	auth_server)
 
-if "AUTH_SERVER" in os.environ and os.environ["AUTH_SERVER"] == "localhost":
-#
-    import urllib3
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-#
+##### Since we are testing on localhost, disable SSL warnings #####
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 resource_server		= Auth(home + "r-server.pem", home + "r-server.key.pem", auth_server)
 
