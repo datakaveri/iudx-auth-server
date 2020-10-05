@@ -21,12 +21,12 @@ then
 
 	# make auth.iudx.org.in and cons.iudx.org.in point to 127.0.0.1
 	./test/set-local.sh
-
-	# create fake HTTPS certificate for Auth and Consent endpoints
-	touch https-key.pem
-	chmod 400 https-key.pem
-	openssl req -x509 -nodes -days 365 -subj "/CN=auth.iudx.org.in" -newkey rsa:2048 -keyout https-key.pem -out https-certificate.pem
 fi
+
+# create temporary HTTPS certificate for Auth and Consent endpoints (so that NGINX will work)
+touch https-key.pem
+chmod 400 https-key.pem
+openssl req -x509 -nodes -days 365 -subj "/CN=auth.iudx.org.in" -newkey rsa:2048 -keyout https-key.pem -out https-certificate.pem
 
 useradd -s /sbin/nologin -d /nonexistent _aaa
 
