@@ -9,15 +9,27 @@ then
 	exit
 fi
 
+# if no cert.pem, create fake CA
+if [ ! -f cert.pem ]; then
+	openssl req -x509 -nodes -days 365 -subj "/CN=fakeca.iudx.org.in/emailAddress=fakeca@iudx.org.in" -newkey rsa:2048 -keyout key.pem -out cert.pem
+fi
+
 if [ "$1" = "test" ]
 then
+	# use cert.pem, key.pem to create fake certificates for testing
 	./test/setup.sh
 
+	# make auth.iudx.org.in and cons.iudx.org.in point to 127.0.0.1
+	./test/set-local.sh
+
+	# create fake HTTPS certificate for Auth and Consent endpoints
 	touch https-key.pem
 	chmod 400 https-key.pem
-
 	openssl req -x509 -nodes -days 365 -subj "/CN=auth.iudx.org.in" -newkey rsa:2048 -keyout https-key.pem -out https-certificate.pem
 fi
+
+# move cert.pem, key.pem to passwords/ for CSR signing
+mv cert.pem key.pem passwords/
 
 useradd -s /sbin/nologin -d /nonexistent _aaa
 
@@ -47,13 +59,6 @@ done
 
 # move admin file
 mv admins.json passwords/
-
-# copy files to passwords/ for CSR signing
-if [ ! -f cert.pem ]; then
-	openssl req -x509 -nodes -days 365 -subj "/CN=ca.iudx.org.in/emailAddress=ca@iudx.org.in" -newkey rsa:2048 -keyout key.pem -out cert.pem
-fi
-
-mv cert.pem key.pem passwords/
 
 echo your-telegram-api-key		> telegram.apikey
 echo your-telegram-chat-id		> telegram.chatid
