@@ -4,7 +4,7 @@ import os
 import sys
 
 os.environ["EXPECT_FAILURE"] = "1"
-CONSENT_ENDPOINT = "consentdev.iudx.io"
+CONSENT_ENDPOINT = "cons.iudx.org.in"
 ssl_verify = True
 
 if "AUTH_SERVER" in os.environ and os.environ["AUTH_SERVER"] == "localhost":
