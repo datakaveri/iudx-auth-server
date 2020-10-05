@@ -151,27 +151,12 @@ systemctl daemon-reload
 systemctl enable auth-server.service
 systemctl start auth-server.service
 
-cp crl-script.service /etc/systemd/system
-systemctl daemon-reload
-systemctl enable crl-script.service
-systemctl start crl-script.service
-
 i=`systemctl is-active auth-server`
 
 if [ $i != "active" ]
 then
 	echo
 	echo "Auth server not running!!"
-	echo
-	exit
-fi
-
-i=`systemctl is-active crl-script`
-
-if [ $i != "active" ]
-then
-	echo
-	echo "CRL script not running!!"
 	echo
 	exit
 fi
