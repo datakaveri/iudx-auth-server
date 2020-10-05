@@ -16,7 +16,7 @@ bad_csr = "-----BEGIN CERTIFICATE REQUEST-----\nMIICjDCCAXQCAQAwRzELMAkGA1UEBhMC
 website = ''.join(random.choice(string.ascii_lowercase) for _ in range(8)) + '.com'
 
 # random email 
-email_name  = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(6)) 
+email_name  = ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(6)) 
 email       = email_name + '@gmail.com' 
 
 org_id = add_organization(website)
@@ -73,7 +73,7 @@ def test_org_email_consumer():
         assert r['status_code'] == 200
 
 # new random email 
-new_email_name  = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(6)) 
+new_email_name  = ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(6)) 
 
 def test_non_org_email():
         # all roles - non-org email
@@ -127,7 +127,7 @@ def test_provider_reg_after_other_role_reg():
         assert r['success']     == False
         assert r['status_code'] == 403
 
-prov_email_name      = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(6))
+prov_email_name      = ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(6))
 provider_email  = prov_email_name + '@' + website
 
 def test_provider_reg():

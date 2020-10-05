@@ -16,7 +16,7 @@ bad_csr = "-----BEGIN CERTIFICATE REQUEST-----\nMIICjDCCAXQCAQAwRzELMAkGA1UEBhMC
 website = ''.join(random.choice(string.ascii_lowercase) for _ in range(8)) + '.com'
 
 # random email 
-email_name  = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(6)) 
+email_name  = ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(6)) 
 email       = email_name + '@gmail.com' 
 
 org_id = add_organization(website)
@@ -61,7 +61,7 @@ assert r['success']     == True
 assert r['status_code'] == 200
 
 # new random email 
-email_name  = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(6)) 
+email_name  = ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(6)) 
 email       = email_name + '@gmail.com' 
 
 # all roles - non-org email
@@ -105,7 +105,7 @@ r = provider_reg(email, '9454234223', name , org_id, csr)
 assert r['success']     == False
 assert r['status_code'] == 403
 
-email_name      = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(6))
+email_name      = ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(6))
 provider_email  = email_name + '@' + website
 
 # provider registers with fresh email
