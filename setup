@@ -11,7 +11,7 @@ fi
 
 # if no cert.pem, create fake CA
 if [ ! -f cert.pem ]; then
-	openssl req -x509 -nodes -days 365 -subj "/CN=fakeca.iudx.org.in/emailAddress=fakeca@iudx.org.in" -newkey rsa:2048 -keyout key.pem -out cert.pem
+	openssl req -x509 -nodes -days 365 -subj "/CN=fakeca.iudx.org.in/emailAddress=ca@iudx.org.in" -newkey rsa:2048 -keyout key.pem -out cert.pem
 fi
 
 if [ "$1" = "test" ]
@@ -28,16 +28,12 @@ then
 	openssl req -x509 -nodes -days 365 -subj "/CN=auth.iudx.org.in" -newkey rsa:2048 -keyout https-key.pem -out https-certificate.pem
 fi
 
-# move cert.pem, key.pem to passwords/ for CSR signing
-mv cert.pem key.pem passwords/
-
 useradd -s /sbin/nologin -d /nonexistent _aaa
 
 rm -rf passwords
 mkdir passwords
 
 touch passwords/auth.db.password
-touch passwords/admin.db.password
 
 #------- Passwords for various operations -----------
 
@@ -60,6 +56,9 @@ done
 # move admin file
 mv admins.json passwords/
 
+# move cert.pem, key.pem to passwords/ for CSR signing
+mv cert.pem key.pem passwords/
+
 echo your-telegram-api-key		> telegram.apikey
 echo your-telegram-chat-id		> telegram.chatid
 
@@ -69,9 +68,11 @@ chmod 400 *.sql
 apt update
 apt upgrade -y
 
-if [ "$POSTGRES_IP" = "127.0.0.1" ]
+# if POSTGRES_IP is not set, then install locally
+if [ -z "$POSTGRES_IP" ]
 then
     # setup postgresql
+    POSTGRES_IP=127.0.0.1
     apt install -y postgresql postgresql-contrib
     apt install -y libpq-dev
 
@@ -81,8 +82,8 @@ then
         pg_ctlcluster 12 main start
         sleep 1
     done
-    sudo -u postgres psql -u postgres < schema.sql
-    sudo -u postgres psql -u postgres < consent_schema.sql
+    sudo -u postgres psql < schema.sql
+    sudo -u postgres psql < consent_schema.sql
 else
     apt install -y libpq-dev
     apt install -y postgresql-client

@@ -41,7 +41,7 @@ const unveil			= is_openbsd ? require("openbsd-unveil"): null;
 
 const NUM_CPUS			= os.cpus().length;
 const SERVER_NAME		= "auth.iudx.org.in";
-const CONSENT_URL		= "consentdev.iudx.io";
+const CONSENT_URL		= "cons.iudx.org.in";
 
 const MAX_TOKEN_TIME		= 31536000; // in seconds (1 year)
 
