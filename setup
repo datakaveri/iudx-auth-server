@@ -12,6 +12,11 @@ fi
 if [ "$1" = "test" ]
 then
 	./test/setup.sh
+
+	touch https-key.pem
+	chmod 400 https-key.pem
+
+	openssl req -x509 -nodes -days 365 -subj "/CN=auth.iudx.org.in" -newkey rsa:2048 -keyout https-key.pem -out https-certificate.pem
 fi
 
 useradd -s /sbin/nologin -d /nonexistent _aaa
@@ -80,15 +85,7 @@ else
     psql -h $POSTGRES_IP -U postgres < consent_schema.sql
 fi
 
-# local setup
-
-touch https-key.pem
-chmod 400 https-key.pem
-
-openssl req -x509 -nodes -days 365 -subj "/CN=auth.iudx.org.in" -newkey rsa:2048 -keyout https-key.pem -out https-certificate.pem
-
 apt install -y nodejs npm nginx
-apt install -y certbot python3-certbot-nginx
 
 # nginx config
 #
@@ -113,12 +110,17 @@ cp ca-certs.crt /etc/nginx/certs/
 cp nginx.conf /etc/nginx/sites-available/$AUTH_DOMAIN
 sed -i "s/AUTH_DOMAIN/$AUTH_DOMAIN/" /etc/nginx/sites-available/$AUTH_DOMAIN
 ln -s /etc/nginx/sites-available/$AUTH_DOMAIN /etc/nginx/sites-enabled/
-certbot --nginx --non-interactive --agree-tos -m $EMAIL -d $AUTH_DOMAIN
 
 cp consent-nginx.conf /etc/nginx/sites-available/$CONSENT_DOMAIN
 sed -i "s/CONSENT_DOMAIN/$CONSENT_DOMAIN/" /etc/nginx/sites-available/$CONSENT_DOMAIN
 ln -s /etc/nginx/sites-available/$CONSENT_DOMAIN /etc/nginx/sites-enabled/
-certbot --nginx --non-interactive --agree-tos -m $EMAIL -d $CONSENT_DOMAIN
+
+if [ "$1" != "test" ]
+then
+	apt install -y certbot python3-certbot-nginx
+	certbot --nginx --non-interactive --agree-tos -m $EMAIL -d $AUTH_DOMAIN
+	certbot --nginx --non-interactive --agree-tos -m $EMAIL -d $CONSENT_DOMAIN
+fi
 
 systemctl restart nginx
 
