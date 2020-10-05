@@ -192,8 +192,8 @@ class Auth():
 
         def update_provider_status(self, uid, status):
         #
-                params = {"id" : uid, "status" : status}
-                return self.call("admin/provider/registrations", {}, "GET", params)
+                params = {"user_id" : uid, "status" : status}
+                return self.call("admin/provider/registrations/status", {}, "PUT", params)
         #
 
 #}
