@@ -4,15 +4,14 @@ import os
 import sys
 
 os.environ["EXPECT_FAILURE"] = "1"
-CONSENT_ENDPOINT = "consentdev.iudx.io"
+CONSENT_ENDPOINT = "cons.iudx.org.in"
 ssl_verify = True
 
-if "AUTH_SERVER" in os.environ and os.environ["AUTH_SERVER"] == "localhost":
-#
-    ssl_verify = False
-    import urllib3
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-#
+##### Since we are testing on localhost, disable SSL warnings #####
+
+ssl_verify = False
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 def call(api, body=None, method = "POST"):
 #

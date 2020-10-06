@@ -9,10 +9,8 @@ class Auth():
 #{
         def __init__(self, certificate, key, auth_server="auth.iudx.org.in", version=1):
         #
-                self.ssl_verify = True
-
-                if "AUTH_SERVER" in os.environ and os.environ["AUTH_SERVER"] == "localhost":
-                        self.ssl_verify = False
+                # Since we are testing on localhost
+                self.ssl_verify = False
 
                 self.url                = "https://" + auth_server
                 self.credentials        = (certificate, key)
@@ -194,8 +192,8 @@ class Auth():
 
         def update_provider_status(self, uid, status):
         #
-                params = {"id" : uid, "status" : status}
-                return self.call("admin/provider/registrations", {}, "GET", params)
+                params = {"user_id" : uid, "status" : status}
+                return self.call("admin/provider/registrations/status", {}, "PUT", params)
         #
 
 #}

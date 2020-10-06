@@ -107,11 +107,8 @@ ALTER TABLE public.crl			OWNER TO postgres;
 ALTER TABLE public.token		OWNER TO postgres;
 
 CREATE USER auth		with PASSWORD 'XXX_auth';
-CREATE USER update_crl		with PASSWORD 'XXX_update_crl';
 
 GRANT SELECT			ON TABLE public.crl				TO auth;
 GRANT SELECT,INSERT,UPDATE	ON TABLE public.token				TO auth;
 GRANT SELECT,INSERT,UPDATE	ON TABLE public.groups				TO auth;
 GRANT SELECT,INSERT,UPDATE	ON TABLE public.policy				TO auth;
-
-GRANT UPDATE			ON TABLE public.crl				TO update_crl;

@@ -1,5 +1,3 @@
-openssl req -x509 -nodes -days 365 -subj "/CN=ca.iudx.org.in/emailAddress=ca@iudx.org.in" -newkey rsa:2048 -keyout ca.key -out ca.iudx.org.in.crt
-
 # let consumer certificate be of type ECDSA
 openssl ecparam -genkey -name secp384r1 > consumer.key.pem
 openssl req -new -key consumer.key.pem -out consumer.csr -sha256 -subj "/CN=individual/emailAddress=barun@iisc.ac.in/id-qt-unotice=class:2"
@@ -21,20 +19,20 @@ openssl req -new -newkey rsa:2048 -nodes -out f-server.csr -keyout f-server.key.
 
 openssl req -new -newkey rsa:2048 -nodes -out e-server.csr -keyout e-server.key.pem -subj "/CN=example.com/id-qt-unotice=class:1/emailAddress=arun.babu@rbccps.org"
 
-openssl x509 -CA ca.iudx.org.in.crt -CAkey ca.key -CAcreateserial -in consumer.csr -req -days 365 -sha256 -out consumer.pem 
+openssl x509 -CA cert.pem -CAkey key.pem -CAcreateserial -in consumer.csr -req -days 365 -sha256 -out consumer.pem 
 
-openssl x509 -CA ca.iudx.org.in.crt -CAkey ca.key -CAcreateserial -in restricted.csr -req -days 365 -sha256 -out restricted.pem 
+openssl x509 -CA cert.pem -CAkey key.pem -CAcreateserial -in restricted.csr -req -days 365 -sha256 -out restricted.pem 
 
-openssl x509 -CA ca.iudx.org.in.crt -CAkey ca.key -CAcreateserial -in provider.csr -req -days 365 -sha256 -out provider.pem 
-openssl x509 -CA ca.iudx.org.in.crt -CAkey ca.key -CAcreateserial -in alt-provider.csr -req -days 365 -sha256 -out alt-provider.pem 
+openssl x509 -CA cert.pem -CAkey key.pem -CAcreateserial -in provider.csr -req -days 365 -sha256 -out provider.pem 
+openssl x509 -CA cert.pem -CAkey key.pem -CAcreateserial -in alt-provider.csr -req -days 365 -sha256 -out alt-provider.pem 
 
-openssl x509 -CA ca.iudx.org.in.crt -CAkey ca.key -CAcreateserial -in delegated.csr -req -days 365 -sha256 -out delegated.pem 
-openssl x509 -CA ca.iudx.org.in.crt -CAkey ca.key -CAcreateserial -in untrusted.csr -req -days 365 -sha256 -out untrusted.pem 
+openssl x509 -CA cert.pem -CAkey key.pem -CAcreateserial -in delegated.csr -req -days 365 -sha256 -out delegated.pem 
+openssl x509 -CA cert.pem -CAkey key.pem -CAcreateserial -in untrusted.csr -req -days 365 -sha256 -out untrusted.pem 
 
-openssl x509 -CA ca.iudx.org.in.crt -CAkey ca.key -CAcreateserial -in r-server.csr -req -days 365 -sha256 -out r-server.pem 
+openssl x509 -CA cert.pem -CAkey key.pem -CAcreateserial -in r-server.csr -req -days 365 -sha256 -out r-server.pem 
 
-openssl x509 -CA ca.iudx.org.in.crt -CAkey ca.key -CAcreateserial -in f-server.csr -req -days 365 -sha256 -out f-server.pem 
-openssl x509 -CA ca.iudx.org.in.crt -CAkey ca.key -CAcreateserial -in e-server.csr -req -days 365 -sha256 -out e-server.pem 
+openssl x509 -CA cert.pem -CAkey key.pem -CAcreateserial -in f-server.csr -req -days 365 -sha256 -out f-server.pem 
+openssl x509 -CA cert.pem -CAkey key.pem -CAcreateserial -in e-server.csr -req -days 365 -sha256 -out e-server.pem 
 
 rm *.csr
 cp *.pem /root
