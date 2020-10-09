@@ -159,15 +159,9 @@ class Auth():
                 return self.call("group/list", body)
         #
 
-        def provider_access(self, email, role, res = None, res_type = None, capabilities=None):
+        def provider_access(self, body):
         #
-                body = {'user_email' : email,
-                        'user_role' : role,
-                        'item_id'   : res,
-                        'item_type' : res_type,
-                        'capabilities': capabilities
-                        }
-
+                body = body;
                 return self.call("provider/access", body)
         #
 
@@ -184,9 +178,7 @@ class Auth():
 
         def organization_reg(self, org):
         #
-                body = {'organization' : org
-                        }
-
+                body = {'organization' : org}
                 return self.call("admin/organizations", body)
         #
 
