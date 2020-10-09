@@ -20,10 +20,13 @@ assert r['success'] is True
 # provider ID of abc.xyz@rbccps.org
 provider_id = 'rbccps.org/f3dad987e514af08a4ac46cf4a41bd1df645c8cc'
 
+
 ##### consumer #####
 
 resource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
 resource_id = provider_id + '/rs.example.com/' + resource_group
+
+req = {"user_email": email, "user_role":'consumer', "item_id":resource_id, "item_type":"resourcegroup"}
 
 def test_consumer_no_rule_set():
         # token request should fail
@@ -38,27 +41,30 @@ def test_consumer_reg():
 
 def test_no_caps():
         # No capabilities
-        r = untrusted.provider_access(email, 'consumer', resource_id, 'resourcegroup')
+        global req
+        r = untrusted.provider_access([req])
         assert r['success']     == False
         assert r['status_code'] == 400
 
 def test_invalid_caps():
         # Invalid capabilities
-        caps = ["hello", "world"]
-        r = untrusted.provider_access(email, 'consumer', resource_id, 'resourcegroup', caps)
+        global req
+        req["capability"] = ["hello", "world"]
+        r = untrusted.provider_access([req])
         assert r['success']     == False
         assert r['status_code'] == 400
 
 def test_get_temporal_cap():
-        caps = ['temporal'];
-        r = untrusted.provider_access(email, 'consumer', resource_id, 'resourcegroup', caps)
+        global req
+        req["capability"] = ['temporal'];
+        r = untrusted.provider_access([req])
         assert r['success']     == True
         assert r['status_code'] == 200
 
 def test_get_same_cap():
         # same capability
-        caps = ['temporal'];
-        r = untrusted.provider_access(email, 'consumer', resource_id, 'resourcegroup', caps)
+        global req
+        r = untrusted.provider_access([req])
         assert r['success']     == False
         assert r['status_code'] == 403
 
@@ -91,14 +97,16 @@ def test_get_complex_api_token():
 
 def test_get_same_cap_in_set():
         # temporal rule already exists
-        caps = ['subscription', 'temporal'];
-        r = untrusted.provider_access(email, 'consumer', resource_id, 'resourcegroup', caps)
+        global req
+        req["capability"] = ['subscription', 'temporal'];
+        r = untrusted.provider_access([req])
         assert r['success']     == False
         assert r['status_code'] == 403
 
 def test_get_subscription_cap():
-        caps = ['subscription'];
-        r = untrusted.provider_access(email, 'consumer', resource_id, 'resourcegroup', caps)
+        global req
+        req["capability"] = ['subscription'];
+        r = untrusted.provider_access([req])
         assert r['success']     == True
         assert r['status_code'] == 200
 
@@ -109,8 +117,9 @@ def test_get_subscription_token():
 
 def test_get_complex_cap():
         # complex
-        caps = ['complex']
-        r = untrusted.provider_access(email, 'consumer', resource_id, 'resourcegroup', caps)
+        global req
+        req["capability"] = ['complex']
+        r = untrusted.provider_access([req])
         assert r['success']     == True
         assert r['status_code'] == 200
 
@@ -125,9 +134,10 @@ def test_get_complex_token():
 
 def test_get_all_caps():
         # try all 3 caps
-        resource_id = provider_id + '/rs.example.co.in/' + resource_group
-        caps = ['complex','subscription', 'temporal']
-        r = untrusted.provider_access(email, 'consumer', resource_id, 'resourcegroup', caps)
+        global req
+        req["item_id"] = provider_id + '/rs.example.co.in/' + resource_group
+        req["capability"] = ['complex','subscription', 'temporal']
+        r = untrusted.provider_access([req])
         assert r['success']     == True
         assert r['status_code'] == 200
 
@@ -139,14 +149,16 @@ def get_token_all_apis():
 
 def test_set_existing_rule():
         # rule exists
-        caps = ['complex','subscription', 'temporal']
-        r = untrusted.provider_access(email, 'consumer', resource_id, 'resourcegroup', caps)
+        global req
+        r = untrusted.provider_access([req])
         assert r['success']     == False
         assert r['status_code'] == 403
 
 def test_set_rule_for_invalid_user():
         # user does not exist
-        r = untrusted.provider_access(email, 'onboarder', resource_id, 'resourcegroup')
+        global req
+        req["user_role"] = "onboarder"
+        r = untrusted.provider_access([req])
         assert r['success']     == False
         assert r['status_code'] == 403
 
@@ -165,7 +177,9 @@ def test_reg_onboarder():
         assert r['status_code'] == 200
 
 def test_set_onboarder_rule():
-        r = untrusted.provider_access(email, 'onboarder')
+        global req
+        req["user_role"] = "onboarder"
+        r = untrusted.provider_access([req])
         assert r['success']     == True
         assert r['status_code'] == 200
 
@@ -177,7 +191,9 @@ def test_get_onboarder_token():
         assert None != r['response']['token']
 
 def test_set_onboarder_rule_again():
-        r = untrusted.provider_access(email, 'onboarder')
+        global req
+        req["user_role"] = "onboarder"
+        r = untrusted.provider_access([req])
         assert r['success']     == False
         assert r['status_code'] == 403
 
@@ -200,12 +216,20 @@ def test_reg_ingester():
 
 def test_invalid_resource_type():
         # invalid resource type
-        r = untrusted.provider_access(email, 'data ingester', diresource_id, 'catalogue')
+        global req
+        req["user_role"]    = "data ingester"
+        req["item_id"]      = diresource_id
+        req["item_type"]    = "catalogue"
+        r = untrusted.provider_access([req])
         assert r['success']     == False
         assert r['status_code'] == 400
 
 def test_set_ingester_rule():
-        r = untrusted.provider_access(email, 'data ingester', diresource_id, 'resourcegroup')
+        global req
+        req["user_role"]    = "data ingester"
+        req["item_id"]      = diresource_id
+        req["item_type"]    = "resourcegroup"
+        r = untrusted.provider_access([req])
         assert r['success']     == True
         assert r['status_code'] == 200
 
@@ -230,11 +254,14 @@ def test_token_for_item():
 
 def test_token_invalid_rid():
         # invalid resource ID
-        r = untrusted.provider_access(email, 'data ingester', '/aaaaa/sssss/sada/', 'resourcegroup')
+        global req
+        req["item_id"]      = '/aaaaa/sssss/sada/'
+        r = untrusted.provider_access([req])
         assert r['success']     == False
         assert r['status_code'] == 400
 
-        r = untrusted.provider_access(email, 'data ingester', '/aaaaa/sssss', 'resourcegroup')
+        req["item_id"]      = '/aaaaa/sssss'
+        r = untrusted.provider_access([req])
         assert r['success']     == False
         assert r['status_code'] == 400
 
@@ -252,3 +279,113 @@ def test_get_access_rules():
                 if r['email'] == email and r['role'] == 'data ingester':
                         assert r['policy'].endswith('"/iudx/v1/adapter"')
 
+### setting multiple rules ###
+remail_name  = ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(6)) 
+remail = remail_name + '@iisc.ac.in'
+
+r = role_reg(remail, '9454234223', name , ["onboarder", "consumer", "data ingester"], org_id, csr)
+assert r['success']     == True
+assert r['status_code'] == 200
+
+_req = {"user_email": remail, "user_role":'consumer', "item_id":resource_id, "item_type":"resourcegroup", "capability":["temporal"]}
+_req1 = {"user_email": remail, "user_role":'onboarder'}
+
+_req2 = _req.copy()
+_req2["capability"] = ["subscription"]
+
+def test_multiple_duplicate():
+        r = untrusted.provider_access([_req1, _req1, _req])
+        assert r['success']     == False
+        assert r['status_code'] == 400
+
+def test_multiple_onb_temporal():
+        r = untrusted.provider_access([_req1, _req])
+        assert r['success']     == True
+        assert r['status_code'] == 200
+
+def test_multiple_same_rule():
+        r = untrusted.provider_access([_req, _req, _req])
+        assert r['success']     == False
+        assert r['status_code'] == 403
+
+def test_multiple_duplicate_subs():
+        r = untrusted.provider_access([_req2, _req2])
+        assert r['success']     == False
+        assert r['status_code'] == 400
+
+        r = untrusted.provider_access([_req2, _req])
+        assert r['success']     == False
+        assert r['status_code'] == 403
+
+def test_multiple_complex_sub_dup():
+        global _req
+        _req["capability"] = ["complex"]
+        r = untrusted.provider_access([_req2, _req, _req2])
+        assert r['success']     == False
+        assert r['status_code'] == 400
+
+def test_multiple_duplicate_in_caps_array():
+        global _req
+        _req["capability"] = ["complex", "subscription"]
+        r = untrusted.provider_access([_req2, _req])
+        assert r['success']     == False
+        assert r['status_code'] == 400
+
+def test_multiple_existing_in_caps_array():
+        global _req
+        _req["capability"] = ["complex", "temporal"]
+        r = untrusted.provider_access([_req2, _req])
+        assert r['success']     == False
+        assert r['status_code'] == 403
+
+def test_multiple_complex_sub_success():
+        global _req
+        # success
+        _req["capability"] = ["complex"]
+        r = untrusted.provider_access([_req2, _req])
+        assert r['success']     == True
+        assert r['status_code'] == 200
+
+def test_multiple_ingester_consumer():
+        global _req2, _req
+        _req2["user_role"] = "data ingester"
+        r = untrusted.provider_access([_req2, _req])
+        assert r['success']     == False
+        assert r['status_code'] == 403
+
+        r = untrusted.provider_access([_req2, _req2])
+        assert r['success']     == False
+        assert r['status_code'] == 400
+
+        resource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
+        resource_id = provider_id + "/rs.example.com/" + resource_group
+        _req["item_id"] = resource_id
+
+        r = untrusted.provider_access([_req2, _req])
+        assert r['success']     == True
+        assert r['status_code'] == 200
+
+def test_multiple_get_all_rules():
+        # get all rules for new email
+        check_con = False
+        check_onb = False
+        check_dti = False
+        r = untrusted.get_provider_access()
+        assert r['success']     == True
+        assert r['status_code'] == 200
+        rules = r['response']
+        for r in rules:
+                if r['email'] == remail and r['role'] == 'consumer':
+                        assert set(r['capabilities']).issubset(set(['temporal', 'subscription', 'complex']))
+                        assert len(r['capabilities']) <= 3 and len(r['capabilities']) >= 1
+                        check_con = True
+                if r['email'] == remail and r['role'] == 'onboarder':
+                        assert r['item_type'] == 'catalogue'
+                        check_onb = True
+                if r['email'] == remail and r['role'] == 'data ingester':
+                        assert r['policy'].endswith('"/iudx/v1/adapter"')
+                        check_dti = True
+
+        assert check_con == True
+        assert check_onb == True
+        assert check_dti == True
