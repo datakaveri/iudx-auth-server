@@ -979,6 +979,33 @@ function set_acl(provider_id, rules, callback)
 	});
 }
 
+function intersect (array1, array2)
+{
+	return array1.filter(val => array2.includes(val));
+}
+
+function create_consumer_policy_text(accesser_email, resource, resource_name, capability)
+{
+	let join = "if", index;
+	let rule = `${accesser_email} can access ${resource_name}/* for 1 week`;
+
+	let apis = capability.reduce((acc, val) => acc.concat(CAPABILITIES[val]), []);
+	apis = [...new Set(apis)];
+
+	/* if latest API is there, then add resource group
+	 * to the template */
+	if ((index = apis.indexOf(LATEST)) !== -1)
+		apis[index] = apis[index](resource);
+
+	for (const i of apis)
+	{
+		rule = rule + ` ${join} api = "${i}"`;
+		join = "or";
+	}
+
+	return rule;
+}
+
 /* ---
 	A variable to indicate if a worker has started serving APIs.
 
@@ -3777,6 +3804,228 @@ app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
 	});
 
 	return END_SUCCESS (res, result);
+});
+
+app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
+
+	const provider_email = res.locals.email;
+
+	let provider_uid;
+	let rules_array = [];
+	let to_delete = [];
+
+	try { provider_uid = await check_privilege(provider_email, "provider"); }
+	catch(error) { return END_ERROR (res, 401, "Not allowed!"); }
+
+	const email_domain	= provider_email.split("@")[1];
+	const sha1_of_email	= sha1(provider_email);
+	const provider_id_hash	= email_domain + "/" + sha1_of_email;
+
+	if (! Array.isArray(res.locals.body))
+		return END_ERROR (res, 400, "Invalid data (body)");
+
+	for (const obj of res.locals.body)
+	{
+		let id = obj.id;
+		let capability = obj.capability || null;
+		let delete_rule = false;
+		let role_id, access_item_id, access_item_type;
+
+		id = parseInt(id, 10);
+
+		if (isNaN(id) || id < 1 || id > PG_MAX_INT)
+			return END_ERROR (res, 400, "Invalid data (id)");
+
+		try {
+			const check = await pool.query (
+				"SELECT access.*, capability FROM consent.access" 	+
+				" LEFT JOIN consent.capability ON access_id = " 	+
+				" access.id WHERE access.id = $1::integer"		+
+				" AND provider_id = $2::integer",
+				[ id, provider_uid ]);
+
+			if (check.rows.length === 0)
+				return END_ERROR (res, 403, "Invalid id");
+
+			role_id 	 = check.rows[0].role_id;
+			access_item_id 	 = check.rows[0].access_item_id;
+			access_item_type = check.rows[0].access_item_type;
+
+			let existing_caps = [...new Set(check.rows.map(row => row.capability))];
+			/* remove nulls */
+			existing_caps = existing_caps.filter(val => val !== null);
+
+			/* if there are caps, must be a consumer rule
+			 * if capability field not there, treat as normal
+			 * rule and delete fully */
+			if (existing_caps.length > 0 && capability)
+			{
+				if (! Array.isArray(capability) ||
+					capability.length > Object.keys(CAPABILITIES).length ||
+					capability.length === 0)
+					return END_ERROR (res, 400, "Invalid data (capability)");
+
+				capability = [...new Set(capability)];
+
+				if (! capability.every( (val) => Object.keys(CAPABILITIES).includes(val)))
+					return END_ERROR (res, 400, "Invalid data (capability)");
+
+				/* should be something common between requested and existing */
+				let matching = intersect(existing_caps, capability);
+
+				if (matching.length !== capability.length)
+					return END_ERROR (res, 403, "Invalid id");
+
+				/* if deleting all existing capabilities - delete rule itself */
+				if (matching.length === existing_caps.length)
+					delete_rule = true;
+			}
+			else
+				delete_rule = true;
+		}
+		catch(error)
+		{
+			return END_ERROR (res, 500, "Internal error!", error);
+		}
+
+		for (const [index, i] of to_delete.entries())
+		{
+			if (i.id === id)
+			{
+				if (! i.capability)
+					return END_ERROR (res, 400, `Invalid data (duplicate) ${index}`);
+				else
+				{
+					let duplicate = intersect(capability, i.capability);
+
+					if (duplicate.length !== 0)
+						return END_ERROR (res, 400, `Invalid data (duplicate) ${index}`);
+				}
+			}
+		}
+
+		to_delete.push({
+			id : id,
+			capability : capability,
+			delete_rule: delete_rule,
+			role_id: role_id,
+			access_item_id:access_item_id,
+			access_item_type:access_item_type
+		});
+	}
+
+	if (to_delete.length === 0)
+		return END_ERROR (res, 500, "Internal error!");
+
+	for (const obj of to_delete)
+	{
+		const {id, capability, delete_rule, role_id} = obj;
+		const {access_item_id, access_item_type} = obj;
+
+		if (delete_rule === true)
+		{
+			try {
+				const result = await pool.query(
+					" DELETE FROM consent.access" +
+					" WHERE id = $1::integer",
+					[ id ]);
+
+				if (result.rowCount === 0)
+					throw new Error("Error in deletion");
+			}
+			catch(error)
+			{
+				return END_ERROR (res, 500, "Internal error!", error);
+			}
+		}
+		else
+		{
+			try {
+				const result = await pool.query(
+					" DELETE FROM consent.capability" 	+
+					" WHERE access_id = $1::integer"	+
+					" AND capability = ANY ($2::consent.capability_enum[])",
+					[ id, capability ]);
+
+				if (result.rowCount === 0)
+					throw new Error("Error in deletion");
+
+				const check = await pool.query(
+					"SELECT capability FROM consent.capability"	+
+					" WHERE access_id = $1::integer",
+					[ id ]);
+
+				let existing_caps = [...new Set(check.rows.map(row => row.capability))];
+
+				if (existing_caps.length === 0)
+				{/* delete rule itself, since no caps are there */
+					const result = await pool.query(
+						" DELETE FROM consent.access" +
+						" WHERE id = $1::integer",
+						[ id ]);
+
+					if (result.rowCount === 0)
+						throw new Error("Error in deletion");
+				}
+				else
+				{/* rewrite policy text */
+					const email = await pool.query (
+						"SELECT email FROM consent.users"		+
+						" JOIN consent.role ON user_id = users.id"	+
+						" WHERE role.id = $1::integer",
+						[ role_id ]);
+
+					const resource = await pool.query (
+						"SELECT * FROM consent." + access_item_type +
+						" WHERE id = $1::integer",
+						[ access_item_id ]);
+
+					let resource_id = resource.rows[0].cat_id;
+					let resource_name = resource_id.replace(provider_id_hash + "/", "");
+					let accesser_email = email.rows[0].email;
+
+					let policy_text = create_consumer_policy_text(
+								accesser_email,
+								resource_id,
+								resource_name,
+								existing_caps);
+
+					const access = await pool.query (
+						"UPDATE consent.access SET policy_text = $1::text,"	+
+						" updated_at = NOW() WHERE access.id = $2::integer"	+
+						" RETURNING id",
+						[ policy_text, id ]);
+				}
+			}
+			catch(error)
+			{
+				return END_ERROR (res, 500, "Internal error!", error);
+			}
+		}
+	}
+
+	try {
+		const rules = await pool.query (
+			"SELECT policy_text FROM consent.access,"	+
+			" consent.role WHERE provider_id = $1::integer"	+
+			" AND role.id = access.role_id ORDER BY role",
+			[ provider_uid ]);
+
+		rules_array = rules.rows.map(
+				(row) => { return row.policy_text; });
+	}
+	catch(error)
+	{
+		return END_ERROR (res, 500, "Internal error!", error);
+	}
+
+	set_acl(provider_email, rules_array, (err) =>
+	{
+		if (err)
+			return END_ERROR (res, err.http_code, err.message);
+		else
+			return END_SUCCESS (res);
+	});
 });
 
 
