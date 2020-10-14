@@ -97,8 +97,9 @@ CREATE TABLE consent.resourcegroup (
 CREATE TABLE consent.capability (
 
 	id			integer GENERATED ALWAYS AS IDENTITY	PRIMARY KEY,
-	access_id		integer REFERENCES consent.access(id)	NOT NULL,
-	capability		consent.capability_enum			NOT NULL
+	access_id		integer REFERENCES consent.access(id)	NOT NULL ON DELETE CASCADE,
+	capability		consent.capability_enum			NOT NULL,
+	UNIQUE (access_id, capability)
 );
 
 ALTER TABLE consent.organizations	OWNER TO postgres;
