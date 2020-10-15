@@ -171,6 +171,12 @@ class Auth():
                 return self.call("provider/access", body)
         #
 
+        def delete_rule(self, body):
+        #
+                body = body;
+                return self.call("provider/access", body, "DELETE")
+        #
+
         def get_provider_access(self):
         #
                 return self.call("provider/access", {}, "GET")

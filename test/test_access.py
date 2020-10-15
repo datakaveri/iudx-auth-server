@@ -12,6 +12,11 @@ email   = "barun@iisc.ac.in"
 assert reset_role(email) == True
 org_id = add_organization("iisc.ac.in")
 
+ingester_id = 0 
+consumer_id = 0
+onboarder_id = 0
+cat_id = ''
+
 # delete all old policies using acl/set API
 policy = "x can access x"
 r = untrusted.set_policy(policy)
@@ -132,8 +137,8 @@ def test_get_all_caps():
         assert r['status_code'] == 200
 
 def get_token_all_apis():
-        apis = ["/ngsi-ld/v1/entityOperations/query", "/ngsi-ld/v1/entities", "/ngsi-ld/v1/temporal/entities","/ngsi-ld/v1/entities/" + resource_id, "/ngsi-ld/v1/subscription"]
-        body = {"id" : resource_id + "/someitem", "apis" : apis }
+        apis = ["/ngsi-ld/v1/entityOperations/query", "/ngsi-ld/v1/entities", "/ngsi-ld/v1/temporal/entities","/ngsi-ld/v1/entities/" +  provider_id + '/rs.example.co.in/' + resource_group, "/ngsi-ld/v1/subscription"]
+        body = {"id" : provider_id + '/rs.example.co.in/' + "/someitem", "apis" : apis }
         r = consumer.get_token(body)
         assert r['success']     is True
 
@@ -239,16 +244,99 @@ def test_token_invalid_rid():
         assert r['status_code'] == 400
 
 def test_get_access_rules():
+        global ingester_id, consumer_id, onboarder_id
         r = untrusted.get_provider_access()
         assert r['success']     == True
         assert r['status_code'] == 200
         rules = r['response']
         for r in rules:
-                if r['email'] == email and r['role'] == 'consumer':
+                if r['email'] == email and r['role'] == 'consumer' and resource_id == r['item']['cat_id']:
                         assert set(r['capabilities']).issubset(set(['temporal', 'subscription', 'complex']))
                         assert len(r['capabilities']) <= 3 and len(r['capabilities']) >= 1
+                        consumer_id = r['id']
                 if r['email'] == email and r['role'] == 'onboarder':
                         assert r['item_type'] == 'catalogue'
-                if r['email'] == email and r['role'] == 'data ingester':
+                        onboarder_id = r['id']
+                if r['email'] == email and r['role'] == 'data ingester' and diresource_id == r['item']['cat_id']:
                         assert r['policy'].endswith('"/iudx/v1/adapter"')
+                        ingester_id = r['id']
+
+### deleting rules ###
+
+def test_delete_onboarder_rule():
+        global onboarder_id
+
+        token_body = { "id"    : provider_id + "/catalogue.iudx.io/catalogue/crud" }
+
+        r = consumer.get_token(token_body)
+        assert r['success']     is True
+        assert None != r['response']['token']
+
+        body = {"id" : onboarder_id}
+        r = untrusted.delete_rule([body])
+        assert r['success']     == True
+        assert r['status_code'] == 200
+
+        # onboarder token request should fail
+        r = consumer.get_token(token_body)
+        assert r['success']     is False
+
+def test_delete_ingester_temporal():
+        global ingester_id, consumer_id
+        
+        token_body = {"id" : diresource_id + "/someitem/someotheritem", "api" : "/iudx/v1/adapter" }
+        r = consumer.get_token(token_body)
+        assert r['success']     is True
+
+        token_body = {"id" : resource_id + "/something", "apis" : ["/ngsi-ld/v1/temporal/entities"] }
+        r = consumer.get_token(token_body)
+        assert r['success']     is True
+
+        body = [{"id": ingester_id}, {"id": consumer_id, "capability": ["temporal"]}]
+        r = untrusted.delete_rule(body)
+        assert r['success']     == True
+        assert r['status_code'] == 200
+
+        token_body = {"id" : diresource_id + "/someitem/someotheritem", "api" : "/iudx/v1/adapter" }
+        r = consumer.get_token(token_body)
+        assert r['success']     is False
+
+        token_body = {"id" : resource_id + "/something", "apis" : ["/ngsi-ld/v1/temporal/entities"] }
+        r = consumer.get_token(token_body)
+        assert r['success']     is False
+
+        body = [{"id": ingester_id}, {"id": consumer_id, "capability": ["temporal"]}]
+        r = untrusted.delete_rule(body)
+        assert r['success']     == False
+        assert r['status_code'] == 403
+
+def test_delete_consumer_rule():
+        global consumer_id
+
+        apis = ["/ngsi-ld/v1/entityOperations/query", "/ngsi-ld/v1/entities","/ngsi-ld/v1/entities/" +  resource_id, "/ngsi-ld/v1/subscription"]
+        token_body = {"id" : resource_id + "/someitem", "apis" : apis }
+        r = consumer.get_token(token_body)
+        assert r['success']     is True
+
+        body = [{"id": consumer_id, "capability": ["temporal", "subscription", "complex"]}]
+        r = untrusted.delete_rule(body)
+        assert r['success']     == False
+        assert r['status_code'] == 403
+
+        token_body = {"id" : resource_id + "/someitem", "apis" : apis }
+        r = consumer.get_token(token_body)
+        assert r['success']     is True
+
+        body = [{"id": consumer_id}]
+        r = untrusted.delete_rule(body)
+        assert r['success']     == True
+        assert r['status_code'] == 200
+
+        token_body = {"id" : resource_id + "/someitem", "apis" : apis }
+        r = consumer.get_token(token_body)
+        assert r['success']     is False
+
+        token_body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/subscription"] }
+        r = consumer.get_token(token_body)
+        assert r['success']     is False
 
