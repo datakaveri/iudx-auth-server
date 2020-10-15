@@ -3387,7 +3387,7 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 	let accesser_email 	= res.locals.body.user_email;
 	const accesser_role	= res.locals.body.user_role;
 	const resource		= res.locals.body.item_id;
-	let capability		= res.locals.body.capability;
+	let capability		= res.locals.body.capabilities;
 	let res_type		= res.locals.body.item_type;
 	let req_capability;
 
@@ -3409,12 +3409,12 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 		if (! Array.isArray(capability) || 
 			capability.length > Object.keys(CAPABILITIES).length ||
 			capability.length === 0)
-			return END_ERROR (res, 400, "Invalid data (capability)");
+			return END_ERROR (res, 400, "Invalid data (capabilities)");
 
 		capability = [...new Set(capability)];
 
 		if (! capability.every( (val) => Object.keys(CAPABILITIES).includes(val)))
-			return END_ERROR (res, 400, "Invalid data (capability)");
+			return END_ERROR (res, 400, "Invalid data (capabilities)");
 
 		req_capability = capability;
 	}
