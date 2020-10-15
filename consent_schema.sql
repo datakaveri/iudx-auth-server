@@ -97,7 +97,7 @@ CREATE TABLE consent.resourcegroup (
 CREATE TABLE consent.capability (
 
 	id			integer GENERATED ALWAYS AS IDENTITY	PRIMARY KEY,
-	access_id		integer REFERENCES consent.access(id)	NOT NULL ON DELETE CASCADE,
+	access_id		integer NOT NULL REFERENCES consent.access(id)	ON DELETE CASCADE,
 	capability		consent.capability_enum			NOT NULL,
 	UNIQUE (access_id, capability)
 );
