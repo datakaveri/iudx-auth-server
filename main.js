@@ -3356,15 +3356,28 @@ app.post("/auth/v[1-2]/group/delete", (req, res) => {
 	});
 });
 
-app.post("/auth/v[1-2]/certificate-info", (req, res) => {
+app.post("/auth/v[1-2]/certificate-info", async (req, res) => {
 
 	const cert	= res.locals.cert;
+	let roles = [];
+
+	try {
+		const result = await pool.query (
+			"SELECT role FROM consent.role JOIN" 	+
+			" consent.users ON users.id = user_id"	+
+			" WHERE users.email = $1::text",
+			[ res.locals.email ]);
+
+		roles = [...new Set(result.rows.map(row => row.role))];
+	}
+	catch(error) { return END_ERROR (res, 500, "Internal error!", error); }
 
 	const response	= {
 		"id"			: res.locals.email,
 		"certificate-class"	: res.locals.cert_class,
 		"serial"		: cert.serialNumber.toLowerCase(),
 		"fingerprint"		: cert.fingerprint.toLowerCase(),
+		"roles"			: roles
 	};
 
 	return END_SUCCESS (res,response);
