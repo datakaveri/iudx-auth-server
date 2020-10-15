@@ -1,6 +1,6 @@
 {
 	"info": {
-		"_postman_id": "763b6b3e-82c0-4a92-93dd-03c48ccb5696",
+		"_postman_id": "e0980e06-591f-4b35-804e-92dd64006b8c",
 		"name": "Access",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
@@ -11,7 +11,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "c317755e-0031-4461-95b3-2e47c9e44b25",
+						"id": "9b4305a1-e387-4fcf-a888-2d2ad49cfaa6",
 						"exec": [
 							""
 						],
@@ -53,7 +53,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "28d5dfd7-4285-4ba7-ad11-938adcff1204",
+						"id": "793ece4a-5e89-452c-a26a-37e5323db364",
 						"exec": [
 							""
 						],
@@ -95,7 +95,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "057538a7-852a-48f9-b0c8-f617a15d67b9",
+						"id": "c727d6c1-ece8-4660-b936-5672ecf1c23f",
 						"exec": [
 							""
 						],
@@ -105,7 +105,7 @@
 				{
 					"listen": "prerequest",
 					"script": {
-						"id": "eef7ab48-bf87-49f3-a7b4-96b8be7bd78b",
+						"id": "dd3d8f9a-7638-4ac0-8200-fafe45e32124",
 						"exec": [
 							""
 						],
@@ -118,7 +118,7 @@
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "{\r\n  \"user_email\": \"<enter consumer's email>\",\r\n  \"user_role\": \"consumer\",\r\n  \"item_id\": \"<enter resourse id>\",\r\n  \"item_type\": \"resourcegroup\",\r\n  \"capability\" : [\"subscription\"]\r\n}",
+					"raw": "{\r\n  \"user_email\": \"<enter consumer's email>\",\r\n  \"user_role\": \"consumer\",\r\n  \"item_id\": \"<enter resourse id>\",\r\n  \"item_type\": \"resourcegroup\",\r\n  \"capabilities\" : [\"subscription\"]\r\n}",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -147,7 +147,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "7bc43a86-ca6e-4ddd-ad02-e7e3c9bd7657",
+						"id": "ee2a7bde-41f3-4cd0-b119-21cd1254155b",
 						"exec": [
 							""
 						],
@@ -157,7 +157,7 @@
 				{
 					"listen": "prerequest",
 					"script": {
-						"id": "203bbc7b-e279-42a2-b358-9f5473e99957",
+						"id": "b16f9c08-884c-44b6-b1c5-1e03c936c89a",
 						"exec": [
 							""
 						],
@@ -170,7 +170,7 @@
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "{\r\n  \"user_email\": \"<enter email>\",\r\n  \"user_role\": \"consumer\",\r\n  \"item_id\": \"<enter resource id>\",\r\n  \"item_type\": \"resourcegroup\",\r\n  \"capability\" : [\"complex\"]\r\n}",
+					"raw": "{\r\n  \"user_email\": \"<enter email>\",\r\n  \"user_role\": \"consumer\",\r\n  \"item_id\": \"<enter resource id>\",\r\n  \"item_type\": \"resourcegroup\",\r\n  \"capabilities\" : [\"complex\"]\r\n}",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -199,7 +199,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "14946fd3-dcb9-44eb-8d9e-4dfc34809502",
+						"id": "03fd2335-5292-49c8-9e91-7e88fb3f48e6",
 						"exec": [
 							""
 						],
@@ -209,7 +209,7 @@
 				{
 					"listen": "prerequest",
 					"script": {
-						"id": "d3703853-f55e-4623-9cf7-94e95a819957",
+						"id": "e8f7e4e0-7029-4327-baab-4ee86e21dd92",
 						"exec": [
 							""
 						],
@@ -222,7 +222,7 @@
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "{\r\n  \"user_email\": \"<enter consumer email>\",\r\n  \"user_role\": \"consumer\",\r\n  \"item_id\": \"<enter resource id>\",\r\n  \"item_type\": \"resourcegroup\",\r\n  \"capability\" : [\"temporal\"]\r\n}",
+					"raw": "{\r\n  \"user_email\": \"<enter consumer email>\",\r\n  \"user_role\": \"consumer\",\r\n  \"item_id\": \"<enter resource id>\",\r\n  \"item_type\": \"resourcegroup\",\r\n  \"capabilities\" : [\"temporal\"]\r\n}",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -251,7 +251,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "bb36d1ea-f349-47b0-9eae-f1e7688b298a",
+						"id": "96f3af26-81fd-4f63-a39d-9ac85bcf7dd7",
 						"exec": [
 							""
 						],
@@ -261,7 +261,7 @@
 				{
 					"listen": "prerequest",
 					"script": {
-						"id": "4e88080f-93cb-48f8-846d-04c9b9a67dc6",
+						"id": "78ed835e-f339-48e1-aac1-0e15ca5a88a1",
 						"exec": [
 							""
 						],
@@ -274,7 +274,7 @@
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "{\r\n  \"user_email\": \"<enter consumer email>\",\r\n  \"user_role\": \"consumer\",\r\n  \"item_id\": \"<enter resource id>\",\r\n  \"item_type\": \"resourcegroup\",\r\n  \"capability\" : [\"temporal\", \"complex\", \"subscription\"]\r\n}",
+					"raw": "{\r\n  \"user_email\": \"<enter consumer email>\",\r\n  \"user_role\": \"consumer\",\r\n  \"item_id\": \"<enter resource id>\",\r\n  \"item_type\": \"resourcegroup\",\r\n  \"capabilities\" : [\"temporal\", \"complex\", \"subscription\"]\r\n}",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -303,7 +303,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "f0461a8f-bc75-4f6f-8afe-47973af8332c",
+						"id": "53909a4a-a042-446b-9ec6-72f5d3d7e5b8",
 						"exec": [
 							""
 						],
@@ -336,7 +336,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "bc9a4e7e-113d-4baa-aea2-a11a9b1cd276",
+						"id": "91ab1b37-e1f4-4fe3-8cdc-d1f85defa5d8",
 						"exec": [
 							""
 						],
