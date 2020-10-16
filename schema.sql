@@ -108,7 +108,7 @@ ALTER TABLE public.token		OWNER TO postgres;
 
 CREATE USER auth		with PASSWORD 'XXX_auth';
 
-GRANT SELECT			ON TABLE public.crl				TO auth;
-GRANT SELECT,INSERT,UPDATE	ON TABLE public.token				TO auth;
-GRANT SELECT,INSERT,UPDATE	ON TABLE public.groups				TO auth;
-GRANT SELECT,INSERT,UPDATE	ON TABLE public.policy				TO auth;
+GRANT SELECT				ON TABLE public.crl				TO auth;
+GRANT SELECT,INSERT,UPDATE,DELETE	ON TABLE public.token				TO auth;
+GRANT SELECT,INSERT,UPDATE		ON TABLE public.groups				TO auth;
+GRANT SELECT,INSERT,UPDATE,DELETE	ON TABLE public.policy				TO auth;

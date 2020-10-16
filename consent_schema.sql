@@ -56,17 +56,19 @@ CREATE UNIQUE INDEX idx_users_email ON consent.users(email);
 CREATE TABLE consent.role (
 
 	id		integer GENERATED ALWAYS AS IDENTITY		PRIMARY KEY,
-	user_id		integer REFERENCES consent.users(id)		NOT NULL,
+	user_id		integer NOT NULL REFERENCES consent.users(id)	ON DELETE CASCADE,
 	role		consent.role_enum				NOT NULL,
 	status		consent.status_enum				NOT NULL,
 	created_at	timestamp without time zone			NOT NULL,
 	updated_at	timestamp without time zone			NOT NULL
 );
 
+CREATE UNIQUE INDEX idx_role_id ON consent.role(id);
+
 CREATE TABLE consent.certificates (
 
 	id		integer GENERATED ALWAYS AS IDENTITY		PRIMARY KEY,
-	user_id		integer REFERENCES consent.users(id)		NOT NULL,
+	user_id		integer NOT NULL REFERENCES consent.users(id)	ON DELETE CASCADE,
 	csr		character varying				NOT NULL,
 	cert		character varying					,
 	created_at	timestamp without time zone			NOT NULL,
@@ -75,30 +77,32 @@ CREATE TABLE consent.certificates (
 
 CREATE TABLE consent.access (
 
-	id			integer GENERATED ALWAYS AS IDENTITY	PRIMARY KEY,
-	provider_id		integer REFERENCES consent.users(id)	NOT NULL,
-	role_id			integer REFERENCES consent.role(id)	ON DELETE SET NULL,
-	policy_text		character varying			NOT NULL,
-	access_item_id		integer 					,
-	access_item_type	consent.access_item				,
-	created_at		timestamp without time zone		NOT NULL,
-	updated_at		timestamp without time zone		NOT NULL
+	id			integer GENERATED ALWAYS AS IDENTITY		PRIMARY KEY,
+	provider_id		integer NOT NULL REFERENCES consent.users(id) 	ON DELETE CASCADE,
+	role_id			integer REFERENCES consent.role(id)		ON DELETE CASCADE,
+	policy_text		character varying				NOT NULL,
+	access_item_id		integer 						,
+	access_item_type	consent.access_item					,
+	created_at		timestamp without time zone			NOT NULL,
+	updated_at		timestamp without time zone			NOT NULL
 );
+
+CREATE UNIQUE INDEX idx_access_id ON consent.access(id);
 
 CREATE TABLE consent.resourcegroup (
 
-	id			integer GENERATED ALWAYS AS IDENTITY	PRIMARY KEY,
-	provider_id		integer REFERENCES consent.users(id)	NOT NULL,
-	cat_id			character varying			NOT NULL,
-	created_at		timestamp without time zone		NOT NULL,
-	updated_at		timestamp without time zone		NOT NULL
+	id			integer GENERATED ALWAYS AS IDENTITY			PRIMARY KEY,
+	provider_id		integer NOT NULL REFERENCES consent.users(id) 		ON DELETE CASCADE,
+	cat_id			character varying					NOT NULL,
+	created_at		timestamp without time zone				NOT NULL,
+	updated_at		timestamp without time zone				NOT NULL
 );
 
 CREATE TABLE consent.capability (
 
-	id			integer GENERATED ALWAYS AS IDENTITY	PRIMARY KEY,
-	access_id		integer REFERENCES consent.access(id)	NOT NULL ON DELETE CASCADE,
-	capability		consent.capability_enum			NOT NULL,
+	id			integer GENERATED ALWAYS AS IDENTITY		PRIMARY KEY,
+	access_id		integer NOT NULL REFERENCES consent.access(id)	ON DELETE CASCADE,
+	capability		consent.capability_enum				NOT NULL,
 	UNIQUE (access_id, capability)
 );
 
@@ -110,9 +114,9 @@ ALTER TABLE consent.access		OWNER TO postgres;
 ALTER TABLE consent.resourcegroup	OWNER TO postgres;
 ALTER TABLE consent.capability		OWNER TO postgres;
 
-GRANT SELECT,INSERT,UPDATE ON TABLE consent.organizations	 TO auth;
-GRANT SELECT,INSERT,UPDATE ON TABLE consent.users		 TO auth;
-GRANT SELECT,INSERT,UPDATE ON TABLE consent.certificates	 TO auth;
+GRANT SELECT,INSERT,UPDATE 		ON TABLE consent.organizations	 TO auth;
+GRANT SELECT,INSERT,UPDATE,DELETE 	ON TABLE consent.users		 TO auth;
+GRANT SELECT,INSERT,UPDATE 		ON TABLE consent.certificates	 TO auth;
 
 GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE consent.role		 TO auth;
 GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE consent.resourcegroup TO auth;
