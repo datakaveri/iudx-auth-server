@@ -689,10 +689,10 @@ function has_certificate_been_revoked (socket, cert, CRL)
 				if the issuerCertificate is empty,
 				then the session must have been reused
 				by the browser.
-			*/
 
 			if (! socket.isSessionReused())
 				return true;
+			*/
 		}
 
 		for (const issuer of ISSUERS)
@@ -731,10 +731,10 @@ function has_certificate_been_revoked (socket, cert, CRL)
 					if fingerprint OR serial is undefined,
 					then the session must have been reused
 					by the browser.
-				*/
 
 				if (! socket.isSessionReused())
 					return true;
+				*/
 			}
 		}
 	}
