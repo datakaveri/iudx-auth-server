@@ -871,11 +871,36 @@ async function check_privilege(email, role, callback)
 /* ---
   Set aperture policies for a specific provider
   provider_id is email address of provider,
+  uid is the user ID of the provider,
   rules is an array of strings.
+
+  If rules is null, then fetch rules from access table
+  using uid.
 		--- */
 
-function set_acl(provider_id, rules, callback)
+async function set_acl(provider_id, uid, rules, callback)
 {
+	if (rules === null && uid !== null)
+	{
+		try {
+			const result = await pool.query (
+				"SELECT policy_text FROM consent.access,"	+
+				" consent.role WHERE provider_id = $1::integer"	+
+				" AND role.id = access.role_id ORDER BY role",
+				[ uid ]);
+
+			rules = result.rows.map(
+				(row) => { return row.policy_text; });
+		}
+		catch(error)
+		{
+			let err = new Error(error.message);
+			err.http_code = 500;
+			callback(err);
+			return;
+		}
+	}
+
 	let policy_in_json;
 
 	try
@@ -902,22 +927,10 @@ function set_acl(provider_id, rules, callback)
 
 	const base64policy	= base64(rules.join(";"));
 
-	pool.query (
-
+	try {
+		const results = await pool.query (
 		"SELECT 1 FROM policy WHERE id = $1::text LIMIT 1",
-		[
-			provider_id_hash,	// 1
-		],
-
-	(error, results) =>
-	{
-		if (error)
-		{
-			let error = new Error("Internal error!");
-			error.http_code = 500;
-			callback(error);
-			return;
-		}
+		[ provider_id_hash ]);
 
 		let query;
 		let params;
@@ -958,25 +971,26 @@ function set_acl(provider_id, rules, callback)
 			];
 		}
 
-		pool.query (query, params, (error_1, results_1) =>
-		{
-			if (error_1 || results_1.rowCount === 0)
-			{
-				let error = new Error("Internal error!");
-				error.http_code = 500;
-				callback(error);
-				return;
-			}
+		const result_1 = await pool.query (query, params);
 
-			const details = {
-				"provider"  : provider_id,
-				"policy"    : rules
-			};
+		if (result_1.rowCount === 0)
+			throw new Error("Error in deletion");
+	}
+	catch(error)
+	{
+		let err = new Error("Internal error!");
+		err.http_code = 500;
+		callback(err);
+		return;
+	}
 
-			log("info", "CREATED_POLICY", true, details);
-			callback(null);
-		});
-	});
+	const details = {
+		"provider"  : provider_id,
+		"policy"    : rules
+	};
+
+	log("info", "CREATED_POLICY", true, details);
+	callback(null);
 }
 
 function intersect (array1, array2)
@@ -2706,10 +2720,10 @@ app.post("/auth/v[1-2]/acl/set", (req, res) => {
 
 	const rules = policy.split(";");
 
-	set_acl(provider_id, rules, (err) =>
+	set_acl(provider_id, null, rules, (err) =>
 	{
 		if (err)
-			return END_ERROR (res, err.http_code, err.message);
+			return END_ERROR (res, err.http_code, err.message, err);
 		else
 			return END_SUCCESS (res);
 	});
@@ -3675,31 +3689,13 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 		return END_ERROR (res, 500, "Internal error!", error);
 	}
 
-	try {
-		const rules = await pool.query (
-			"SELECT policy_text FROM consent.access,"	+
-			" consent.role WHERE provider_id = $1::integer"	+
-			" AND role.id = access.role_id ORDER BY role",
-			[
-				provider_uid
-			]);
-
-		rules_array = rules.rows.map(
-				(row) => { return row.policy_text; });
-	}
-	catch(error)
-	{
-		return END_ERROR (res, 500, "Internal error!", error);
-	}
-
-	set_acl(provider_email, rules_array, (err) =>
+	set_acl(provider_email, provider_uid, null, (err) =>
 	{
 		if (err)
-			return END_ERROR (res, err.http_code, err.message);
+			return END_ERROR (res, err.http_code, err.message, err);
 		else
 			return END_SUCCESS (res);
 	});
-
 });
 
 app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
@@ -4004,25 +4000,10 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 		}
 	}
 
-	try {
-		const rules = await pool.query (
-			"SELECT policy_text FROM consent.access,"	+
-			" consent.role WHERE provider_id = $1::integer"	+
-			" AND role.id = access.role_id ORDER BY role",
-			[ provider_uid ]);
-
-		rules_array = rules.rows.map(
-				(row) => { return row.policy_text; });
-	}
-	catch(error)
-	{
-		return END_ERROR (res, 500, "Internal error!", error);
-	}
-
-	set_acl(provider_email, rules_array, (err) =>
+	set_acl(provider_email, provider_uid, null, (err) =>
 	{
 		if (err)
-			return END_ERROR (res, err.http_code, err.message);
+			return END_ERROR (res, err.http_code, err.message, err);
 		else
 			return END_SUCCESS (res);
 	});
