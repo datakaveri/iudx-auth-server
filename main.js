@@ -87,10 +87,14 @@ const MIN_CERT_CLASS_REQUIRED	= Object.freeze ({
 	"/auth/v1/group/add"			: 3,
 	"/auth/v1/group/delete"			: 3,
 	"/auth/v1/group/list"			: 3,
+
+	"/auth/v1/provider/access"		: -Infinity,
+
+/* admin APIs */
 	"/auth/v1/admin/provider/registrations"		: -Infinity,
 	"/auth/v1/admin/provider/registrations/status"	: -Infinity,
-	"/auth/v1/admin/organizations"		: -Infinity,
-	"/auth/v1/provider/access"			: -Infinity,
+	"/auth/v1/admin/organizations"			: -Infinity,
+	"/auth/v1/admin/users"				: -Infinity,
 
 /* consent APIs */
 	"/consent/v1/provider/registration"	: -Infinity,
@@ -4196,6 +4200,113 @@ app.post("/auth/v[1-2]/admin/organizations", async (req, res) => {
 	log("info", "ORG_CREATED", false, details);
 
 	return END_SUCCESS(res, { organizations: new_org.rows });
+});
+
+app.delete("/auth/v[1-2]/admin/users", async (req, res) => {
+
+	const email = res.locals.email;
+	let uid = null, role_count = 0;
+	let is_provider = true, is_otherrole = true;
+
+	if (!admin_list.includes(email)) {
+		return END_ERROR (res, 403, "Not allowed");
+	}
+
+	let email_todel = res.locals.body.email;
+
+	if (! is_valid_email(email_todel))
+		return END_ERROR (res, 400, "Invalid data (email)");
+
+	email_todel = email_todel.toLowerCase();
+
+	try { uid = await check_privilege(email_todel, "provider"); }
+	catch(error) { is_provider = false; }
+
+	for (const val of ACCESS_ROLES)
+	{
+		try { uid = await check_privilege(email_todel, val); }
+		catch(error) { role_count++; }
+	}
+
+	if (role_count === ACCESS_ROLES.length)
+		is_otherrole = false;
+
+	if (! is_provider && ! is_otherrole)
+		return END_ERROR (res, 400, "Invalid email");
+
+	/* should never happen */
+	if (is_provider && is_otherrole)
+		return END_ERROR (res, 500, "Internal error!");
+
+	if (is_provider)
+	{
+		const email_domain	= email_todel.split("@")[1];
+		const sha1_of_email	= sha1(email_todel);
+
+		const provider_id_hash	= email_domain + "/" + sha1_of_email;
+
+		try {
+			let result1 = await pool.query (
+				"DELETE FROM consent.users WHERE id = $1::integer", [ uid ]);
+
+			if (result1.rowCount === 0)
+				throw new Error("Error in deletion");
+
+			let result2 = await pool.query (
+				"DELETE FROM policy WHERE id = $1::text", [ provider_id_hash ]);
+			
+			if (result2.rowCount === 0)
+				throw new Error("Error in deletion");
+		}
+		catch (error)
+		{
+			return END_ERROR (res, 500, "Internal error!", error);
+		}
+	}
+	else if (is_otherrole)
+	{
+		try {/* apart from deleting user, we update policy table for providers who
+			have set rules for this user */
+
+			let ids = await pool.query (
+				"SELECT provider_id FROM consent.access JOIN consent.role " +
+				" ON role.id = role_id WHERE role.user_id = $1::integer",
+				[ uid ]);
+
+			let provider_ids = [...new Set(ids.rows.map(row => row.provider_id))];
+
+			let details = await pool.query (
+				"SELECT id, email FROM consent.users" +
+				" WHERE id = ANY($1::integer[])",
+				[ provider_ids ]);
+
+			let affected_providers = details.rows;
+
+			let result = await pool.query (
+				"DELETE FROM consent.users WHERE id = $1::integer", [ uid ]);
+
+			if (result.rowCount === 0)
+				throw new Error("Error in deletion");
+
+			for (const provider of affected_providers)
+			{
+				set_acl(provider.email, provider.id, null, (err) =>
+					{
+						if (err)
+							return END_ERROR (res, err.http_code, err.message, err);
+					});
+			}
+		}
+		catch (error)
+		{
+			return END_ERROR (res, 500, "Internal error!", error);
+		}
+	}
+
+	const details = {"email" : email_todel, "admin" : email };
+	log("info", "USER_DELETED", false, details);
+
+	return END_SUCCESS (res);
 });
 
 /* --- Consent APIs --- */
