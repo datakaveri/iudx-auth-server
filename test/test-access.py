@@ -244,12 +244,12 @@ token_body = {"id" : resource_id + "/something", "apis" : ["/ngsi-ld/v1/temporal
 r = consumer.get_token(token_body)
 assert r['success']     is True
 
-body = [{"id": ingester_id}, {"id": consumer_id, "capability": ["temporal"]}]
+body = [{"id": ingester_id}, {"id": consumer_id, "capabilities": ["temporal"]}]
 r = untrusted.delete_rule(body)
 assert r['success']     == True
 assert r['status_code'] == 200
 
-body = [{"id": ingester_id}, {"id": consumer_id, "capability": ["temporal"]}]
+body = [{"id": ingester_id}, {"id": consumer_id, "capabilities": ["temporal"]}]
 r = untrusted.delete_rule(body)
 assert r['success']     == False
 assert r['status_code'] == 403
@@ -269,7 +269,7 @@ r = consumer.get_token(token_body)
 assert r['success']     is True
 
 # temporal not there
-body = [{"id": consumer_id, "capability": ["temporal", "subscription", "complex"]}]
+body = [{"id": consumer_id, "capabilities": ["temporal", "subscription", "complex"]}]
 r = untrusted.delete_rule(body)
 assert r['success']     == False
 assert r['status_code'] == 403

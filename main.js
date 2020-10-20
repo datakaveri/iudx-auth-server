@@ -3827,14 +3827,21 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 	for (const obj of res.locals.body)
 	{
 		let id = obj.id;
-		let capability = obj.capability || null;
+		let capability = obj.capabilities || null;
 		let delete_rule = false;
 		let role_id, access_item_id, access_item_type;
 
 		id = parseInt(id, 10);
 
 		if (isNaN(id) || id < 1 || id > PG_MAX_INT)
-			return END_ERROR (res, 400, "Invalid data (id)");
+		{
+			let err = {
+				message   : "Invalid data (id)",
+				access_id : id
+			};
+
+			return END_ERROR (res, 400, err);
+		}
 
 		try {
 			const check = await pool.query (
@@ -3845,36 +3852,66 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 				[ id, provider_uid ]);
 
 			if (check.rows.length === 0)
-				return END_ERROR (res, 403, "Invalid id");
+			{
+				let err = {
+					message   : "Invalid id",
+					access_id : id
+				};
+
+				return END_ERROR (res, 403, err);
+			}
 
 			role_id 	 = check.rows[0].role_id;
 			access_item_id 	 = check.rows[0].access_item_id;
 			access_item_type = check.rows[0].access_item_type;
 
 			let existing_caps = [...new Set(check.rows.map(row => row.capability))];
+
 			/* remove nulls */
 			existing_caps = existing_caps.filter(val => val !== null);
 
 			/* if there are caps, must be a consumer rule
 			 * if capability field not there, treat as normal
 			 * rule and delete fully */
+
 			if (existing_caps.length > 0 && capability)
 			{
 				if (! Array.isArray(capability) ||
 					capability.length > Object.keys(CAPABILITIES).length ||
 					capability.length === 0)
-					return END_ERROR (res, 400, "Invalid data (capability)");
+				{
+					let err = {
+						message   : "Invalid data (capability)",
+						access_id : id
+					};
+
+					return END_ERROR (res, 400, err);
+				}
 
 				capability = [...new Set(capability)];
 
 				if (! capability.every( (val) => Object.keys(CAPABILITIES).includes(val)))
-					return END_ERROR (res, 400, "Invalid data (capability)");
+				{
+					let err = {
+						message   : "Invalid data (capability)",
+						access_id : id
+					};
+
+					return END_ERROR (res, 400, err);
+				}
 
 				/* should be something common between requested and existing */
 				let matching = intersect(existing_caps, capability);
 
 				if (matching.length !== capability.length)
-					return END_ERROR (res, 403, "Invalid id");
+				{
+					let err = {
+						message   : "Invalid id",
+						access_id : id
+					};
+
+					return END_ERROR (res, 403, err);
+				}
 
 				/* if deleting all existing capabilities - delete rule itself */
 				if (matching.length === existing_caps.length)
@@ -3888,18 +3925,32 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 			return END_ERROR (res, 500, "Internal error!", error);
 		}
 
-		for (const [index, i] of to_delete.entries())
+		for (const i of to_delete)
 		{
 			if (i.id === id)
 			{
 				if (! i.capability)
-					return END_ERROR (res, 400, `Invalid data (duplicate) ${index}`);
-				else
+				{
+					let err = {
+						message   : "Duplicate data",
+						access_id : id
+					};
+
+					return END_ERROR (res, 400, err);
+				}
+				else /* check if ids same, but diff in caps to be deleted */
 				{
 					let duplicate = intersect(capability, i.capability);
 
 					if (duplicate.length !== 0)
-						return END_ERROR (res, 400, `Invalid data (duplicate) ${index}`);
+					{
+						let err = {
+							message   : "Duplicate data",
+							access_id : id
+						};
+
+						return END_ERROR (res, 400, err);
+					}
 				}
 			}
 		}
@@ -4027,7 +4078,6 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 			return END_SUCCESS (res);
 	});
 });
-
 
 /* --- Auth Admin APIs --- */
 
