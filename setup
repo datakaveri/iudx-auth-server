@@ -123,18 +123,6 @@ then
 	certbot --nginx --non-interactive --agree-tos -m $EMAIL -d $CONSENT_DOMAIN
 fi
 
-systemctl restart nginx
-
-i=`systemctl is-active nginx`
-
-if [ $i != "active" ]
-then
-	echo
-	echo "nginx not running!!"
-	echo
-	exit
-fi
-
 git clone --depth=1 https://github.com/datakaveri/node-aperture
 cd node-aperture
 npm install
@@ -152,6 +140,20 @@ npm audit fix --force
 cp auth-server.service /etc/systemd/system
 systemctl daemon-reload
 systemctl enable auth-server.service
+
+systemctl restart nginx
+
+i=`systemctl is-active nginx`
+
+if [ $i != "active" ]
+then
+	echo
+	echo "nginx not running!!"
+	echo
+	exit
+fi
+
+# start auth server after restarting nginx
 systemctl start auth-server.service
 
 i=`systemctl is-active auth-server`
