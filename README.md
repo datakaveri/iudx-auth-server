@@ -34,7 +34,7 @@ Install [Ubuntu 20.04](https://releases.ubuntu.com/20.04/)
 7. Update the `AUTH_SERVER` and `CONSENT_URL` variables in [main.js](main.js) to your respective Auth and Consent domains
 
 8. If PostgreSQL is to be installed in a different server:
-	- Run [postgres-setup.sh](postgres-setup.sh) on that machine and follow instructions specified in that file
+	- Run [postgres-remote.sh](postgres-remote.sh) on that machine and follow instructions specified in that file
 	- Create an environment variable with the IP address of the PostgreSQL machine on the Auth machine
 			
 			export POSTGRES_IP=<ip of that machine>
