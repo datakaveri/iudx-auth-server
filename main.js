@@ -122,7 +122,6 @@ const TELEGRAM		= "https://api.telegram.org";
 
 const telegram_apikey	= fs.readFileSync ("telegram.apikey","ascii").trim();
 const telegram_chat_id	= fs.readFileSync ("telegram.chatid","ascii").trim();
-const admin_list = JSON.parse(fs.readFileSync("passwords/admins.json", "ascii").trim()).admins;
 const root_cert = forge.pki.certificateFromPem(fs.readFileSync("passwords/cert.pem"));
 const root_key = forge.pki.privateKeyFromPem(fs.readFileSync("passwords/key.pem"));
 
@@ -4202,11 +4201,13 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 
 /* --- Auth Admin APIs --- */
 
-app.get("/auth/v[1-2]/admin/provider/registrations", (req, res) => {
+app.get("/auth/v[1-2]/admin/provider/registrations", async (req, res) => {
+	
 	const email = res.locals.email;
-	if (!admin_list.includes(email)) {
-		return END_ERROR (res, 403, "Not allowed");
-	}
+
+	try {let admin_uid = await check_privilege(email, "admin"); }
+	catch(e) {return END_ERROR (res, 403, "Not allowed");}
+
 	const filter = req.query.filter || "pending";
 	let users, organizations;
 	try {
@@ -4247,9 +4248,13 @@ app.get("/auth/v[1-2]/admin/provider/registrations", (req, res) => {
 	return END_SUCCESS (res, result);
 });
 
-app.put("/auth/v[1-2]/admin/provider/registrations/status", (req, res) => {
+app.put("/auth/v[1-2]/admin/provider/registrations/status", async (req, res) => {
+
 	const email = res.locals.email;
-	if (!admin_list.includes(email)) { return END_ERROR (res, 403, "Not allowed"); }
+
+	try {let admin_uid = await check_privilege(email, "admin"); }
+	catch(e) {return END_ERROR (res, 403, "Not allowed");}
+
 	const user_id = req.query.user_id || null;
 	const status = req.query.status || null;
 	if (user_id === null || status === null || !(["approved", "rejected"].includes(status))) {
@@ -4349,9 +4354,10 @@ app.put("/auth/v[1-2]/admin/provider/registrations/status", (req, res) => {
 
 app.post("/auth/v[1-2]/admin/organizations", async (req, res) => {
 	const email = res.locals.email;
-	if (!admin_list.includes(email)) {
-		return END_ERROR (res, 403, "Not allowed");
-	}
+	
+	try {let admin_uid = await check_privilege(email, "admin"); }
+	catch(e) {return END_ERROR (res, 403, "Not allowed");}
+
 	const org = res.locals.body.organization;
 	let real_domain;
 	if (!org || !org.name || !org.website || !org.city || !org.state || !org.country)
@@ -4393,10 +4399,9 @@ app.delete("/auth/v[1-2]/admin/users", async (req, res) => {
 	const email = res.locals.email;
 	let uid = null, role_count = 0;
 	let is_provider = true, is_otherrole = true;
-
-	if (!admin_list.includes(email)) {
-		return END_ERROR (res, 403, "Not allowed");
-	}
+	
+	try {let admin_uid = await check_privilege(email, "admin"); }
+	catch(e) {return END_ERROR (res, 403, "Not allowed");}
 
 	let email_todel = res.locals.body.email;
 

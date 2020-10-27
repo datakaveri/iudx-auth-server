@@ -29,11 +29,10 @@ Install [Ubuntu 20.04](https://releases.ubuntu.com/20.04/)
 
 5. IUDX-AAA signs Certificate Signing Requests (CSR) to create certificates. This requires a [root certificate](https://en.wikipedia.org/wiki/Root_certificate) and it's corresponding private key. Rename your root certificate and key files to `cert.pem` and `key.pem` respectively and place them in the directory. **The files will be created automatically if they are not added to the directory**. (For a test instance, it is recommended to use the generated root certificate)
 
-6. IUDX-AAA uses Admin APIs to perform administrative tasks. Update [admins.json](admins.json) with the email addresses of users who will be admins
 
-7. Update the `AUTH_SERVER` and `CONSENT_URL` variables in [main.js](main.js) to your respective Auth and Consent domains
+6. Update the `AUTH_SERVER` and `CONSENT_URL` variables in [main.js](main.js) to your respective Auth and Consent domains
 
-8. If PostgreSQL is to be installed in a different server:
+7. If PostgreSQL is to be installed in a different server:
 	- Run [postgres-remote.sh](postgres-remote.sh) on that machine and follow instructions specified in that file
 	- Create an environment variable with the IP address of the PostgreSQL machine on the Auth machine
 			
@@ -42,7 +41,7 @@ Install [Ubuntu 20.04](https://releases.ubuntu.com/20.04/)
 	- **If the environment variable is not set, then PostgreSQL will be installed on the same machine**
 	- Update the `DB_SERVER` variable in [main.js](main.js)
 
-9. Finally, run `setup`
+8. Finally, run `setup`
 
 ```
 	./setup
@@ -55,6 +54,8 @@ for a test instance of IUDX-AAA, add `test` to the command. Please read Section 
 ``` 
 
 ## 3. After install
+
+* IUDX-AAA uses admin APIs to perform administrative tasks. In order to create an admin role, you may add a role to an existing user by performing an insert in the `roles` table. (`INSERT INTO consent.role (user_id,role,status,created_at,updated_at) VALUES (<user id>,'admin','approved',NOW(),NOW()`)
 
 * The Auth server is configured as a Systemd service during setup. Hence, systemctl commands can be used to stop, start, etc. the server.
 
@@ -104,11 +105,9 @@ pip3 install psycopg2
 pip3 install requests
 ```
 
-2. Add the email `abc.xyz@rbccps.org` to `passwords/admins.json` to facilitate testing of the admin APIs. Then, restart the Auth server (`systemctl restart auth-server`)
+2. NGINX is configured to perform rate-limiting on the Auth and Consent endpoints. To avoid this during testing, increase the request limit in `/etc/nginx/sites-available/auth.iudx.org.in` and `/etc/nginx/sites-available/cons.iudx.org.in`. Then, restart NGINX (`systemctl restart nginx`)
 
-3. NGINX is configured to perform rate-limiting on the Auth and Consent endpoints. To avoid this during testing, increase the request limit in `/etc/nginx/sites-available/auth.iudx.org.in` and `/etc/nginx/sites-available/cons.iudx.org.in`. Then, restart NGINX (`systemctl restart nginx`)
-
-4. To execute the tests - in the `tests/` directory, run:
+3. To execute the tests - in the `tests/` directory, run:
 
 ```
 ./run
