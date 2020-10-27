@@ -3846,7 +3846,8 @@ app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
 		let result = await pool.query (
 			"SELECT a.id, a.created_at, a.updated_at, "		+
 			" a.policy_text, a.access_item_type, a.access_item_id,"	+
-			" email, role FROM consent.access as a, "		+
+			" email, role, title, first_name, last_name"		+
+			" FROM consent.access as a, "				+
 			" consent.users, consent.role "				+
 			" WHERE a.role_id = role.id "				+
 			" AND role.user_id = users.id "				+
@@ -3916,6 +3917,11 @@ app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
 			id		: rule.id,
 			email		: rule.email,
 			role		: rule.role,
+			user_name	: {
+				title 		: rule.title,
+				first_name 	: rule.first_name,
+				last_name	: rule.last_name
+			},
 			item_type 	: rule.access_item_type,
 			item 		: null,
 			policy 		: rule.policy_text,
