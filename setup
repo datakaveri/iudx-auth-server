@@ -48,9 +48,6 @@ do
 	sed -i "s/XXX_$label/$password/" schema.sql 
 done
 
-# move admin file
-mv admins.json passwords/
-
 # move cert.pem, key.pem to passwords/ for CSR signing
 mv cert.pem key.pem passwords/
 

@@ -1,10 +1,13 @@
 # abc.xyz@rbccps.org is set as admin
 
+from add_admin import init_admin
 from init import untrusted
 from init import *
 from consent import *
 import random
 import string
+
+init_admin()
 
 ### Organization APIs ###
 
