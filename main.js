@@ -3699,7 +3699,7 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 				break;
 
 			case "consumer":
-				rule = `${accesser_email} can access ${resource_name}/* for 1 week`;
+				rule = ``; /* use create_consumer_policy_text function */
 				break;
 
 			default:
@@ -3710,7 +3710,6 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 		if (accesser_role === "consumer")
 		{
 			let caps, existing_caps = [];
-			let join = "if", index;
 
 			if (consumer_acc_id !== null)
 			{/* get existing capabilities if existing rule */
@@ -3731,19 +3730,7 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 
 			let capability = existing_caps.concat(req_capability);
 
-			let apis = capability.reduce((acc, val) => acc.concat(CAPABILITIES[val]), []);
-			apis = [...new Set(apis)];
-
-			/* if latest API is there, then add resource group
-			 * to the template */
-			if ((index = apis.indexOf(LATEST)) !== -1)
-				apis[index] = apis[index](resource);
-
-			for (const i of apis)
-			{
-				rule = rule + ` ${join} api = "${i}"`;
-				join = "or";
-			}
+			rule = create_consumer_policy_text(accesser_email, resource, resource_name, capability);
 		}
 
 		try {
