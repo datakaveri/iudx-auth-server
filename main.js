@@ -50,9 +50,10 @@ const MAX_TOKEN_HASH_LEN	= 64;
 
 const MAX_SAFE_STRING_LEN	= 512;
 const PG_MAX_INT		= 2147483647;
+const PHONE_PLACEHOLDER		= "0000000000";
 
 /* for access API */
-const ACCESS_ROLES		= ["consumer", "data ingester", "onboarder"];
+const ACCESS_ROLES		= ["consumer", "data ingester", "onboarder", "delegate"];
 const RESOURCE_ITEM_TYPES	= ["resourcegroup"];
 const CAT_URL			= "catalogue.iudx.io";
 const CAT_API_RULE		= `${CAT_URL}/catalogue/crud`;
@@ -4496,7 +4497,7 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 	let org_id 	= res.locals.body.organization;
 	const name 	= res.locals.body.name;
 	const raw_csr	= res.locals.body.csr;
-	let  user_id;
+	let user_id;
 
 	const phone_regex = new RegExp(/^[9876]\d{9}$/);
 
@@ -4642,6 +4643,7 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 
 	let user_id, signed_cert = null;
 	let check_orgid = false;
+	let check_phone;
 	let existing_user = false;
 	let message;
 
@@ -4659,7 +4661,7 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 		return END_ERROR (res, 400, "Invalid data (phone)");
 
 	if (! phone)
-		phone = "0000000000";	    // phone has not null constraint
+		phone = PHONE_PLACEHOLDER;	// phone has not null constraint
 
 	if (! Array.isArray(roles) || roles.length > ACCESS_ROLES.length || roles.length === 0)
 		return END_ERROR (res, 400, "Invalid data (roles)");
@@ -4670,7 +4672,11 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 	if (! roles.every( (val) => ACCESS_ROLES.includes(val)))
 		return END_ERROR (res, 400, "Invalid data (roles)");
 
-	if (roles.includes("onboarder") || roles.includes("data ingester"))
+	/* delegate needs valid phone no. for OTP */
+	if (roles.includes("delegate") && phone === PHONE_PLACEHOLDER)
+		return END_ERROR (res, 400, "Invalid data (phone)");
+
+	if (roles.includes("onboarder") || roles.includes("data ingester") || roles.includes("delegate"))
 	{
 		let domain;
 
@@ -4722,6 +4728,10 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 
 			/* if registered as consumer first, org_id will be undefined */
 			check_orgid = check_uid.rows[0].organization_id;
+
+			/* if registered as some other role first, phone number 
+			 * may be placeholder */
+			check_phone = check_uid.rows[0].phone;
 
 			/* check if user has registered as provider before
 			 * If yes, do not allow creation of new roles for that user */
@@ -4832,6 +4842,27 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 				" WHERE email = $2::text",
 				[
 					org_id,
+					email
+				]);
+		}
+		catch(error)
+		{
+			return END_ERROR (res, 500, "Internal error!", error);
+		}
+	}
+
+	/* update phone if the user was originally a some other role
+	 * (phone might be placeholder) */
+	if (check_phone === PHONE_PLACEHOLDER)
+	{
+		try
+		{
+			const update = await pool.query (
+				"UPDATE consent.users SET"	+
+				" phone = $1::text"		+
+				" WHERE email = $2::text",
+				[
+					phone,
 					email
 				]);
 		}
