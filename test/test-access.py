@@ -157,6 +157,22 @@ r = untrusted.provider_access([req])
 assert r['success']     == False
 assert r['status_code'] == 403
 
+##### delegate #####
+
+r = role_reg(email, '9454234223', name , ["delegate"], org_id)
+assert r['success']     == True
+assert r['status_code'] == 200
+
+req["user_role"] = "delegate"
+r = untrusted.provider_access([req])
+assert r['success']     == True
+assert r['status_code'] == 200
+
+req["user_role"] = "delegate"
+r = untrusted.provider_access([req])
+assert r['success']     == False
+assert r['status_code'] == 403
+
 ##### data ingester #####
 
 diresource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
@@ -309,7 +325,7 @@ email = email_name + '@iisc.ac.in'
 req = {"user_email": email, "user_role":'consumer', "item_id":resource_id, "item_type":"resourcegroup", "capabilities":["temporal"]}
 req1 = {"user_email": email, "user_role":'onboarder'}
 
-r = role_reg(email, '9454234223', name , ["onboarder", "consumer", "data ingester"], org_id, csr)
+r = role_reg(email, '9454234223', name , ["onboarder", "consumer", "data ingester", "delegate"], org_id, csr)
 assert r['success']     == True
 assert r['status_code'] == 200
 
@@ -319,7 +335,7 @@ assert r['success']     == False
 assert r['status_code'] == 400
 
 # valid
-r = untrusted.provider_access([req1, req])
+r = untrusted.provider_access([req1, req, {"user_email": email, "user_role":'delegate'}])
 assert r['success']     == True
 assert r['status_code'] == 200
 
@@ -387,6 +403,8 @@ assert r['status_code'] == 200
 check_con = False
 check_onb = False
 check_dti = False
+check_del = False
+
 r = untrusted.get_provider_access()
 assert r['success']     == True
 assert r['status_code'] == 200
@@ -399,6 +417,9 @@ for r in rules:
         if r['email'] == email and r['role'] == 'onboarder':
                 assert r['item_type'] == 'catalogue'
                 check_onb = True
+        if r['email'] == email and r['role'] == 'delegate':
+                assert r['item_type'] == 'delegate'
+                check_del = True
         if r['email'] == email and r['role'] == 'data ingester':
                 assert r['policy'].endswith('"/iudx/v1/adapter"')
                 check_dti = True
@@ -406,3 +427,4 @@ for r in rules:
 assert check_con == True
 assert check_onb == True
 assert check_dti == True
+assert check_del == True

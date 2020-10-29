@@ -895,6 +895,9 @@ async function set_acl(provider_id, uid, rules, callback)
 
 			rules = result.rows.map(
 				(row) => { return row.policy_text; });
+
+			/* remove empty strings (delegate rules) */
+			rules = rules.filter((val) => val !== "");
 		}
 		catch(error)
 		{
@@ -3558,11 +3561,16 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 			}
 		}
 
-		/* access_item_id for catalogue is -1 by default */
+		/* access_item_id for catalogue/delegate is -1 by default */
 		if (accesser_role === "onboarder")
 		{
 			access_item_id 	= -1;
 			res_type 	= "catalogue";
+		}
+		else if (accesser_role === "delegate")
+		{
+			access_item_id 	= -1;
+			res_type 	= "delegate";
 		}
 
 		/* if rule exists for particular provider+accesser+role+
@@ -3701,6 +3709,10 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 
 			case "consumer":
 				rule = ``; /* use create_consumer_policy_text function */
+				break;
+
+			case "delegate":
+				rule = ``; /* empty policy for delegate access */
 				break;
 
 			default:
@@ -3853,7 +3865,8 @@ app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
 
 	for (const item of access_items)
 	{
-		if (item === "catalogue") continue;
+		if (item === "catalogue" || item === "delegate")
+			continue;
 
 		try {
 			const result = await pool.query (
