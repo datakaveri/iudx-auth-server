@@ -206,7 +206,7 @@ app.use(timeout("5s"));
 app.use(
 	cors ({
 		credentials	:	true,
-		methods		:	["POST", "GET", "PUT"],
+		methods		:	["POST", "GET", "PUT", "DELETE"],
 		origin		:	(origin, callback) =>
 					{
 						callback (
@@ -629,7 +629,7 @@ function is_secure (req, res, cert, validate_email = true)
 		}
 
 		res.header("Access-Control-Allow-Origin", req.headers.origin);
-		res.header("Access-Control-Allow-Methods","POST, PUT, GET");
+		res.header("Access-Control-Allow-Methods","POST, PUT, GET, DELETE");
 	}
 
 	const error = is_certificate_ok (req,cert,validate_email);
@@ -4275,7 +4275,7 @@ app.put("/auth/v[1-2]/admin/provider/registrations/status", (req, res) => {
 
 		const details	=
 			{
-				"id"  		: user.id,
+				"id"  		: user.email,
 				"organization" 	: org.name,
 			};
 
@@ -4329,7 +4329,7 @@ app.put("/auth/v[1-2]/admin/provider/registrations/status", (req, res) => {
 
 	const details	=
 		{
-			"id"  		: user.id,
+			"id"  		: user.email,
 			"organization" 	: org.name,
 		};
 
