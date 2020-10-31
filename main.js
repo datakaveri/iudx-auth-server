@@ -846,16 +846,16 @@ function body_to_json (body)
   Else return null.
 		--- */
 
-async function check_privilege(email, role, callback)
+async function check_privilege(email, role)
 {
 	try
 	{
 		const result = await pool.query(
-					" SELECT * FROM consent.users, consent.role" 		+
-					" WHERE consent.users.id = consent.role.user_id "	+
-					" AND consent.users.email = $1::text "			+
-					" AND role = $2::consent.role_enum"			+
-					" AND status = $3::consent.status_enum",
+			" SELECT * FROM consent.users, consent.role" 		+
+			" WHERE consent.users.id = consent.role.user_id "	+
+			" AND consent.users.email = $1::text "			+
+			" AND role = $2::consent.role_enum"			+
+			" AND status = $3::consent.status_enum",
 			[
 				email,				//$1
 				role,				//$2
@@ -866,6 +866,39 @@ async function check_privilege(email, role, callback)
 			throw new Error("Invalid");
 
 		return result.rows[0].user_id;
+	}
+	catch(error) {
+		throw error;
+	}
+}
+
+/* ---
+  Check if rule exists/delegate is valid delegate
+  for that provider. If true, return role ID.
+  else throw error.
+		--- */
+
+async function check_valid_delegate(delegate_uid, provider_uid)
+{
+	try
+	{
+		const result = await pool.query(
+			" SELECT access.* FROM consent.access"		+
+			" JOIN consent.role ON "			+
+			" consent.access.role_id = consent.role.id "	+
+			" WHERE provider_id = $1::integer AND "		+
+			" role.user_id = $2::integer AND "		+
+			" access_item_type = $3::consent.access_item",
+			[
+				provider_uid,			//$1
+				delegate_uid,			//$2
+				'delegate'			//$3
+			]);
+
+		if (result.rows.length === 0)
+			throw new Error("Invalid");
+
+		return result.rows[0].role_id;
 	}
 	catch(error) {
 		throw error;
@@ -3438,23 +3471,56 @@ app.post("/auth/v[1-2]/certificate-info", async (req, res) => {
 
 app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 
-	const provider_email = res.locals.email;
+	const email = res.locals.email;
 
-	let provider_uid;
+	let provider_uid, provider_email;
+	let provider_rid, delegate_rid;
+	let is_delegate = false;
 	let rules_array = [];
 	let to_add = [];
 
-	try { provider_uid = await check_privilege(provider_email, "provider"); }
-	catch(error) { return END_ERROR (res, 401, "Not allowed!"); }
+	try { provider_uid = await check_privilege(email, "provider"); }
+	catch(error) { is_delegate = true; }
+
+	if (is_delegate)
+	{
+		provider_email = req.headers['provider-email'];
+		if (! provider_email || ! is_valid_email(provider_email))
+			return END_ERROR (res, 400, "Invalid data (provider_email)");
+
+		try {
+			provider_uid 	 = await check_privilege(provider_email, "provider");
+			let delegate_uid = await check_privilege(email, "delegate");
+			delegate_rid 	 = await check_valid_delegate(delegate_uid, provider_uid);
+		}
+		catch(error) { return END_ERROR (res, 401, "Not allowed"); }
+	}
+	else
+	{
+		provider_email = email;
+
+		try {
+			const result = await pool.query (
+				"SELECT id FROM consent.role WHERE "	+
+				" user_id = $1::integer AND"		+
+				" role = 'provider'",
+				[ provider_uid ]);
+
+			provider_rid = result.rows[0].id;
+		}
+		catch(error) { return END_ERROR (res, 500, "Internal error!", error); }
+	}
 
 	const email_domain	= provider_email.split("@")[1];
 	const sha1_of_email	= sha1(provider_email);
 	const provider_id_hash	= email_domain + "/" + sha1_of_email;
 
-	if (! Array.isArray(res.locals.body))
+	const request = res.locals.body;
+
+	if (! Array.isArray(request))
 		return END_ERROR (res, 400, "Invalid data (body)");
 
-	for (const [index, obj] of res.locals.body.entries())
+	for (const [index, obj] of request.entries())
 	{
 		let accesser_uid, access_item_id;
 		let req_capability;
@@ -3569,6 +3635,12 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 		}
 		else if (accesser_role === "delegate")
 		{
+			if (is_delegate)
+			{
+				err.message = "Delegate cannot set delegate rule";
+				return END_ERROR (res, 403, err);
+			}
+
 			access_item_id 	= -1;
 			res_type 	= "delegate";
 		}
@@ -3579,7 +3651,7 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 		{
 			try {
 				const result = await pool.query (
-					"SELECT a.id, a.policy_text "				+
+					"SELECT a.id, a.owner_id "				+
 					" FROM consent.role, consent.access as a"		+
 					" WHERE consent.role.id = a.role_id"			+
 					" AND a.provider_id = $1::integer"			+
@@ -3605,6 +3677,14 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 
 				if (result.rows.length !== 0 && accesser_role === "consumer")
 				{
+					/* check if owner_id matches delegate role id if is_delegate */
+					if (is_delegate && (delegate_rid !== result.rows[0].owner_id))
+					{
+						err.message = "Delegate cannot modify rule set by other" +
+							      " delegate/provider";
+						return END_ERROR (res, 403, err);
+					}
+
 					consumer_acc_id	= result.rows[0].id;
 
 					const caps = await pool.query (
@@ -3780,16 +3860,18 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 				access = await pool.query (
 					"INSERT into consent.access (provider_id, "		+
 					" role_id, policy_text, access_item_id, "		+
-					" access_item_type, created_at, updated_at)"		+
-					" VALUES ($1::integer, $2::integer, "			+
-					" $3::text, $4::integer, $5::consent.access_item,"	+
+					" access_item_type, owner_id ,"			+
+					" created_at, updated_at) VALUES"			+
+					" ($1::integer, $2::integer, $3::text, $4::integer,"	+
+					" $5::consent.access_item, $6::integer,"		+
 					" NOW(), NOW()) RETURNING id",
 					[
-						provider_uid,		//$1
-						role_id.rows[0].id,	//$2
-						rule,			//$3
-						access_item_id,		//$4
-						res_type,		//$5
+						provider_uid,					//$1
+						role_id.rows[0].id,				//$2
+						rule,						//$3
+						access_item_id,					//$4
+						res_type,					//$5
+						is_delegate ? delegate_rid : provider_rid,	//$6
 					]);
 			}
 			else
@@ -3831,25 +3913,40 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 	});
 });
 
-app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
+app.get("/auth/v[1-2]/provider/access", async (req, res) => {
 
 	const email = res.locals.email;
+
 	let provider_uid, rules;
-	var item_details = [];
-	var cap_details	 = {};
+	let is_delegate = false;
+	let item_details = [];
+	let cap_details	 = {};
+	let owner_details = {};
 
 	try { provider_uid = await check_privilege(email, "provider"); }
-	catch(error) { return END_ERROR (res, 401, "Not allowed"); }
+	catch(error) { is_delegate = true; }
+
+	if (is_delegate)
+	{
+		let provider_email = req.headers['provider-email'];
+		if (! provider_email || ! is_valid_email(provider_email))
+			return END_ERROR (res, 400, "Invalid data (provider_email)");
+
+		try {
+			provider_uid = await check_privilege(provider_email, "provider");
+			let delegate_uid = await check_privilege(email, "delegate");
+			let delegate_rid = await check_valid_delegate(delegate_uid, provider_uid);
+		}
+		catch(error) { return END_ERROR (res, 401, "Not allowed"); }
+	}
 
 	try {
 		let result = await pool.query (
-			"SELECT a.id, a.created_at, a.updated_at, "		+
-			" a.policy_text, a.access_item_type, a.access_item_id,"	+
-			" email, role, title, first_name, last_name"		+
-			" FROM consent.access as a, "				+
-			" consent.users, consent.role "				+
-			" WHERE a.role_id = role.id "				+
-			" AND role.user_id = users.id "				+
+			"SELECT a.id, a.created_at, a.updated_at, a.owner_id,"	+
+			" a.policy_text, a.access_item_type, a.access_item_id,"		+
+			" email, role, title, first_name, last_name"			+
+			" FROM consent.access as a, consent.users, consent.role "	+
+			" WHERE a.role_id = role.id AND role.user_id = users.id "	+
 			" AND a.provider_id = $1::integer",
 			[ provider_uid ]);
 
@@ -3862,6 +3959,9 @@ app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
 
 	const accessid_arr = rules.map((obj) => obj.id);
 	const access_items = [...new Set(rules.map((obj) => obj.access_item_type ))];
+
+	let owner_ids = [...new Set(rules.map((obj) => obj.owner_id))];
+	owner_ids = owner_ids.filter((val) => val !== null);
 
 	for (const item of access_items)
 	{
@@ -3884,10 +3984,10 @@ app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
 		{
 			return END_ERROR (res, 500, "Internal error!", error);
 		}
-
 	}
 
-	/* get capability details for each access ID */
+	/* get capability details for each access ID
+	 * get delegate details */
 	try {
 		const result = await pool.query (
 			"SELECT access_id, capability "		+
@@ -3901,6 +4001,15 @@ app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
 
 			cap_details[row.access_id].push(row.capability);
 		});
+
+		const owner = await pool.query (
+			"SELECT consent.role.id, email, title, first_name,"	+
+			" last_name FROM consent.users JOIN "			+
+			" consent.role ON users.id = role.user_id "		+
+			" WHERE role.id = ANY($1::integer[])",
+			[ owner_ids ]);
+
+		owner.rows.map(row => owner_details[row.id] = row);
 	}
 	catch(error)
 	{
@@ -3926,7 +4035,8 @@ app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
 			item 		: null,
 			policy 		: rule.policy_text,
 			created		: rule.created_at,
-			capabilities	: cap_details[rule.id] || null
+			capabilities	: cap_details[rule.id] || null,
+			owner		: null
 		};
 
 		if (filter_item !== null)
@@ -3936,6 +4046,9 @@ app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
 			};
 		}
 
+		if (owner_details[rule.owner_id])
+			response.owner = owner_details[rule.owner_id];
+
 		return response;
 	});
 
@@ -3944,23 +4057,44 @@ app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
 
 app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 
-	const provider_email = res.locals.email;
+	const email = res.locals.email;
 
-	let provider_uid;
+	let provider_uid, delegate_rid, provider_email;
+	let is_delegate = false;
 	let rules_array = [];
 	let to_delete = [];
 
-	try { provider_uid = await check_privilege(provider_email, "provider"); }
-	catch(error) { return END_ERROR (res, 401, "Not allowed!"); }
+	try { provider_uid = await check_privilege(email, "provider"); }
+	catch(error) { is_delegate = true; }
+
+	if (is_delegate)
+	{
+		provider_email = req.headers['provider-email'];
+		if (! provider_email || ! is_valid_email(provider_email))
+			return END_ERROR (res, 400, "Invalid data (provider_email)");
+
+		try {
+			provider_uid 	 = await check_privilege(provider_email, "provider");
+			let delegate_uid = await check_privilege(email, "delegate");
+			delegate_rid 	 = await check_valid_delegate(delegate_uid, provider_uid);
+		}
+		catch(error) { return END_ERROR (res, 401, "Not allowed"); }
+	}
+	else
+	{
+		provider_email = email;
+	}
 
 	const email_domain	= provider_email.split("@")[1];
 	const sha1_of_email	= sha1(provider_email);
 	const provider_id_hash	= email_domain + "/" + sha1_of_email;
 
-	if (! Array.isArray(res.locals.body))
+	const request = res.locals.body;
+
+	if (! Array.isArray(request))
 		return END_ERROR (res, 400, "Invalid data (body)");
 
-	for (const obj of res.locals.body)
+	for (const obj of request)
 	{
 		let id = obj.id;
 		let capability = obj.capabilities || null;
@@ -3991,6 +4125,16 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 			{
 				let err = {
 					message   : "Invalid id",
+					access_id : id
+				};
+
+				return END_ERROR (res, 403, err);
+			}
+
+			if (is_delegate && (delegate_rid !== check.rows[0].owner_id))
+			{
+				let err = {
+					message : "Cannot delete rules not set by other delegate/provider",
 					access_id : id
 				};
 

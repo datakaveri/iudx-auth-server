@@ -83,6 +83,7 @@ CREATE TABLE consent.access (
 	policy_text		character varying				NOT NULL,
 	access_item_id		integer 						,
 	access_item_type	consent.access_item					,
+	owner_id		integer REFERENCES consent.role(id)		ON DELETE SET NULL,
 	created_at		timestamp without time zone			NOT NULL,
 	updated_at		timestamp without time zone			NOT NULL
 );
