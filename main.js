@@ -4080,19 +4080,24 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 		let id = obj.id;
 		let capability = obj.capabilities || null;
 		let delete_rule = false;
-		let role_id, access_item_id, access_item_type;
+		let accesser_email, accesser_role, resource;
+		let access_item_id, access_item_type, role_id;
+
+		let err = {
+			message   : "",
+			access_id : undefined
+		};
 
 		id = parseInt(id, 10);
 
 		if (isNaN(id) || id < 1 || id > PG_MAX_INT)
 		{
-			let err = {
-				message   : "Invalid data (id)",
-				access_id : id
-			};
-
+			err.message 	= "Invalid data (id)";
+			err.access_id 	= id; 
 			return END_ERROR (res, 400, err);
 		}
+
+		err.access_id = id;
 
 		try {
 			const check = await pool.query (
@@ -4104,21 +4109,13 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 
 			if (check.rows.length === 0)
 			{
-				let err = {
-					message   : "Invalid id",
-					access_id : id
-				};
-
+				err.message = "Invalid id";
 				return END_ERROR (res, 403, err);
 			}
 
 			if (is_delegate && (check.rows[0].access_item_type === "delegate"))
 			{
-				let err = {
-					message : "Delegate cannot delete delegate rules",
-					access_id : id
-				};
-
+				err.message = "Delegate cannot delete delegate rules";
 				return END_ERROR (res, 403, err);
 			}
 
@@ -4141,11 +4138,7 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 					capability.length > Object.keys(CAPABILITIES).length ||
 					capability.length === 0)
 				{
-					let err = {
-						message   : "Invalid data (capability)",
-						access_id : id
-					};
-
+					err.message =  "Invalid data (capabilities)";
 					return END_ERROR (res, 400, err);
 				}
 
@@ -4153,11 +4146,7 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 
 				if (! capability.every( (val) => Object.keys(CAPABILITIES).includes(val)))
 				{
-					let err = {
-						message   : "Invalid data (capability)",
-						access_id : id
-					};
-
+					err.message =  "Invalid data (capabilities)";
 					return END_ERROR (res, 400, err);
 				}
 
@@ -4166,11 +4155,7 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 
 				if (matching.length !== capability.length)
 				{
-					let err = {
-						message   : "Invalid id",
-						access_id : id
-					};
-
+					err.message = "Invalid id";
 					return END_ERROR (res, 403, err);
 				}
 
@@ -4180,6 +4165,25 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 			}
 			else
 				delete_rule = true;
+
+			const user_details = await pool.query (
+				"SELECT email, role FROM consent.users" 	+
+				" JOIN consent.role ON users.id = " 		+
+				" role.user_id WHERE role.id = $1::integer",
+				[ role_id ]);
+
+			accesser_email 	= user_details.rows[0].email;
+			accesser_role	= user_details.rows[0].role;
+			
+			if (! ["delegate", "catalogue"].includes(access_item_type))
+			{
+				const result = await pool.query (
+					"SELECT * FROM consent." + access_item_type +
+					" WHERE id = $1::integer",
+					[ access_item_id ]);
+
+				resource = result.rows[0].cat_id;
+			}
 		}
 		catch(error)
 		{
@@ -4192,11 +4196,7 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 			{
 				if (! i.capability)
 				{
-					let err = {
-						message   : "Duplicate data",
-						access_id : id
-					};
-
+					err.message = "Duplicate data";
 					return END_ERROR (res, 400, err);
 				}
 				else /* check if ids same, but diff in caps to be deleted */
@@ -4205,11 +4205,7 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 
 					if (duplicate.length !== 0)
 					{
-						let err = {
-							message   : "Duplicate data",
-							access_id : id
-						};
-
+						err.message = "Duplicate data";
 						return END_ERROR (res, 400, err);
 					}
 				}
@@ -4220,9 +4216,9 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 			id : id,
 			capability : capability,
 			delete_rule: delete_rule,
-			role_id: role_id,
-			access_item_id:access_item_id,
-			access_item_type:access_item_type
+			accesser_email 	: accesser_email,
+			accesser_role  	: accesser_role,
+			resource	: resource || null
 		});
 	}
 
@@ -4231,8 +4227,9 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 
 	for (const obj of to_delete)
 	{
-		const {id, capability, delete_rule, role_id} = obj;
-		const {access_item_id, access_item_type} = obj;
+		const {id, capability, delete_rule} = obj;
+		const {accesser_email, accesser_role} = obj;
+		const {resource} = obj;
 
 		if (delete_rule === true)
 		{
@@ -4281,24 +4278,11 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 				}
 				else
 				{/* rewrite policy text */
-					const email = await pool.query (
-						"SELECT email FROM consent.users"		+
-						" JOIN consent.role ON user_id = users.id"	+
-						" WHERE role.id = $1::integer",
-						[ role_id ]);
 
-					const resource = await pool.query (
-						"SELECT * FROM consent." + access_item_type +
-						" WHERE id = $1::integer",
-						[ access_item_id ]);
-
-					let resource_id = resource.rows[0].cat_id;
-					let resource_name = resource_id.replace(provider_id_hash + "/", "");
-					let accesser_email = email.rows[0].email;
-
+					let resource_name = resource.replace(provider_id_hash + "/", "");
 					let policy_text = create_consumer_policy_text(
 								accesser_email,
-								resource_id,
+								resource,
 								resource_name,
 								existing_caps);
 
@@ -4314,6 +4298,23 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 				return END_ERROR (res, 500, "Internal error!", error);
 			}
 		}
+
+		const details = {
+			"provider"     	: provider_email,
+			"accesser" 	: accesser_email,
+			"role"		: accesser_role,
+			"resource_id"	: resource || null,
+			"capabilities"	: null,
+			"delegated"	: is_delegate,
+			"performed_by"	: email
+		};
+
+		/* if consumer rule, log explicit capabilities deleted or
+		 * all capabilities if whole rule deleted */
+		if (accesser_role === "consumer")
+			details.capabilities = capability || Object.keys(CAPABILITIES);
+
+		log("info", "DELETED_POLICY", true, details);
 	}
 
 	set_acl(provider_email, provider_uid, null, (err) =>
