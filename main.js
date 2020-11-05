@@ -1024,12 +1024,6 @@ async function set_acl(provider_id, uid, rules, callback)
 		return;
 	}
 
-	const details = {
-		"provider"  : provider_id,
-		"policy"    : rules
-	};
-
-	log("info", "CREATED_POLICY", true, details);
 	callback(null);
 }
 
@@ -3893,6 +3887,18 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 		{
 			return END_ERROR (res, 500, "Internal error!", error);
 		}
+
+	const details = {
+		"provider"     	: provider_email,
+		"accesser" 	: accesser_email,
+		"role"		: accesser_role,
+		"resource_id"	: resource || null,
+		"capabilities"	: req_capability || null,
+		"delegated"	: is_delegate,
+		"performed_by"	: email
+	};
+
+	log("info", "CREATED_POLICY", true, details);
 	}
 
 	set_acl(provider_email, provider_uid, null, (err) =>
