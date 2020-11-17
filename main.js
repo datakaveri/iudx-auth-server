@@ -50,9 +50,10 @@ const MAX_TOKEN_HASH_LEN	= 64;
 
 const MAX_SAFE_STRING_LEN	= 512;
 const PG_MAX_INT		= 2147483647;
+const PHONE_PLACEHOLDER		= "0000000000";
 
 /* for access API */
-const ACCESS_ROLES		= ["consumer", "data ingester", "onboarder"];
+const ACCESS_ROLES		= ["consumer", "data ingester", "onboarder", "delegate"];
 const RESOURCE_ITEM_TYPES	= ["resourcegroup"];
 const CAT_URL			= "catalogue.iudx.io";
 const CAT_API_RULE		= `${CAT_URL}/catalogue/crud`;
@@ -845,16 +846,16 @@ function body_to_json (body)
   Else return null.
 		--- */
 
-async function check_privilege(email, role, callback)
+async function check_privilege(email, role)
 {
 	try
 	{
 		const result = await pool.query(
-					" SELECT * FROM consent.users, consent.role" 		+
-					" WHERE consent.users.id = consent.role.user_id "	+
-					" AND consent.users.email = $1::text "			+
-					" AND role = $2::consent.role_enum"			+
-					" AND status = $3::consent.status_enum",
+			" SELECT * FROM consent.users, consent.role" 		+
+			" WHERE consent.users.id = consent.role.user_id "	+
+			" AND consent.users.email = $1::text "			+
+			" AND role = $2::consent.role_enum"			+
+			" AND status = $3::consent.status_enum",
 			[
 				email,				//$1
 				role,				//$2
@@ -865,6 +866,39 @@ async function check_privilege(email, role, callback)
 			throw new Error("Invalid");
 
 		return result.rows[0].user_id;
+	}
+	catch(error) {
+		throw error;
+	}
+}
+
+/* ---
+  Check if rule exists/delegate is valid delegate
+  for that provider. If true, return role ID.
+  else throw error.
+		--- */
+
+async function check_valid_delegate(delegate_uid, provider_uid)
+{
+	try
+	{
+		const result = await pool.query(
+			" SELECT access.* FROM consent.access"		+
+			" JOIN consent.role ON "			+
+			" consent.access.role_id = consent.role.id "	+
+			" WHERE provider_id = $1::integer AND "		+
+			" role.user_id = $2::integer AND "		+
+			" access_item_type = $3::consent.access_item",
+			[
+				provider_uid,			//$1
+				delegate_uid,			//$2
+				'delegate'			//$3
+			]);
+
+		if (result.rows.length === 0)
+			throw new Error("Invalid");
+
+		return result.rows[0].role_id;
 	}
 	catch(error) {
 		throw error;
@@ -894,6 +928,9 @@ async function set_acl(provider_id, uid, rules, callback)
 
 			rules = result.rows.map(
 				(row) => { return row.policy_text; });
+
+			/* remove empty strings (delegate rules) */
+			rules = rules.filter((val) => val !== "");
 		}
 		catch(error)
 		{
@@ -987,12 +1024,6 @@ async function set_acl(provider_id, uid, rules, callback)
 		return;
 	}
 
-	const details = {
-		"provider"  : provider_id,
-		"policy"    : rules
-	};
-
-	log("info", "CREATED_POLICY", true, details);
 	callback(null);
 }
 
@@ -3434,23 +3465,56 @@ app.post("/auth/v[1-2]/certificate-info", async (req, res) => {
 
 app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 
-	const provider_email = res.locals.email;
+	const email = res.locals.email;
 
-	let provider_uid;
+	let provider_uid, provider_email;
+	let provider_rid, delegate_rid;
+	let is_delegate = false;
 	let rules_array = [];
 	let to_add = [];
 
-	try { provider_uid = await check_privilege(provider_email, "provider"); }
-	catch(error) { return END_ERROR (res, 401, "Not allowed!"); }
+	try { provider_uid = await check_privilege(email, "provider"); }
+	catch(error) { is_delegate = true; }
+
+	if (is_delegate)
+	{
+		provider_email = req.headers['provider-email'];
+		if (! provider_email || ! is_valid_email(provider_email))
+			return END_ERROR (res, 400, "Invalid data (provider_email)");
+
+		try {
+			provider_uid 	 = await check_privilege(provider_email, "provider");
+			let delegate_uid = await check_privilege(email, "delegate");
+			delegate_rid 	 = await check_valid_delegate(delegate_uid, provider_uid);
+		}
+		catch(error) { return END_ERROR (res, 401, "Not allowed"); }
+	}
+	else
+	{
+		provider_email = email;
+
+		try {
+			const result = await pool.query (
+				"SELECT id FROM consent.role WHERE "	+
+				" user_id = $1::integer AND"		+
+				" role = 'provider'",
+				[ provider_uid ]);
+
+			provider_rid = result.rows[0].id;
+		}
+		catch(error) { return END_ERROR (res, 500, "Internal error!", error); }
+	}
 
 	const email_domain	= provider_email.split("@")[1];
 	const sha1_of_email	= sha1(provider_email);
 	const provider_id_hash	= email_domain + "/" + sha1_of_email;
 
-	if (! Array.isArray(res.locals.body))
+	const request = res.locals.body;
+
+	if (! Array.isArray(request))
 		return END_ERROR (res, 400, "Invalid data (body)");
 
-	for (const [index, obj] of res.locals.body.entries())
+	for (const [index, obj] of request.entries())
 	{
 		let accesser_uid, access_item_id;
 		let req_capability;
@@ -3557,11 +3621,22 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 			}
 		}
 
-		/* access_item_id for catalogue is -1 by default */
+		/* access_item_id for catalogue/delegate is -1 by default */
 		if (accesser_role === "onboarder")
 		{
 			access_item_id 	= -1;
 			res_type 	= "catalogue";
+		}
+		else if (accesser_role === "delegate")
+		{
+			if (is_delegate)
+			{
+				err.message = "Delegate cannot set delegate rule";
+				return END_ERROR (res, 403, err);
+			}
+
+			access_item_id 	= -1;
+			res_type 	= "delegate";
 		}
 
 		/* if rule exists for particular provider+accesser+role+
@@ -3570,12 +3645,12 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 		{
 			try {
 				const result = await pool.query (
-					"SELECT a.id, a.policy_text "				+
-					" FROM consent.role, consent.access as a"		+
-					" WHERE consent.role.id = a.role_id"			+
-					" AND a.provider_id = $1::integer"			+
-					" AND role.user_id = $2::integer"			+
-					" AND a.access_item_id = $3::integer"			+
+					"SELECT a.id "					+
+					" FROM consent.role, consent.access as a"	+
+					" WHERE consent.role.id = a.role_id"		+
+					" AND a.provider_id = $1::integer"		+
+					" AND role.user_id = $2::integer"		+
+					" AND a.access_item_id = $3::integer"		+
 					" AND role.role = $4::consent.role_enum",
 				[
 					provider_uid,			//$1
@@ -3699,7 +3774,11 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 				break;
 
 			case "consumer":
-				rule = `${accesser_email} can access ${resource_name}/* for 1 week`;
+				rule = ``; /* use create_consumer_policy_text function */
+				break;
+
+			case "delegate":
+				rule = ``; /* empty policy for delegate access */
 				break;
 
 			default:
@@ -3710,7 +3789,6 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 		if (accesser_role === "consumer")
 		{
 			let caps, existing_caps = [];
-			let join = "if", index;
 
 			if (consumer_acc_id !== null)
 			{/* get existing capabilities if existing rule */
@@ -3731,19 +3809,7 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 
 			let capability = existing_caps.concat(req_capability);
 
-			let apis = capability.reduce((acc, val) => acc.concat(CAPABILITIES[val]), []);
-			apis = [...new Set(apis)];
-
-			/* if latest API is there, then add resource group
-			 * to the template */
-			if ((index = apis.indexOf(LATEST)) !== -1)
-				apis[index] = apis[index](resource);
-
-			for (const i of apis)
-			{
-				rule = rule + ` ${join} api = "${i}"`;
-				join = "or";
-			}
+			rule = create_consumer_policy_text(accesser_email, resource, resource_name, capability);
 		}
 
 		try {
@@ -3778,18 +3844,19 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 			if (consumer_acc_id === null)
 			{
 				access = await pool.query (
-					"INSERT into consent.access (provider_id, "		+
-					" role_id, policy_text, access_item_id, "		+
-					" access_item_type, created_at, updated_at)"		+
-					" VALUES ($1::integer, $2::integer, "			+
-					" $3::text, $4::integer, $5::consent.access_item,"	+
+					"INSERT into consent.access (provider_id, "	+
+					" role_id, policy_text, access_item_id, "	+
+					" access_item_type,"				+
+					" created_at, updated_at) VALUES"		+
+					" ($1::integer, $2::integer, $3::text,"		+
+					" $4::integer, $5::consent.access_item, "	+
 					" NOW(), NOW()) RETURNING id",
 					[
-						provider_uid,		//$1
-						role_id.rows[0].id,	//$2
-						rule,			//$3
-						access_item_id,		//$4
-						res_type,		//$5
+						provider_uid,				//$1
+						role_id.rows[0].id,			//$2
+						rule,					//$3
+						access_item_id,				//$4
+						res_type,				//$5
 					]);
 			}
 			else
@@ -3820,6 +3887,18 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 		{
 			return END_ERROR (res, 500, "Internal error!", error);
 		}
+
+	const details = {
+		"provider"     	: provider_email,
+		"accesser" 	: accesser_email,
+		"role"		: accesser_role,
+		"resource_id"	: resource || null,
+		"capabilities"	: req_capability || null,
+		"delegated"	: is_delegate,
+		"performed_by"	: email
+	};
+
+	log("info", "CREATED_POLICY", true, details);
 	}
 
 	set_acl(provider_email, provider_uid, null, (err) =>
@@ -3831,25 +3910,40 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 	});
 });
 
-app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
+app.get("/auth/v[1-2]/provider/access", async (req, res) => {
 
 	const email = res.locals.email;
+
 	let provider_uid, rules;
-	var item_details = [];
-	var cap_details	 = {};
+	let is_delegate = false;
+	let item_details = [];
+	let cap_details	 = {};
+	let owner_details = {};
 
 	try { provider_uid = await check_privilege(email, "provider"); }
-	catch(error) { return END_ERROR (res, 401, "Not allowed"); }
+	catch(error) { is_delegate = true; }
+
+	if (is_delegate)
+	{
+		let provider_email = req.headers['provider-email'];
+		if (! provider_email || ! is_valid_email(provider_email))
+			return END_ERROR (res, 400, "Invalid data (provider_email)");
+
+		try {
+			provider_uid = await check_privilege(provider_email, "provider");
+			let delegate_uid = await check_privilege(email, "delegate");
+			let delegate_rid = await check_valid_delegate(delegate_uid, provider_uid);
+		}
+		catch(error) { return END_ERROR (res, 401, "Not allowed"); }
+	}
 
 	try {
 		let result = await pool.query (
-			"SELECT a.id, a.created_at, a.updated_at, "		+
-			" a.policy_text, a.access_item_type, a.access_item_id,"	+
-			" email, role, title, first_name, last_name"		+
-			" FROM consent.access as a, "				+
-			" consent.users, consent.role "				+
-			" WHERE a.role_id = role.id "				+
-			" AND role.user_id = users.id "				+
+			"SELECT a.id, a.created_at, a.updated_at,"			+
+			" a.policy_text, a.access_item_type, a.access_item_id,"		+
+			" email, role, title, first_name, last_name"			+
+			" FROM consent.access as a, consent.users, consent.role "	+
+			" WHERE a.role_id = role.id AND role.user_id = users.id "	+
 			" AND a.provider_id = $1::integer",
 			[ provider_uid ]);
 
@@ -3865,7 +3959,8 @@ app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
 
 	for (const item of access_items)
 	{
-		if (item === "catalogue") continue;
+		if (item === "catalogue" || item === "delegate")
+			continue;
 
 		try {
 			const result = await pool.query (
@@ -3883,10 +3978,10 @@ app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
 		{
 			return END_ERROR (res, 500, "Internal error!", error);
 		}
-
 	}
 
-	/* get capability details for each access ID */
+	/* get capability details for each access ID
+	 * get delegate details */
 	try {
 		const result = await pool.query (
 			"SELECT access_id, capability "		+
@@ -3925,7 +4020,7 @@ app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
 			item 		: null,
 			policy 		: rule.policy_text,
 			created		: rule.created_at,
-			capabilities	: cap_details[rule.id] || null
+			capabilities	: cap_details[rule.id] || null,
 		};
 
 		if (filter_item !== null)
@@ -3943,40 +4038,66 @@ app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
 
 app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 
-	const provider_email = res.locals.email;
+	const email = res.locals.email;
 
-	let provider_uid;
+	let provider_uid, delegate_rid, provider_email;
+	let is_delegate = false;
 	let rules_array = [];
 	let to_delete = [];
 
-	try { provider_uid = await check_privilege(provider_email, "provider"); }
-	catch(error) { return END_ERROR (res, 401, "Not allowed!"); }
+	try { provider_uid = await check_privilege(email, "provider"); }
+	catch(error) { is_delegate = true; }
+
+	if (is_delegate)
+	{
+		provider_email = req.headers['provider-email'];
+		if (! provider_email || ! is_valid_email(provider_email))
+			return END_ERROR (res, 400, "Invalid data (provider_email)");
+
+		try {
+			provider_uid 	 = await check_privilege(provider_email, "provider");
+			let delegate_uid = await check_privilege(email, "delegate");
+			delegate_rid 	 = await check_valid_delegate(delegate_uid, provider_uid);
+		}
+		catch(error) { return END_ERROR (res, 401, "Not allowed"); }
+	}
+	else
+	{
+		provider_email = email;
+	}
 
 	const email_domain	= provider_email.split("@")[1];
 	const sha1_of_email	= sha1(provider_email);
 	const provider_id_hash	= email_domain + "/" + sha1_of_email;
 
-	if (! Array.isArray(res.locals.body))
+	const request = res.locals.body;
+
+	if (! Array.isArray(request))
 		return END_ERROR (res, 400, "Invalid data (body)");
 
-	for (const obj of res.locals.body)
+	for (const obj of request)
 	{
 		let id = obj.id;
 		let capability = obj.capabilities || null;
 		let delete_rule = false;
-		let role_id, access_item_id, access_item_type;
+		let accesser_email, accesser_role, resource;
+		let access_item_id, access_item_type, role_id;
+
+		let err = {
+			message   : "",
+			access_id : undefined
+		};
 
 		id = parseInt(id, 10);
 
 		if (isNaN(id) || id < 1 || id > PG_MAX_INT)
 		{
-			let err = {
-				message   : "Invalid data (id)",
-				access_id : id
-			};
-
+			err.message 	= "Invalid data (id)";
+			err.access_id 	= id; 
 			return END_ERROR (res, 400, err);
 		}
+
+		err.access_id = id;
 
 		try {
 			const check = await pool.query (
@@ -3988,11 +4109,13 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 
 			if (check.rows.length === 0)
 			{
-				let err = {
-					message   : "Invalid id",
-					access_id : id
-				};
+				err.message = "Invalid id";
+				return END_ERROR (res, 403, err);
+			}
 
+			if (is_delegate && (check.rows[0].access_item_type === "delegate"))
+			{
+				err.message = "Delegate cannot delete delegate rules";
 				return END_ERROR (res, 403, err);
 			}
 
@@ -4015,11 +4138,7 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 					capability.length > Object.keys(CAPABILITIES).length ||
 					capability.length === 0)
 				{
-					let err = {
-						message   : "Invalid data (capability)",
-						access_id : id
-					};
-
+					err.message =  "Invalid data (capabilities)";
 					return END_ERROR (res, 400, err);
 				}
 
@@ -4027,11 +4146,7 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 
 				if (! capability.every( (val) => Object.keys(CAPABILITIES).includes(val)))
 				{
-					let err = {
-						message   : "Invalid data (capability)",
-						access_id : id
-					};
-
+					err.message =  "Invalid data (capabilities)";
 					return END_ERROR (res, 400, err);
 				}
 
@@ -4040,11 +4155,7 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 
 				if (matching.length !== capability.length)
 				{
-					let err = {
-						message   : "Invalid id",
-						access_id : id
-					};
-
+					err.message = "Invalid id";
 					return END_ERROR (res, 403, err);
 				}
 
@@ -4054,6 +4165,25 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 			}
 			else
 				delete_rule = true;
+
+			const user_details = await pool.query (
+				"SELECT email, role FROM consent.users" 	+
+				" JOIN consent.role ON users.id = " 		+
+				" role.user_id WHERE role.id = $1::integer",
+				[ role_id ]);
+
+			accesser_email 	= user_details.rows[0].email;
+			accesser_role	= user_details.rows[0].role;
+			
+			if (! ["delegate", "catalogue"].includes(access_item_type))
+			{
+				const result = await pool.query (
+					"SELECT * FROM consent." + access_item_type +
+					" WHERE id = $1::integer",
+					[ access_item_id ]);
+
+				resource = result.rows[0].cat_id;
+			}
 		}
 		catch(error)
 		{
@@ -4066,11 +4196,7 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 			{
 				if (! i.capability)
 				{
-					let err = {
-						message   : "Duplicate data",
-						access_id : id
-					};
-
+					err.message = "Duplicate data";
 					return END_ERROR (res, 400, err);
 				}
 				else /* check if ids same, but diff in caps to be deleted */
@@ -4079,11 +4205,7 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 
 					if (duplicate.length !== 0)
 					{
-						let err = {
-							message   : "Duplicate data",
-							access_id : id
-						};
-
+						err.message = "Duplicate data";
 						return END_ERROR (res, 400, err);
 					}
 				}
@@ -4094,9 +4216,9 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 			id : id,
 			capability : capability,
 			delete_rule: delete_rule,
-			role_id: role_id,
-			access_item_id:access_item_id,
-			access_item_type:access_item_type
+			accesser_email 	: accesser_email,
+			accesser_role  	: accesser_role,
+			resource	: resource || null
 		});
 	}
 
@@ -4105,8 +4227,9 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 
 	for (const obj of to_delete)
 	{
-		const {id, capability, delete_rule, role_id} = obj;
-		const {access_item_id, access_item_type} = obj;
+		const {id, capability, delete_rule} = obj;
+		const {accesser_email, accesser_role} = obj;
+		const {resource} = obj;
 
 		if (delete_rule === true)
 		{
@@ -4155,24 +4278,11 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 				}
 				else
 				{/* rewrite policy text */
-					const email = await pool.query (
-						"SELECT email FROM consent.users"		+
-						" JOIN consent.role ON user_id = users.id"	+
-						" WHERE role.id = $1::integer",
-						[ role_id ]);
 
-					const resource = await pool.query (
-						"SELECT * FROM consent." + access_item_type +
-						" WHERE id = $1::integer",
-						[ access_item_id ]);
-
-					let resource_id = resource.rows[0].cat_id;
-					let resource_name = resource_id.replace(provider_id_hash + "/", "");
-					let accesser_email = email.rows[0].email;
-
+					let resource_name = resource.replace(provider_id_hash + "/", "");
 					let policy_text = create_consumer_policy_text(
 								accesser_email,
-								resource_id,
+								resource,
 								resource_name,
 								existing_caps);
 
@@ -4188,6 +4298,23 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 				return END_ERROR (res, 500, "Internal error!", error);
 			}
 		}
+
+		const details = {
+			"provider"     	: provider_email,
+			"accesser" 	: accesser_email,
+			"role"		: accesser_role,
+			"resource_id"	: resource || null,
+			"capabilities"	: null,
+			"delegated"	: is_delegate,
+			"performed_by"	: email
+		};
+
+		/* if consumer rule, log explicit capabilities deleted or
+		 * all capabilities if whole rule deleted */
+		if (accesser_role === "consumer")
+			details.capabilities = capability || Object.keys(CAPABILITIES);
+
+		log("info", "DELETED_POLICY", true, details);
 	}
 
 	set_acl(provider_email, provider_uid, null, (err) =>
@@ -4509,7 +4636,7 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 	let org_id 	= res.locals.body.organization;
 	const name 	= res.locals.body.name;
 	const raw_csr	= res.locals.body.csr;
-	let  user_id;
+	let user_id;
 
 	const phone_regex = new RegExp(/^[9876]\d{9}$/);
 
@@ -4655,6 +4782,7 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 
 	let user_id, signed_cert = null;
 	let check_orgid = false;
+	let check_phone;
 	let existing_user = false;
 	let message;
 
@@ -4672,7 +4800,7 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 		return END_ERROR (res, 400, "Invalid data (phone)");
 
 	if (! phone)
-		phone = "0000000000";	    // phone has not null constraint
+		phone = PHONE_PLACEHOLDER;	// phone has not null constraint
 
 	if (! Array.isArray(roles) || roles.length > ACCESS_ROLES.length || roles.length === 0)
 		return END_ERROR (res, 400, "Invalid data (roles)");
@@ -4683,7 +4811,11 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 	if (! roles.every( (val) => ACCESS_ROLES.includes(val)))
 		return END_ERROR (res, 400, "Invalid data (roles)");
 
-	if (roles.includes("onboarder") || roles.includes("data ingester"))
+	/* delegate needs valid phone no. for OTP */
+	if (roles.includes("delegate") && phone === PHONE_PLACEHOLDER)
+		return END_ERROR (res, 400, "Invalid data (phone)");
+
+	if (roles.includes("onboarder") || roles.includes("data ingester") || roles.includes("delegate"))
 	{
 		let domain;
 
@@ -4735,6 +4867,10 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 
 			/* if registered as consumer first, org_id will be undefined */
 			check_orgid = check_uid.rows[0].organization_id;
+
+			/* if registered as some other role first, phone number 
+			 * may be placeholder */
+			check_phone = check_uid.rows[0].phone;
 
 			/* check if user has registered as provider before
 			 * If yes, do not allow creation of new roles for that user */
@@ -4845,6 +4981,27 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 				" WHERE email = $2::text",
 				[
 					org_id,
+					email
+				]);
+		}
+		catch(error)
+		{
+			return END_ERROR (res, 500, "Internal error!", error);
+		}
+	}
+
+	/* update phone if the user was originally a some other role
+	 * (phone might be placeholder) */
+	if (check_phone === PHONE_PLACEHOLDER)
+	{
+		try
+		{
+			const update = await pool.query (
+				"UPDATE consent.users SET"	+
+				" phone = $1::text"		+
+				" WHERE email = $2::text",
+				[
+					phone,
 					email
 				]);
 		}

@@ -4,12 +4,10 @@ from access import *
 from consent import role_reg
 import random
 import string
-
-init_provider()
+import pytest
 
 # use consumer certificate to register
 email   = "barun@iisc.ac.in"
-assert reset_role(email) == True
 org_id = add_organization("iisc.ac.in")
 
 ingester_id = 0 
@@ -17,14 +15,18 @@ consumer_id = 0
 onboarder_id = 0
 cat_id = ''
 
-# delete all old policies using acl/set API
-policy = "x can access x"
-r = untrusted.set_policy(policy)
-assert r['success'] is True
-
 # provider ID of abc.xyz@rbccps.org
 provider_id = 'rbccps.org/f3dad987e514af08a4ac46cf4a41bd1df645c8cc'
 
+@pytest.fixture(scope="session", autouse=True)
+def init():
+        init_provider()
+        assert reset_role(email) == True
+
+        # delete all old policies using acl/set API
+        policy = "x can access x"
+        r = untrusted.set_policy(policy)
+        assert r['success'] is True
 
 ##### consumer #####
 
@@ -40,6 +42,7 @@ def test_consumer_no_rule_set():
         assert r['success']     is False
 
 def test_consumer_reg():
+        assert reset_role(email) == True
         r = role_reg(email, '9454234223', name , ["consumer"], None, csr)
         assert r['success']     == True
         assert r['status_code'] == 200
@@ -198,6 +201,28 @@ def test_get_onboarder_token():
 def test_set_onboarder_rule_again():
         global req
         req["user_role"] = "onboarder"
+        r = untrusted.provider_access([req])
+        assert r['success']     == False
+        assert r['status_code'] == 403
+
+##### delegate #####
+
+def test_reg_delegate():
+        r = role_reg(email, '9454234223', name , ["delegate"], org_id)
+        assert r['success']     == True
+        assert r['status_code'] == 200
+
+def test_set_delegate_rule():
+        global req
+        req["user_role"] = "delegate"
+        r = untrusted.provider_access([req])
+        print(r)
+        assert r['success']     == True
+        assert r['status_code'] == 200
+
+def test_set_delegate_rule_again():
+        global req
+        req["user_role"] = "delegate"
         r = untrusted.provider_access([req])
         assert r['success']     == False
         assert r['status_code'] == 403
@@ -371,7 +396,7 @@ def test_delete_consumer_rule():
 remail_name  = ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(6)) 
 remail = remail_name + '@iisc.ac.in'
 
-r = role_reg(remail, '9454234223', name , ["onboarder", "consumer", "data ingester"], org_id, csr)
+r = role_reg(remail, '9454234223', name , ["onboarder", "consumer", "data ingester", "delegate"], org_id, csr)
 assert r['success']     == True
 assert r['status_code'] == 200
 
@@ -387,7 +412,7 @@ def test_multiple_duplicate():
         assert r['status_code'] == 400
 
 def test_multiple_onb_temporal():
-        r = untrusted.provider_access([_req1, _req])
+        r = untrusted.provider_access([_req1, _req, {"user_email": remail, "user_role":'delegate'}])
         assert r['success']     == True
         assert r['status_code'] == 200
 
@@ -458,6 +483,8 @@ def test_multiple_get_all_rules():
         check_con = False
         check_onb = False
         check_dti = False
+        check_del = False
+
         r = untrusted.get_provider_access()
         assert r['success']     == True
         assert r['status_code'] == 200
@@ -470,6 +497,9 @@ def test_multiple_get_all_rules():
                 if r['email'] == remail and r['role'] == 'onboarder':
                         assert r['item_type'] == 'catalogue'
                         check_onb = True
+                if r['email'] == remail and r['role'] == 'delegate':
+                        assert r['item_type'] == 'delegate'
+                        check_del = True
                 if r['email'] == remail and r['role'] == 'data ingester':
                         assert r['policy'].endswith('"/iudx/v1/adapter"')
                         check_dti = True
@@ -477,3 +507,4 @@ def test_multiple_get_all_rules():
         assert check_con == True
         assert check_onb == True
         assert check_dti == True
+        assert check_del == True

@@ -66,9 +66,29 @@ def test_invalid_role():
         assert r['status_code'] == 400
 
 def test_org_email_consumer():
-        # register as consumer with organisation mail
+        # register as consumer with organisation mail w/o phone
         email = email_name + '@' + website
-        r = role_reg(email, '9454234223', name , ["consumer"], None)
+        r = role_reg(email, '', name , ["consumer"], None)
+        assert r['success']     == True
+        assert r['status_code'] == 200
+
+def test_delegate_without_org_id():
+        # register as delegate without org ID
+        email = email_name + '@' + website
+        r = role_reg(email, '9454234223', name , ["delegate"], None)
+        assert r['success']     == False
+        assert r['status_code'] == 400
+
+def test_delegate_without_phone():
+        # need phone number when registering as delegate
+        email = email_name + '@' + website
+        r = role_reg(email, '', name , ["delegate"], org_id, csr)
+        assert r['success']     == False
+        assert r['status_code'] == 400
+
+def test_delegate_reg():
+        email = email_name + '@' + website
+        r = role_reg(email, '9454234223', name , ["delegate"], org_id)
         assert r['success']     == True
         assert r['status_code'] == 200
 
@@ -78,34 +98,40 @@ new_email_name  = ''.join(random.choice(string.ascii_lowercase + string.digits) 
 def test_non_org_email():
         # all roles - non-org email
         email       = new_email_name + '@gmail.com' 
-        r = role_reg(email, '9454234223', name , ["onboarder", "data ingester", "consumer"], org_id, csr)
+        r = role_reg(email, '9454234223', name , ["onboarder", "data ingester", "consumer", "delegate"], org_id, csr)
         assert r['success']     == False
         assert r['status_code'] == 403
 
 def test_no_csr():
         # no csr
         email       = new_email_name + '@' + website 
-        r = role_reg(email, '9454234223', name , ["onboarder", "data ingester", "consumer"], org_id)
+        r = role_reg(email, '9454234223', name , ["onboarder", "data ingester", "consumer", "delegate"], org_id)
         assert r['success']     == False
         assert r['status_code'] == 400
 
 def test_bad_csr():
         # bad csr
         email       = new_email_name + '@' + website 
-        r = role_reg(email, '9454234223', name , ["onboarder", "data ingester", "consumer"], org_id, bad_csr)
+        r = role_reg(email, '9454234223', name , ["onboarder", "data ingester", "consumer", "delegate"], org_id, bad_csr)
         assert r['success']     == False
         assert r['status_code'] == 400
 
 def test_invalid_org_id():
         # invalid org ID
         email       = new_email_name + '@' + website 
-        r = role_reg(email, '9454234223', name , ["onboarder", "data ingester", "consumer"], 210781030, csr)
+        r = role_reg(email, '9454234223', name , ["onboarder", "data ingester", "consumer", "delegate"], 210781030, csr)
         assert r['success']     == False
         assert r['status_code'] == 403
 
+def test_missing_phone():
+        email       = new_email_name + '@' + website 
+        r = role_reg(email, '', name , ["onboarder", "data ingester", "consumer", "delegate"], org_id, csr)
+        assert r['success']     == False
+        assert r['status_code'] == 400
+
 def test_all_role_reg():
         email       = new_email_name + '@' + website 
-        r = role_reg(email, '9454234223', name , ["onboarder", "data ingester", "consumer"], org_id, csr)
+        r = role_reg(email, '9454234223', name , ["onboarder", "data ingester", "consumer", "delegate"], org_id, csr)
         assert r['success']     == True
         assert r['status_code'] == 200
 

@@ -16,7 +16,7 @@ class Auth():
                 self.credentials        = (certificate, key)
         #
 
-        def call(self, api, body=None, method = "POST", params=None):
+        def call(self, api, body=None, method = "POST", params=None, header={}):
         #
                 ret = True # success
 
@@ -31,7 +31,7 @@ class Auth():
                         cert        = self.credentials,
                         data        = body,
                         params      = params,
-                        headers     = {"content-type":"application/json"}
+                        headers     = {"content-type":"application/json", **header}
                 )
 
                 if response.status_code != 200:
@@ -159,21 +159,34 @@ class Auth():
                 return self.call("group/list", body)
         #
 
-        def provider_access(self, body):
+        def provider_access(self, request, provider_email=None):
         #
-                body = body;
-                return self.call("provider/access", body)
+                header = {}
+
+                if provider_email:
+                        header['provider-email'] = provider_email
+
+                return self.call("provider/access", request, "POST", {}, header)
         #
 
-        def delete_rule(self, body):
+        def delete_rule(self, request, provider_email=None):
         #
-                body = body;
-                return self.call("provider/access", body, "DELETE")
+                header = {}
+
+                if provider_email:
+                        header['provider-email'] = provider_email
+
+                return self.call("provider/access", request, "DELETE", {}, header)
         #
 
-        def get_provider_access(self):
+        def get_provider_access(self, provider_email=None):
         #
-                return self.call("provider/access", {}, "GET")
+                header = {}
+
+                if provider_email:
+                        header['provider-email'] = provider_email
+
+                return self.call("provider/access", {}, "GET", {}, header)
         #
 
         def organization_reg(self, org):
