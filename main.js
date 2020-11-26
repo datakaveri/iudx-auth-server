@@ -3856,6 +3856,9 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 
 	for (const obj of res.locals.body)
 	{
+		if (typeof obj !== "object" || obj === null)  
+			return END_ERROR (res, 400, "Invalid data (body)");
+
 		let id = obj.id;
 		let capability = obj.capabilities || null;
 		let delete_rule = false;
