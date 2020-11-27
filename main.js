@@ -91,6 +91,8 @@ const MIN_CERT_CLASS_REQUIRED	= Object.freeze ({
 
 	"/auth/v1/provider/access"		: -Infinity,
 
+	"/auth/v1/delegate/providers"		: -Infinity,
+
 /* admin APIs */
 	"/auth/v1/admin/provider/registrations"		: -Infinity,
 	"/auth/v1/admin/provider/registrations/status"	: -Infinity,
@@ -4324,6 +4326,73 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 		else
 			return END_SUCCESS (res);
 	});
+});
+
+app.get("/auth/v[1-2]/delegate/providers", async (req, res) => {
+
+	const email = res.locals.email;
+	let delegate_uid, organizations = [];
+	let provider_details = [];
+
+	try {delegate_uid = await check_privilege(email, "delegate");}
+	catch(error) { return END_ERROR (res, 401, "Not allowed"); }
+
+	try {
+		const rid = await pool.query (
+			"SELECT id FROM consent.role"		+
+			" WHERE role.user_id = $1::integer"	+
+			" AND role = 'delegate'",
+			[ delegate_uid ]);
+
+		provider_details = await pool.query (
+			"SELECT email, title, first_name, last_name,"	+
+			" organization_id"				+
+			" FROM consent.access JOIN consent.users"	+
+			" ON access.provider_id = users.id"		+
+			" WHERE role_id = $1::integer",
+			[ rid.rows[0].id ]);
+
+		if (provider_details.rows.length === 0)
+			return END_ERROR (res, 404, "Not approved by any providers");
+
+		const org_ids = provider_details.rows.map((row) => {return row.organization_id;});
+
+		organizations = await pool.query (
+			"SELECT * FROM consent.organizations" +
+			" WHERE id = ANY($1::integer[])",
+			[ org_ids ]);
+	}
+	catch(error)
+	{
+		return END_ERROR (res, 500, "Internal error!", error);
+	}
+
+	const result = provider_details.rows.map(row => {
+
+		const organization = organizations.rows.filter(org => row.organization_id === org.id)[0] || null;
+		const res = {
+			title: row.title,
+			first_name: row.first_name,
+			last_name: row.last_name,
+			email: row.email,
+		};
+
+		if (organization === null) {
+			res.organization = null;
+		} else {
+			res.organization = {
+				name: organization.name,
+				website: organization.website,
+				city: organization.city,
+				state: organization.state,
+				country: organization.country
+			};
+		}
+
+		return res;
+	});
+
+	return END_SUCCESS (res, result);
 });
 
 /* --- Auth Admin APIs --- */
