@@ -43,12 +43,13 @@ num_tokens_before = len(as_provider)
 body = [
         {
                 "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/" + RS + "/resource-xyz-yzz",
-                "api"           : "/latest",
+                "apis"          : ["/ngsi-ld/v1/entities"],
                 "methods"       : ["GET"],
                 "body"          : {"key":"some-key"}
         },
         {
-                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/abc-xyz"
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/abc-xyz",
+                "apis"  : ["/ngsi-ld/v1/entities/rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/abc-xyz"],
         }
 ]
 
@@ -81,7 +82,7 @@ assert resource_server.introspect_token (token,server_token)['success'] is True
 request = [
             {
                 "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/" + RS + "/resource-xyz-yzz",
-                "apis"          : ["/latest"],
+                "apis"          : ["/ngsi-ld/v1/entities"],
                 "methods"       : ["GET"],
                 "body"          : {"key":"some-key"}
             }
@@ -241,6 +242,7 @@ assert num_revoked_before < num_revoked_after
 new_policy  = "*@iisc.ac.in can access * for 1 month"
 assert provider.set_policy(new_policy)['success'] is True
 
+# test token request without APIs
 body = [
         {
                 "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1",
@@ -250,19 +252,59 @@ body = [
         }
 ]
 
+expect_failure(True)
 r = restricted_consumer.get_token(body)
-access_token = r['response']
+expect_failure(False)
 
-assert r['success']                     is True
-assert None                             != access_token
-assert r['response']['expires-in']      == 60*60*24*30*1
+assert r['success']     is False
+assert r['status_code'] == 400
+
+# test token request with invalid API
 
 body = [
         {
                 "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1",
+                "apis"  : ["/ngsi-invalid"]
         },
         {
-                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs2/r2"
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r2",
+                "apis"  : ["/ngsi-invalid"]
+        }
+]
+
+expect_failure(True)
+r = restricted_consumer.get_token(body)
+expect_failure(False)
+
+assert r['success']     is False
+assert r['status_code'] == 400
+
+body = [
+        {
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1",
+                "apis"  : ["/ngsi-ld/v1/temporal/entities"]
+        },
+        {
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r2",
+                "apis"  : ["/ngsi-ld/v1/temporal/entities"]
+        }
+]
+
+r = restricted_consumer.get_token(body)
+access_token = r['response']
+
+assert r['success']     is True
+assert None             != access_token
+assert 60*60*24*30      == access_token['expires-in']
+
+body = [
+        {
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1",
+                "apis"  : ["/ngsi-ld/v1/temporal/entities"]
+        },
+        {
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs331/r2",
+                "apis"  : ["/ngsi-ld/v1/temporal/entities"]
         }
 ]
 
@@ -279,20 +321,16 @@ new_policy  = "*@iisc.ac.in can access * for 5 months"
 assert provider.set_policy(new_policy)['success'] is True
 
 body = [
-        "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1",
-        "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs2/r2"
-]
+        {
+            "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1",
+            "apis"  : ["/ngsi-ld/v1/temporal/entities"]
+            },
+        {
+            "id" : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs2/r2",
+            "apis"  : ["/ngsi-ld/v1/temporal/entities"]
+            }
+        ]
 
-r = consumer.get_token(body)
-assert r['success']                     is True
-assert r['response']['expires-in']      == 60*60*24*30*5
-
-body = "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1";
-r = consumer.get_token(body)
-assert r['success']                     is True
-assert r['response']['expires-in']      == 60*60*24*30*5
-
-body = { "id" : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1"};
 r = consumer.get_token(body)
 assert r['success']                     is True
 assert r['response']['expires-in']      == 60*60*24*30*5
@@ -308,12 +346,15 @@ alt_provider.set_policy(policy)
 body = [
         {
                 "id"    : "iisc.ac.in/2052f450ac2dde345335fb18b82e21da92e3388c/example.com/test-providers",
+                "apis"  : ["/ngsi-ld/v1/temporal/entities"]
         },
         {
-                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/ABC123"
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/ABC123",
+                "apis"  : ["/ngsi-ld/v1/temporal/entities"]
         },
         {
-                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/abc-xyz"
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/abc-xyz",
+                "apis"  : ["/ngsi-ld/v1/temporal/entities"]
         }
 ]
 

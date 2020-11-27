@@ -53,6 +53,7 @@ provider.set_policy('all can access iisc.iudx.org.in/resource-xyz* if consumer-i
 
 body = {
 	"id"	: "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/iisc.iudx.org.in/resource-xyz-yzz",
+        "apis"  : ["/ngsi-ld/v1/temporal/entities"]
 }
 
 provider.add_consumer_to_group("barun@iisc.ac.in","confidential",100)

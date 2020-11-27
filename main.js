@@ -64,6 +64,16 @@ const CAPABILITIES		= {
 	"subscription"	: ["/ngsi-ld/v1/subscription"]
 };
 
+/* LATEST *must* be index 0 */
+const ALL_APIS = [
+	LATEST,
+	"/ngsi-ld/v1/temporal/entities",
+	"/ngsi-ld/v1/entityOperations/query",
+	"/ngsi-ld/v1/entities",
+	"/ngsi-ld/v1/subscription",
+	INGEST_API_RULE
+];
+
 const MIN_CERT_CLASS_REQUIRED	= Object.freeze ({
 
 /* resource server API */
@@ -1823,6 +1833,30 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 		const resource_server		= split[2].toLowerCase();
 		const resource_name		= split.slice(3).join("/");
 
+		const resource_group		= provider_id_hash + "/" + resource_server + "/" + split[3];
+
+		/* only tokens for onboarding may have no APIs in request
+		 * If apis only contains "/*" and not onboarder token, 
+		 * throw error
+		 */
+		if (resource_server === CAT_URL)
+			r.apis = ["/*"];
+		else if (r.apis[0] === "/*" && r.apis.length === 1)
+		{
+			const error_response = {
+				"message"	: "'apis' is required for this id",
+				"invalid-input"	: {
+					"id"	: xss_safe(resource)
+				}
+			};
+
+			return END_ERROR (res, 400, error_response);
+		}
+
+		const all_apis = [...ALL_APIS];
+		/* latest API is index 0 in ALL_APIS */
+		all_apis[0] = all_apis[0](resource_group);
+
 		providers			[provider_id_hash]	= true;
 
 		// to be generated later
@@ -1933,6 +1967,19 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 			{
 				const error_response = {
 					"message"	: "'api' must be a string",
+					"invalid-input"	: {
+						"id"	: xss_safe(resource),
+						"api"	: xss_safe(api)
+					}
+				};
+
+				return END_ERROR (res, 400, error_response);
+			}
+
+			if (! all_apis.includes(api) && api !== "/*")
+			{
+				const error_response = {
+					"message"	: "Invalid api",
 					"invalid-input"	: {
 						"id"	: xss_safe(resource),
 						"api"	: xss_safe(api)
