@@ -292,6 +292,12 @@ def test_delete_ingester_temporal():
         r = consumer.get_token(token_body)
         assert r['success']     is True
 
+        # invalid body, some items not objects
+        body = [ingester_id, ["complex"], {"id": consumer_id, "capabilities": ["temporal"]}]
+        r = untrusted.delete_rule(body)
+        assert r['success']     == False
+        assert r['status_code'] == 400
+
         body = [{"id": ingester_id}, {"id": consumer_id, "capabilities": ["temporal"]}]
         r = untrusted.delete_rule(body)
         assert r['success']     == True

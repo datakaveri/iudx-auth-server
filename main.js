@@ -64,6 +64,16 @@ const CAPABILITIES		= {
 	"subscription"	: ["/ngsi-ld/v1/subscription"]
 };
 
+/* LATEST *must* be index 0 */
+const ALL_APIS = [
+	LATEST,
+	"/ngsi-ld/v1/temporal/entities",
+	"/ngsi-ld/v1/entityOperations/query",
+	"/ngsi-ld/v1/entities",
+	"/ngsi-ld/v1/subscription",
+	INGEST_API_RULE
+];
+
 const MIN_CERT_CLASS_REQUIRED	= Object.freeze ({
 
 /* resource server API */
@@ -312,6 +322,11 @@ function is_valid_tokenhash (token_hash)
 		return false;
 
 	if (token_hash.length > MAX_TOKEN_HASH_LEN)
+		return false;
+
+	const hex_regex = new RegExp(/^[a-f0-9]+$/);
+
+	if (! hex_regex.test(token_hash))
 		return false;
 
 	return true;
@@ -752,6 +767,30 @@ function xss_safe (input)
 
 		return input;
 	}
+}
+
+/* check if name is valid. Name can have ', spaces
+ * and hyphens. function parameter title set to true
+ * if testing a title */
+
+function is_name_safe(str, title = false)
+{
+	if (! str || typeof str !== "string")
+		return false;
+
+	if (str.length === 0 || str.length > MAX_SAFE_STRING_LEN)
+		return false;
+
+	const name_regex 	= new RegExp(/^[a-zA-Z]+(?:(?: |[' -])[a-zA-Z]+)*$/);
+	const title_regex	= new RegExp(/^[a-zA-Z]+\.?$/);
+
+	if (! name_regex.test(str) && title === false)
+		return false;
+
+	if (! title_regex.test(str) && title === true)
+		return false;
+
+	return true;
 }
 
 function is_string_safe (str, exceptions = "")
@@ -1794,6 +1833,30 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 		const resource_server		= split[2].toLowerCase();
 		const resource_name		= split.slice(3).join("/");
 
+		const resource_group		= provider_id_hash + "/" + resource_server + "/" + split[3];
+
+		/* only tokens for onboarding may have no APIs in request
+		 * If apis only contains "/*" and not onboarder token, 
+		 * throw error
+		 */
+		if (resource_server === CAT_URL)
+			r.apis = ["/*"];
+		else if (r.apis[0] === "/*" && r.apis.length === 1)
+		{
+			const error_response = {
+				"message"	: "'apis' is required for this id",
+				"invalid-input"	: {
+					"id"	: xss_safe(resource)
+				}
+			};
+
+			return END_ERROR (res, 400, error_response);
+		}
+
+		const all_apis = [...ALL_APIS];
+		/* latest API is index 0 in ALL_APIS */
+		all_apis[0] = all_apis[0](resource_group);
+
 		providers			[provider_id_hash]	= true;
 
 		// to be generated later
@@ -1904,6 +1967,19 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 			{
 				const error_response = {
 					"message"	: "'api' must be a string",
+					"invalid-input"	: {
+						"id"	: xss_safe(resource),
+						"api"	: xss_safe(api)
+					}
+				};
+
+				return END_ERROR (res, 400, error_response);
+			}
+
+			if (! all_apis.includes(api) && api !== "/*")
+			{
+				const error_response = {
+					"message"	: "Invalid api",
 					"invalid-input"	: {
 						"id"	: xss_safe(resource),
 						"api"	: xss_safe(api)
@@ -2384,7 +2460,6 @@ app.post("/auth/v[1-2]/token/introspect", (req, res) => {
 
 					const details = {
 						"resource_server"  : hostname_in_certificate,
-						"token_hash"       : sha256_of_token,
 						"issued_to"	   : issued_to
 					};
 
@@ -2577,11 +2652,13 @@ app.post("/auth/v[1-2]/token/revoke-all", (req, res) => {
 
 	const id		= res.locals.email;
 	const body		= res.locals.body;
+	const serial_regex	= new RegExp(/^-?[a-fA-F0-9]{40}$/);
+	const fingerprint_regex = new RegExp(/^([a-fA-F0-9]{2}:){19}[a-fA-F0-9]{2}$/);
 
 	if (! body.serial)
 		return END_ERROR (res, 400, "No 'serial' found in the body");
 
-	if (! is_string_safe(body.serial))
+	if (! serial_regex.test(body.serial))
 		return END_ERROR (res, 400, "Invalid 'serial'");
 
 	const serial = body.serial.toLowerCase();
@@ -2594,7 +2671,7 @@ app.post("/auth/v[1-2]/token/revoke-all", (req, res) => {
 		);
 	}
 
-	if (! is_string_safe(body.fingerprint,":")) // fingerprint contains ':'
+	if (! fingerprint_regex.test(body.fingerprint)) // fingerprint contains ':'
 		return END_ERROR (res, 400, "Invalid 'fingerprint'");
 
 	const fingerprint	= body.fingerprint.toLowerCase();
@@ -3826,6 +3903,9 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 
 	for (const obj of res.locals.body)
 	{
+		if (typeof obj !== "object" || obj === null)  
+			return END_ERROR (res, 400, "Invalid data (body)");
+
 		let id = obj.id;
 		let capability = obj.capabilities || null;
 		let delete_rule = false;
@@ -4283,6 +4363,11 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 	if (! name || ! name.title || ! name.firstName || ! name.lastName)
 		return END_ERROR (res, 400, "Invalid data (name)");
 
+	if (! is_name_safe (name.title, true) ||
+		! is_name_safe (name.firstName) ||
+		! is_name_safe (name.lastName))
+		return END_ERROR (res, 400, "Invalid data (name)");
+
 	if (! raw_csr || raw_csr.length > CSR_SIZE)
 		return END_ERROR (res, 400, "Invalid data (csr)");
 
@@ -4428,6 +4513,11 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 	const phone_regex = new RegExp(/^[9876]\d{9}$/);
 
 	if (! name || ! name.title || ! name.firstName || ! name.lastName)
+		return END_ERROR (res, 400, "Invalid data (name)");
+
+	if (! is_name_safe (name.title, true) ||
+		! is_name_safe (name.firstName) ||
+		! is_name_safe (name.lastName))
 		return END_ERROR (res, 400, "Invalid data (name)");
 
 	if (! is_valid_email(email))
