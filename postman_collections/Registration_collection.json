@@ -1,6 +1,6 @@
 {
 	"info": {
-		"_postman_id": "5f1c47bc-ae26-4041-8ce3-66360fe11118",
+		"_postman_id": "8d73d18c-a7e0-47e6-8975-29824f8c59d6",
 		"name": "Registration",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
@@ -11,7 +11,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "72444795-4e44-4560-aebf-e7e6e0ff1002",
+						"id": "6c5fe194-f38d-4769-afc9-93b09f89d075",
 						"exec": [
 							""
 						],
@@ -21,7 +21,7 @@
 				{
 					"listen": "prerequest",
 					"script": {
-						"id": "2f737fec-5189-4a04-b27b-cc6a8a7e8325",
+						"id": "1e8d7259-bbfa-4943-8ed6-f1646df963d1",
 						"exec": [
 							""
 						],
@@ -34,7 +34,7 @@
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "{\r\n\"name\" : {\r\n\"title\" : \"<titile>\",\r\n\"firstName\" : \"<firstname>\",\r\n\"lastName\"\t: \"<lastname>\"\r\n},\r\n\"email\" :\"<enter email>\",\r\n\"phone\" :\"<number>\",\r\n\"csr\" :\"<csr goes here>\",\r\n\"roles\" : [\"consumer\"]\r\n}",
+					"raw": "{\r\n    \"name\": {\r\n        \"title\": \"<titile>\",\r\n        \"firstName\": \"<firstname>\",\r\n        \"lastName\": \"<lastname>\"\r\n    },\r\n    \"email\": \"<enter email>\",\r\n    \"phone\": \"<number>\",\r\n    \"csr\": \"<csr goes here>\",\r\n    \"roles\": [\r\n        \"consumer\"\r\n    ]\r\n}",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -61,7 +61,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "b15c9f20-f025-4c37-a7e9-db3af246f5cf",
+						"id": "37103bc9-d5a3-4380-9a92-cfb53730784b",
 						"exec": [
 							""
 						],
@@ -71,7 +71,7 @@
 				{
 					"listen": "prerequest",
 					"script": {
-						"id": "e4de5553-dd2c-4364-87fe-2dcf1e37a3c2",
+						"id": "101c948e-dd55-4cfa-ad6c-d6d74982a894",
 						"exec": [
 							""
 						],
@@ -84,7 +84,7 @@
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "{\r\n\"name\" : {\r\n\"title\" : \"<title>\",\r\n\"firstName\" : \"<firstname>\",\r\n\"lastName\"\t: \"<lastname>\"\r\n},\r\n\"email\" :\"<enter email>\",\r\n\"organization\" : 42,\r\n\"phone\" :\"<phone number>\",\r\n\"csr\" :\"<csr goes here>\",\r\n\"roles\" : [\"onboarder\"]\r\n}",
+					"raw": "{\r\n    \"name\": {\r\n        \"title\": \"<title>\",\r\n        \"firstName\": \"<firstname>\",\r\n        \"lastName\": \"<lastname>\"\r\n    },\r\n    \"email\": \"<enter email>\",\r\n    \"organization\": 42,\r\n    \"phone\": \"<phone number>\",\r\n    \"csr\": \"<csr goes here>\",\r\n    \"roles\": [\r\n        \"onboarder\"\r\n    ]\r\n}",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -112,7 +112,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "0a6ce8ef-b5b3-41aa-9fa7-4dcad86d973e",
+						"id": "b445d16b-ecaa-4ecd-997b-d69b737263af",
 						"exec": [
 							""
 						],
@@ -122,7 +122,7 @@
 				{
 					"listen": "prerequest",
 					"script": {
-						"id": "1adc7e15-ef93-41d4-b813-c0bd3666cf40",
+						"id": "4603d231-44a9-4b3a-bc26-0972194117d7",
 						"exec": [
 							""
 						],
@@ -135,7 +135,58 @@
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "{\r\n\"name\" : {\r\n\"title\" : \"<title>\",\r\n\"firstName\" : \"<firstname>\",\r\n\"lastName\"\t: \"<lastname>\"\r\n},\r\n\"email\" :\"<enter email>\",\r\n\"organization\" : 42,\r\n\"phone\" :\"<phone number>\",\r\n\"csr\" :\"<csr goes here>\",\r\n\"roles\" : [\"data ingester\"]\r\n}",
+					"raw": "{\r\n    \"name\": {\r\n        \"title\": \"<title>\",\r\n        \"firstName\": \"<firstname>\",\r\n        \"lastName\": \"<lastname>\"\r\n    },\r\n    \"email\": \"<enter email>\",\r\n    \"organization\": 42,\r\n    \"phone\": \"<phone number>\",\r\n    \"csr\": \"<csr goes here>\",\r\n    \"roles\": [\r\n        \"data ingester\"\r\n    ]\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{CONSENT_ENDPOINT}}/v1/registration",
+					"protocol": "https",
+					"host": [
+						"{{CONSENT_ENDPOINT}}"
+					],
+					"path": [
+						"v1",
+						"registration"
+					]
+				},
+				"description": "Replace \"organization\" with valid organzation ID obtained from GET organizations API"
+			},
+			"response": []
+		},
+		{
+			"name": "Delegate Registration",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "301d2d91-72c2-4d3c-98bb-c6300ad4ba35",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "prerequest",
+					"script": {
+						"id": "9af611c3-5ea7-40c7-9389-3f28a8d39e21",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"name\": {\r\n        \"title\": \"<title>\",\r\n        \"firstName\": \"<firstname>\",\r\n        \"lastName\": \"<lastname>\"\r\n    },\r\n    \"email\": \"<enter email>\",\r\n    \"organization\": 42,\r\n    \"phone\": \"<phone number>\",\r\n    \"csr\": \"<csr goes here>\",\r\n    \"roles\": [\r\n        \"delegate\"\r\n    ]\r\n}",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -163,7 +214,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "c0f2e404-6c3d-4931-a558-10f49ff4cc70",
+						"id": "1044b28d-1a83-45ef-96bc-a6607e82ddcb",
 						"exec": [
 							""
 						],
@@ -173,7 +224,7 @@
 				{
 					"listen": "prerequest",
 					"script": {
-						"id": "d2d4f3f6-2c05-4691-9c79-302e8ff1f533",
+						"id": "28523773-a593-4db9-9999-cb36781cedb7",
 						"exec": [
 							""
 						],
@@ -215,7 +266,7 @@
 				{
 					"listen": "prerequest",
 					"script": {
-						"id": "db12e2c9-c03d-45b3-a8ed-05201a2bdc68",
+						"id": "01cc8e75-c784-4868-b86a-a4364ec706d2",
 						"exec": [
 							""
 						],
@@ -225,7 +276,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "b2fb2cd5-73fa-43b9-aaef-dca455644775",
+						"id": "357208ad-76c7-4a97-8cb4-79595a94e5f5",
 						"exec": [
 							""
 						],

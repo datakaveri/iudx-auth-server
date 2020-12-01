@@ -1,6 +1,6 @@
 {
 	"info": {
-		"_postman_id": "e066c6c0-e424-4adc-a292-e4c1df752f9e",
+		"_postman_id": "06989800-fd45-4c9d-9c61-d0e26d7fc7ff",
 		"name": "Audit and revoke",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
@@ -11,7 +11,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "a71d7418-3c13-417e-b61c-6d851f015b14",
+						"id": "8f3b3df2-c759-43ec-b8cf-778c881f0ec8",
 						"exec": [
 							""
 						],
@@ -53,7 +53,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "c1492ace-a53b-4e99-9ea3-1669826280c0",
+						"id": "e1a86028-8852-4b21-8e8c-ff49fcd32251",
 						"exec": [
 							""
 						],
@@ -95,7 +95,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "7dda62d5-a5b8-4b42-9f4e-a9f4980e203e",
+						"id": "2496aa3e-9363-4781-9944-bc36d5883d5c",
 						"exec": [
 							""
 						],
@@ -105,7 +105,7 @@
 				{
 					"listen": "prerequest",
 					"script": {
-						"id": "6e7debc7-d658-4b39-9fd3-3bb27f8f9587",
+						"id": "3ec5e99e-9489-40c8-b81a-36e53b030fc8",
 						"exec": [
 							""
 						],
@@ -147,7 +147,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "7b2d51d3-9bae-461d-9d48-7cf76f0cd05b",
+						"id": "2a13e34b-459e-4f6b-95ba-42e379c4fef6",
 						"exec": [
 							""
 						],

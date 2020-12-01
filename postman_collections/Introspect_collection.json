@@ -1,6 +1,6 @@
 {
 	"info": {
-		"_postman_id": "47a4f8b7-68f5-4322-88ba-d58ed040d329",
+		"_postman_id": "6c89a86b-2c99-448b-97f7-36a29356c33f",
 		"name": "Introspect",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
@@ -11,7 +11,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "a465f2dd-c114-484a-a427-e99c7de61bf1",
+						"id": "b63b9b7c-bb99-4fe5-ad7f-b62489565068",
 						"exec": [
 							""
 						],
@@ -53,7 +53,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "f26f23ec-17f2-4b29-a8b6-4e79d1c9f0dd",
+						"id": "f3bf6ac0-8af0-4aa4-8a17-56b023452e20",
 						"exec": [
 							"pm.test(\"Certificate information\", function() {",
 							"    pm.expect(pm.response.code).to.eq(200);",
