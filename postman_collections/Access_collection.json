@@ -1,6 +1,6 @@
 {
 	"info": {
-		"_postman_id": "e0980e06-591f-4b35-804e-92dd64006b8c",
+		"_postman_id": "addc1746-fa2c-436c-84dd-67617f3c9f65",
 		"name": "Access",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
@@ -11,7 +11,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "9b4305a1-e387-4fcf-a888-2d2ad49cfaa6",
+						"id": "26c18e77-331a-4869-803a-af0ee3c691de",
 						"exec": [
 							""
 						],
@@ -24,7 +24,7 @@
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "{\r\n  \"user_email\":\"<ingester_email>\",\r\n  \"user_role\": \"data ingester\",\r\n  \"item_id\": \"<enter resource Id>\",\r\n  \"item_type\": \"resourcegroup\"\r\n}",
+					"raw": "{\r\n    \"user_email\": \"<ingester_email>\",\r\n    \"user_role\": \"data ingester\",\r\n    \"item_id\": \"<enter resource Id>\",\r\n    \"item_type\": \"resourcegroup\"\r\n}",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -53,7 +53,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "793ece4a-5e89-452c-a26a-37e5323db364",
+						"id": "01dd5479-8a59-409c-858b-fddcf8a02e5d",
 						"exec": [
 							""
 						],
@@ -66,7 +66,7 @@
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "\r\n{\r\n  \"user_email\": \"<enter onboarder's emails>\",\r\n  \"user_role\": \"onboarder\"\r\n}",
+					"raw": "{\r\n    \"user_email\": \"<enter onboarder's emails>\",\r\n    \"user_role\": \"onboarder\"\r\n}",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -95,7 +95,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "c727d6c1-ece8-4660-b936-5672ecf1c23f",
+						"id": "25de7cdb-7fdf-4fad-a77f-0e86e00d1be0",
 						"exec": [
 							""
 						],
@@ -105,7 +105,7 @@
 				{
 					"listen": "prerequest",
 					"script": {
-						"id": "dd3d8f9a-7638-4ac0-8200-fafe45e32124",
+						"id": "8a307884-51e8-4d3c-8b8a-45dac21ab51c",
 						"exec": [
 							""
 						],
@@ -147,7 +147,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "ee2a7bde-41f3-4cd0-b119-21cd1254155b",
+						"id": "f39c1d8a-cd32-46f0-bb65-b2f9152fdfed",
 						"exec": [
 							""
 						],
@@ -157,7 +157,7 @@
 				{
 					"listen": "prerequest",
 					"script": {
-						"id": "b16f9c08-884c-44b6-b1c5-1e03c936c89a",
+						"id": "922d2e9e-ba51-47b7-bf11-ff3f618b3749",
 						"exec": [
 							""
 						],
@@ -199,7 +199,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "03fd2335-5292-49c8-9e91-7e88fb3f48e6",
+						"id": "c9c60f79-a1ca-4df9-addc-c18351558192",
 						"exec": [
 							""
 						],
@@ -209,7 +209,7 @@
 				{
 					"listen": "prerequest",
 					"script": {
-						"id": "e8f7e4e0-7029-4327-baab-4ee86e21dd92",
+						"id": "77153501-a579-4cb3-bf29-e3faaeb4abf5",
 						"exec": [
 							""
 						],
@@ -222,7 +222,7 @@
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "{\r\n  \"user_email\": \"<enter consumer email>\",\r\n  \"user_role\": \"consumer\",\r\n  \"item_id\": \"<enter resource id>\",\r\n  \"item_type\": \"resourcegroup\",\r\n  \"capabilities\" : [\"temporal\"]\r\n}",
+					"raw": "{\r\n    \"user_email\": \"<enter consumer email>\",\r\n    \"user_role\": \"consumer\",\r\n    \"item_id\": \"<enter resource id>\",\r\n    \"item_type\": \"resourcegroup\",\r\n    \"capabilities\": [\r\n        \"temporal\"\r\n    ]\r\n}",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -251,7 +251,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "96f3af26-81fd-4f63-a39d-9ac85bcf7dd7",
+						"id": "dae8a881-5194-4663-b82b-ddfd7bc1dd55",
 						"exec": [
 							""
 						],
@@ -261,7 +261,7 @@
 				{
 					"listen": "prerequest",
 					"script": {
-						"id": "78ed835e-f339-48e1-aac1-0e15ca5a88a1",
+						"id": "d27e5ddb-b274-42aa-ae85-147101e50597",
 						"exec": [
 							""
 						],
@@ -274,7 +274,59 @@
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "{\r\n  \"user_email\": \"<enter consumer email>\",\r\n  \"user_role\": \"consumer\",\r\n  \"item_id\": \"<enter resource id>\",\r\n  \"item_type\": \"resourcegroup\",\r\n  \"capabilities\" : [\"temporal\", \"complex\", \"subscription\"]\r\n}",
+					"raw": "{\r\n    \"user_email\": \"<enter consumer email>\",\r\n    \"user_role\": \"consumer\",\r\n    \"item_id\": \"<enter resource id>\",\r\n    \"item_type\": \"resourcegroup\",\r\n    \"capabilities\": [\r\n        \"temporal\",\r\n        \"complex\",\r\n        \"subscription\"\r\n    ]\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/provider/access",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"provider",
+						"access"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Delete Access Policies",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "9d6f53aa-421d-4aef-9b17-94d65dea158d",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "prerequest",
+					"script": {
+						"id": "cb57754d-27e6-4854-8d50-a11968cd6b63",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "DELETE",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "[\r\n    {\r\n        \"id\": \"<valid access ID obtained from GET /auth/v1/provider/access API>\"\r\n    },\r\n    {\r\n        \"id\": \"<valid access ID obtained from GET /auth/v1/provider/access API>\",\r\n        \"capabilities\": [\r\n            \"<if consumer rule, add individual capabilities to be deleted>\"\r\n        ]\r\n    }\r\n]",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -303,7 +355,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "53909a4a-a042-446b-9ec6-72f5d3d7e5b8",
+						"id": "93b8ff81-735f-48eb-a641-7e49b73bba2a",
 						"exec": [
 							""
 						],
@@ -336,7 +388,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "91ab1b37-e1f4-4fe3-8cdc-d1f85defa5d8",
+						"id": "15e4523d-d911-4ca7-a164-e210aa330dc9",
 						"exec": [
 							""
 						],
