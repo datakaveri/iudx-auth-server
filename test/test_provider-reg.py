@@ -21,7 +21,8 @@ org_id = add_organization(website)
 csr = "-----BEGIN CERTIFICATE REQUEST-----\nMIICjDCCAXQCAQAwRzELMAkGA1UEBhMCVVMxCzAJBgNVBAgMAkNBMRQwEgYDVQQK\nDAtNeU9yZywgSW5jLjEVMBMGA1UEAwwMbXlkb21haW4uY29tMIIBIjANBgkqhkiG\n9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyhF2a5PeL72zGdL47/6zVQQQtZJcO01iVbjR\nSSyswUa2jcfYfoQEVKo1JAz25G3nYfSW1Te3OWjuihvPhZeatFSUwTxcZJFxzIWm\n4/gOQIhJKCA/Wry3liW2sjIGLuHxeH2BoQCIEZyYcqVpRWEJ9RusRFcwPgvROigh\nhMXhgE86uaIRs0yPqzhc7sl53T4qx6qvQJ6uTXBWBvUELgSSgeyaT0gwU1mGmPck\n7Svo6tsWfBFfgT5Ecbqsc2nqChAExgocp5tkPJYcy8FB/tU/FW0rFthqecSvMrpS\ncZW9+iyzseyPrcK9ka6XSlVu9EoX82RW7SRyRL2T5VN3JemXfQIDAQABoAAwDQYJ\nKoZIhvcNAQELBQADggEBAJRFEYn6dSzEYpgYLItUm7Sp3LzquJw7QfMyUvsy45rp\n0VTdQdYp/hVR2aCLiD33ht4FxlhbZm/8XcTuYolP6AbF6FldxWmmFFS9LRAj7nTV\ndU1pZftwFPp6JsKUCYHVsuxs7swliXbEcBVtD6QktzZNrRJmUKi38DAFcbFwgLaM\nG/iRIm4DDj2hmanKp+vUWjXfj13naa7bDtIlzW96y24jsu+naabg8MVShfGCStIv\nrX3T2JkkSjpTw7YzIpgI8/Zg9VR1l0udvfh9bn7mjmOYc3EYwJKvuJDn1TzVuIIi\n9NmVasTjhZJ0PyWithWuZplo/LXUwSoid8HVyqe5ZVI=\n-----END CERTIFICATE REQUEST-----\n"
 
 # random email 
-email = ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(6)) + '@gmail.com'
+bad_email = ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(6)) + '@gmail.com'
+email = ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(6)) + '@' + website
 
 def test_invalid_phone():
         # invalid phone
@@ -48,6 +49,12 @@ def test_very_large_csr():
         bad_csr = "-----BEGIN CERTIFICATE REQUEST-----\n" + 'DEADCAFE' * 30000 + "\n-----END CERTIFICATE REQUEST-----\n"
         r = provider_reg(email, '9845596200', name , org_id, bad_csr)
         assert r['success']     == False
+
+def test_invalid_email():
+        # valid
+        r = provider_reg(bad_email, '9845596200', name , org_id, csr)
+        assert r['success']     == False
+        assert r['status_code'] == 403
 
 def test_valid():
         # valid

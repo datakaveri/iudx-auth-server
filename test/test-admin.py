@@ -79,7 +79,7 @@ csr = "-----BEGIN CERTIFICATE REQUEST-----\nMIICjDCCAXQCAQAwRzELMAkGA1UEBhMCVVMx
 
 # random email 
 email_name  = ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(6)) 
-email       = email_name + '@gmail.com' 
+email       = email_name + '@' + website
 
 r = provider_reg(email, '9845596200', name , org_id, csr)
 assert r['success']     == True
@@ -146,7 +146,7 @@ if r['status_code'] == 200:
 
 # test rejected flow
 remail_name  = ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(6)) 
-remail       = remail_name + '@gmail.com' 
+remail       = remail_name + '@' + website
 
 r = provider_reg(remail, '9845596200', name , org_id, csr)
 assert r['success']     == True
