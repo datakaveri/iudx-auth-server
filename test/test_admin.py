@@ -88,7 +88,7 @@ csr = "-----BEGIN CERTIFICATE REQUEST-----\nMIICjDCCAXQCAQAwRzELMAkGA1UEBhMCVVMx
 
 # random email 
 email_name  = ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(6)) 
-email       = email_name + '@gmail.com' 
+email       = email_name + '@' + website 
 
 
 def test_get_provider_reg():
@@ -164,7 +164,7 @@ def test_check_approved_provider():
 
 # test rejected flow
 remail_name  = ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(6)) 
-remail       = remail_name + '@gmail.com' 
+remail       = remail_name + '@' + website 
 
 def test_reject_provider():
         global org_id

@@ -4414,6 +4414,13 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 
 		if (org_reg.rows.length === 0)
 			return END_ERROR (res, 403, "Invalid organization");
+
+		let domain = org_reg.rows[0].website;
+		let email_domain = email.split('@')[1];
+
+		// check if org domain matches email domain
+		if (email_domain !== domain)
+			return END_ERROR (res, 403, "Invalid data (domains do not match)");
 	}
 	catch(error)
 	{
