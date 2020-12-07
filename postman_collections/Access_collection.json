@@ -1,6 +1,6 @@
 {
 	"info": {
-		"_postman_id": "e0980e06-591f-4b35-804e-92dd64006b8c",
+		"_postman_id": "f1a18ce6-eb56-49c5-87a3-ab562a7ac635",
 		"name": "Access",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
@@ -11,7 +11,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "9b4305a1-e387-4fcf-a888-2d2ad49cfaa6",
+						"id": "ca892e08-6a5e-40aa-9b86-55f0b7f6d44f",
 						"exec": [
 							""
 						],
@@ -21,10 +21,17 @@
 			],
 			"request": {
 				"method": "POST",
-				"header": [],
+				"header": [
+					{
+						"key": "provider-email",
+						"value": "",
+						"description": "If Delegate, use this header to specify which provider to operate on behalf of. The value must be the provider's email address",
+						"type": "text"
+					}
+				],
 				"body": {
 					"mode": "raw",
-					"raw": "{\r\n  \"user_email\":\"<ingester_email>\",\r\n  \"user_role\": \"data ingester\",\r\n  \"item_id\": \"<enter resource Id>\",\r\n  \"item_type\": \"resourcegroup\"\r\n}",
+					"raw": "[\r\n    {\r\n        \"user_email\": \"<ingester_email>\",\r\n        \"user_role\": \"data ingester\",\r\n        \"item_id\": \"<enter resource Id>\",\r\n        \"item_type\": \"resourcegroup\"\r\n    }\r\n]",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -53,7 +60,56 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "793ece4a-5e89-452c-a26a-37e5323db364",
+						"id": "6441a151-b512-4af0-9ecc-7ca2e9850d98",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "provider-email",
+						"value": "",
+						"description": "If Delegate, use this header to specify which provider to operate on behalf of. The value must be the provider's email address",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "[\r\n    {\r\n        \"user_email\": \"<enter onboarder's emails>\",\r\n        \"user_role\": \"onboarder\"\r\n    }\r\n]",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/provider/access",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"provider",
+						"access"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Give Access for Delegate",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "59088b57-bc08-4b6f-9f15-be7da73a94ba",
 						"exec": [
 							""
 						],
@@ -66,7 +122,7 @@
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "\r\n{\r\n  \"user_email\": \"<enter onboarder's emails>\",\r\n  \"user_role\": \"onboarder\"\r\n}",
+					"raw": "[\r\n    {\r\n        \"user_email\": \"<enter delegate's emails>\",\r\n        \"user_role\": \"delegate\"\r\n    }\r\n]",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -95,7 +151,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "c727d6c1-ece8-4660-b936-5672ecf1c23f",
+						"id": "630ad3c4-7ec6-424a-b70e-6290f3997e2b",
 						"exec": [
 							""
 						],
@@ -105,7 +161,7 @@
 				{
 					"listen": "prerequest",
 					"script": {
-						"id": "dd3d8f9a-7638-4ac0-8200-fafe45e32124",
+						"id": "83f6ff89-4e45-4d04-a85a-d07b35e7836b",
 						"exec": [
 							""
 						],
@@ -115,10 +171,17 @@
 			],
 			"request": {
 				"method": "POST",
-				"header": [],
+				"header": [
+					{
+						"key": "provider-email",
+						"value": "",
+						"description": "If Delegate, use this header to specify which provider to operate on behalf of. The value must be the provider's email address",
+						"type": "text"
+					}
+				],
 				"body": {
 					"mode": "raw",
-					"raw": "{\r\n  \"user_email\": \"<enter consumer's email>\",\r\n  \"user_role\": \"consumer\",\r\n  \"item_id\": \"<enter resourse id>\",\r\n  \"item_type\": \"resourcegroup\",\r\n  \"capabilities\" : [\"subscription\"]\r\n}",
+					"raw": "[\r\n    {\r\n        \"user_email\": \"<enter consumer's email>\",\r\n        \"user_role\": \"consumer\",\r\n        \"item_id\": \"<enter resourse id>\",\r\n        \"item_type\": \"resourcegroup\",\r\n        \"capabilities\": [\r\n            \"subscription\"\r\n        ]\r\n    }\r\n]",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -147,7 +210,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "ee2a7bde-41f3-4cd0-b119-21cd1254155b",
+						"id": "e3781614-b172-441f-93dd-9f3231ca4c29",
 						"exec": [
 							""
 						],
@@ -157,7 +220,7 @@
 				{
 					"listen": "prerequest",
 					"script": {
-						"id": "b16f9c08-884c-44b6-b1c5-1e03c936c89a",
+						"id": "eb6d2674-29f0-4434-800a-1e4159131528",
 						"exec": [
 							""
 						],
@@ -167,10 +230,17 @@
 			],
 			"request": {
 				"method": "POST",
-				"header": [],
+				"header": [
+					{
+						"key": "provider-email",
+						"value": "",
+						"description": "If Delegate, use this header to specify which provider to operate on behalf of. The value must be the provider's email address",
+						"type": "text"
+					}
+				],
 				"body": {
 					"mode": "raw",
-					"raw": "{\r\n  \"user_email\": \"<enter email>\",\r\n  \"user_role\": \"consumer\",\r\n  \"item_id\": \"<enter resource id>\",\r\n  \"item_type\": \"resourcegroup\",\r\n  \"capabilities\" : [\"complex\"]\r\n}",
+					"raw": "[\r\n    {\r\n        \"user_email\": \"<enter email>\",\r\n        \"user_role\": \"consumer\",\r\n        \"item_id\": \"<enter resource id>\",\r\n        \"item_type\": \"resourcegroup\",\r\n        \"capabilities\": [\r\n            \"complex\"\r\n        ]\r\n    }\r\n]",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -199,7 +269,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "03fd2335-5292-49c8-9e91-7e88fb3f48e6",
+						"id": "25ee6f49-e5d6-4c7a-8faa-3f8074f90eed",
 						"exec": [
 							""
 						],
@@ -209,7 +279,7 @@
 				{
 					"listen": "prerequest",
 					"script": {
-						"id": "e8f7e4e0-7029-4327-baab-4ee86e21dd92",
+						"id": "791582ab-fe49-4a76-a305-c58d19e97c74",
 						"exec": [
 							""
 						],
@@ -219,10 +289,17 @@
 			],
 			"request": {
 				"method": "POST",
-				"header": [],
+				"header": [
+					{
+						"key": "provider-email",
+						"value": "",
+						"description": "If Delegate, use this header to specify which provider to operate on behalf of. The value must be the provider's email address",
+						"type": "text"
+					}
+				],
 				"body": {
 					"mode": "raw",
-					"raw": "{\r\n  \"user_email\": \"<enter consumer email>\",\r\n  \"user_role\": \"consumer\",\r\n  \"item_id\": \"<enter resource id>\",\r\n  \"item_type\": \"resourcegroup\",\r\n  \"capabilities\" : [\"temporal\"]\r\n}",
+					"raw": "[\r\n    {\r\n        \"user_email\": \"<enter consumer email>\",\r\n        \"user_role\": \"consumer\",\r\n        \"item_id\": \"<enter resource id>\",\r\n        \"item_type\": \"resourcegroup\",\r\n        \"capabilities\": [\r\n            \"temporal\"\r\n        ]\r\n    }\r\n]",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -251,7 +328,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "96f3af26-81fd-4f63-a39d-9ac85bcf7dd7",
+						"id": "8d31c06d-d63d-4e6e-878f-5f0a1866da98",
 						"exec": [
 							""
 						],
@@ -261,7 +338,7 @@
 				{
 					"listen": "prerequest",
 					"script": {
-						"id": "78ed835e-f339-48e1-aac1-0e15ca5a88a1",
+						"id": "b0a7b720-c250-4690-899e-a1b7ed1cf59c",
 						"exec": [
 							""
 						],
@@ -271,10 +348,76 @@
 			],
 			"request": {
 				"method": "POST",
-				"header": [],
+				"header": [
+					{
+						"key": "provider-email",
+						"value": "",
+						"description": "If Delegate, use this header to specify which provider to operate on behalf of. The value must be the provider's email address",
+						"type": "text"
+					}
+				],
 				"body": {
 					"mode": "raw",
-					"raw": "{\r\n  \"user_email\": \"<enter consumer email>\",\r\n  \"user_role\": \"consumer\",\r\n  \"item_id\": \"<enter resource id>\",\r\n  \"item_type\": \"resourcegroup\",\r\n  \"capabilities\" : [\"temporal\", \"complex\", \"subscription\"]\r\n}",
+					"raw": "[\r\n    {\r\n        \"user_email\": \"<enter consumer email>\",\r\n        \"user_role\": \"consumer\",\r\n        \"item_id\": \"<enter resource id>\",\r\n        \"item_type\": \"resourcegroup\",\r\n        \"capabilities\": [\r\n            \"temporal\",\r\n            \"complex\",\r\n            \"subscription\"\r\n        ]\r\n    }\r\n]",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/provider/access",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"provider",
+						"access"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Delete Access policies",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "174e7b1f-de2b-4569-bf21-78855a4b6260",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "prerequest",
+					"script": {
+						"id": "4b118b50-9215-44a1-870a-bc374c4f5a7e",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "DELETE",
+				"header": [
+					{
+						"description": "If Delegate, use this header to specify which provider to operate on behalf of. The value must be the provider's email address",
+						"key": "provider-email",
+						"type": "text",
+						"value": ""
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "[\r\n    {\r\n        \"id\": \"<ID of access policy obtained from GET /provider/access API>\"\r\n    },\r\n    {\r\n        \"id\": \"<ID of access...>\",\r\n        \"capabilities\": [\r\n            \"<if consumer rule, add individual capabilities to be deleted>\"\r\n        ]\r\n    }\r\n]",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -303,7 +446,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "53909a4a-a042-446b-9ec6-72f5d3d7e5b8",
+						"id": "42c9d054-2748-469b-a139-a24e022f78fa",
 						"exec": [
 							""
 						],
@@ -313,7 +456,14 @@
 			],
 			"request": {
 				"method": "GET",
-				"header": [],
+				"header": [
+					{
+						"key": "provider-email",
+						"value": "",
+						"description": "If Delegate, use this header to specify which provider to operate on behalf of. The value must be the provider's email address",
+						"type": "text"
+					}
+				],
 				"url": {
 					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/provider/access",
 					"protocol": "https",
@@ -331,12 +481,45 @@
 			"response": []
 		},
 		{
+			"name": "Delegate - Get all Providers who have set delegate rule for them",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "6a1df8a5-0202-4d63-94ae-30d532a1a2e9",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/delegate/providers",
+					"protocol": "https",
+					"host": [
+						"{{AUTH_ENDPOINT}}"
+					],
+					"path": [
+						"auth",
+						"v1",
+						"delegate",
+						"providers"
+					]
+				}
+			},
+			"response": []
+		},
+		{
 			"name": "Certificate Info API",
 			"event": [
 				{
 					"listen": "test",
 					"script": {
-						"id": "91ab1b37-e1f4-4fe3-8cdc-d1f85defa5d8",
+						"id": "defa7737-4f68-41a2-8e7a-ab38fa750169",
 						"exec": [
 							""
 						],

@@ -1,6 +1,6 @@
 {
 	"info": {
-		"_postman_id": "c4191d8c-43a8-4e4f-acc7-3681d420cec6",
+		"_postman_id": "8634c9ab-5dab-4349-9850-48782de1c783",
 		"name": "Organization API",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
@@ -11,7 +11,7 @@
 				{
 					"listen": "prerequest",
 					"script": {
-						"id": "540bcfbe-1f97-4c48-872d-ebe8c935f2f2",
+						"id": "5b7e28b0-ce9d-4bbb-aa6e-d09f7ddd1ee9",
 						"exec": [
 							""
 						],
@@ -21,7 +21,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "c7c386d3-4d0d-4619-bb2b-acec7c6f4af0",
+						"id": "544ee4d9-288e-4bf9-8592-274c95d854a4",
 						"exec": [
 							""
 						],
@@ -70,7 +70,7 @@
 				{
 					"listen": "prerequest",
 					"script": {
-						"id": "f10110d2-eb2c-403b-ae73-dd435a2071a3",
+						"id": "afde15ff-b9e1-444a-a99e-b7fe9b2fb966",
 						"exec": [
 							""
 						],
@@ -80,7 +80,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "f6aeee0e-a061-431b-9b01-b9ed0ad4a1b8",
+						"id": "d8cc21f3-180d-48b3-a4f5-c018f0fb0c84",
 						"exec": [
 							""
 						],
@@ -130,7 +130,7 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "e7301ef5-720f-4bb4-bb9f-c9e837e70a27",
+						"id": "8b3ee278-7a32-4be2-9f4c-040428748806",
 						"exec": [
 							""
 						],

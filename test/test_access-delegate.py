@@ -69,12 +69,35 @@ def test_set_rule_unassigned_delegate():
         assert r['success']     == False
         assert r['status_code'] == 401
 
+        # check if unreg'd delegate can use delegate API
+        r = alt_provider.get_delegate_providers()
+        assert r['success']     == False
+        assert r['status_code'] == 404
+
+def test_provider_use_delegate_api():
+
+        # check if provider can use delegate API
+        r = untrusted.get_delegate_providers()
+        assert r['success']     == False
+        assert r['status_code'] == 401
+
 def test_assign_delegate_register_consumer():
+
+        # check if provider given access to delegate - no
+        r = alt_provider.get_delegate_providers()
+        assert r['success']     == False
+        assert r['status_code'] == 404
 
         req = {"user_email": delegate_email, "user_role":'delegate'}
         r = untrusted.provider_access([req])
         assert r['success']     == True
         assert r['status_code'] == 200
+
+        # check if provider given access to delegate - yes
+        r = alt_provider.get_delegate_providers()
+        assert r['success']     == True
+        assert r['status_code'] == 200
+        assert r['response'][0]['email'] == 'abc.xyz@rbccps.org'
 
 def test_delegate_invalid_provider_email():
         req = {"user_email": email, "user_role":'consumer', "item_id":resource_id, "item_type":"resourcegroup"}
@@ -332,3 +355,8 @@ def test_deleted_delegate():
         r = alt_provider.delete_rule([body], 'abc.xyz@rbccps.org')
         assert r['success']     == False
         assert r['status_code'] == 401
+
+        # check if provider given access to delegate - no
+        r = alt_provider.get_delegate_providers()
+        assert r['success']     == False
+        assert r['status_code'] == 404

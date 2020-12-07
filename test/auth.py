@@ -207,4 +207,8 @@ class Auth():
                 return self.call("admin/provider/registrations/status", {}, "PUT", params)
         #
 
+        def get_delegate_providers(self):
+        #
+                return self.call("delegate/providers", {}, "GET")
+        #
 #}

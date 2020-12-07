@@ -28,7 +28,7 @@ assert reset_role(delegate_email) == True
 # provider ID of abc.xyz@rbccps.org
 provider_id = 'rbccps.org/f3dad987e514af08a4ac46cf4a41bd1df645c8cc'
 
-# register abc.123 as delegate and set delegate rule
+# register abc.123 as delegate
 
 r = role_reg(delegate_email, '9454234223', name , ["delegate"], org_id, csr)
 assert r['success']     == True
@@ -51,10 +51,31 @@ r = alt_provider.provider_access([req], 'abc.xyz@rbccps.org')
 assert r['success']     == False
 assert r['status_code'] == 401
 
+# check if unreg'd delegate can use delegate API
+r = alt_provider.get_delegate_providers()
+assert r['success']     == False
+assert r['status_code'] == 404
+
+# check if provider can use delegate API
+r = untrusted.get_delegate_providers()
+assert r['success']     == False
+assert r['status_code'] == 401
+
+# check if provider given access to delegate - no
+r = alt_provider.get_delegate_providers()
+assert r['success']     == False
+assert r['status_code'] == 404
+
 req = {"user_email": delegate_email, "user_role":'delegate'}
 r = untrusted.provider_access([req])
 assert r['success']     == True
 assert r['status_code'] == 200
+
+# check if provider given access to delegate - yes
+r = alt_provider.get_delegate_providers()
+assert r['success']     == True
+assert r['status_code'] == 200
+assert r['response'][0]['email'] == 'abc.xyz@rbccps.org'
 
 req = {"user_email": email, "user_role":'consumer', "item_id":resource_id, "item_type":"resourcegroup"}
 req["capabilities"] = ['temporal']
@@ -301,3 +322,8 @@ body = {"id" : consumer_id}
 r = alt_provider.delete_rule([body], 'abc.xyz@rbccps.org')
 assert r['success']     == False
 assert r['status_code'] == 401
+
+# check if provider given access to delegate - no
+r = alt_provider.get_delegate_providers()
+assert r['success']     == False
+assert r['status_code'] == 404
