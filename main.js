@@ -3783,8 +3783,10 @@ app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
 
 	const email = res.locals.email;
 	let provider_uid, rules;
-	var item_details = [];
-	var cap_details	 = {};
+	let item_details = {};
+	let cap_details	 = {};
+	let access_item_ids = {};
+	let accessid_arr = [];
 
 	try { provider_uid = await check_privilege(email, "provider"); }
 	catch(error) { return END_ERROR (res, 401, "Not allowed"); }
@@ -3807,30 +3809,35 @@ app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
 		return END_ERROR (res, 500, "Internal error!", error);
 	}
 
-	const accessid_arr = rules.map((obj) => obj.id);
-	const access_items = [...new Set(rules.map((obj) => obj.access_item_type ))];
+	for (let obj of rules) {
+		if (! access_item_ids[obj.access_item_type])
+			access_item_ids[obj.access_item_type] = [];
 
-	for (const item of access_items)
+		access_item_ids[obj.access_item_type].push(obj.access_item_id);
+		accessid_arr.push(obj.id);
+	}
+
+	for (const item of Object.keys(access_item_ids))
 	{
+		item_details[item] = {};
+
 		if (item === "catalogue") continue;
 
 		try {
 			const result = await pool.query (
-				"SELECT * FROM consent." + item + " as type, "	+
-				" consent.access"	+
-				" WHERE access_item_type = '" + item +"'"	+
-				" AND access_item_id = type.id"	+
-				" AND access.provider_id = $1::integer",
-				[ provider_uid ]);
+				"SELECT id, cat_id FROM consent." + item +
+				" WHERE id = ANY($1::integer[])",
+				[ access_item_ids[item] ]);
 
-			item_details = [...item_details, ...result.rows];
-
+			for (let val of result.rows)
+			{
+				item_details[item][val.id] = val.cat_id;
+			}
 		}
 		catch(error)
 		{
 			return END_ERROR (res, 500, "Internal error!", error);
 		}
-
 	}
 
 	/* get capability details for each access ID */
@@ -3841,24 +3848,22 @@ app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
 			" WHERE access_id = ANY($1::integer[])",
 			[ accessid_arr ]);
 
-		result.rows.map ( row => {
+		for (let row of result.rows) {
 			if (! cap_details[row.access_id])
 				cap_details[row.access_id] = [];
 
 			cap_details[row.access_id].push(row.capability);
-		});
+		}
 	}
 	catch(error)
 	{
 		return END_ERROR (res, 500, "Internal error!", error);
 	}
 
-	const result = rules.map (rule => {
+	let result = [];
 
-		const filter_item = item_details.filter (item =>
-			item.access_item_type === rule.access_item_type &&
-				item.access_item_id === rule.access_item_id)[0] || null;
-
+	for (let rule of rules) 
+	{
 		let response =  {
 			id		: rule.id,
 			email		: rule.email,
@@ -3870,15 +3875,13 @@ app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
 			capabilities	: cap_details[rule.id] || null
 		};
 
-		if (filter_item !== null)
-		{
+		if (rule.access_item_id !== -1)
 			response.item = {
-				cat_id : filter_item.cat_id
+				cat_id : item_details[rule.access_item_type][rule.access_item_id]
 			};
-		}
 
-		return response;
-	});
+		result.push(response);
+	};
 
 	return END_SUCCESS (res, result);
 });
