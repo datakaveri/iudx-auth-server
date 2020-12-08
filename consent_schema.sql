@@ -34,7 +34,6 @@ CREATE TABLE consent.organizations (
 	updated_at	timestamp without time zone		NOT NULL
 );
 
-CREATE UNIQUE INDEX idx_organizations_id ON consent.organizations(id);
 CREATE UNIQUE INDEX idx_organizations_website ON consent.organizations(website);
 
 CREATE TABLE consent.users (
@@ -50,7 +49,6 @@ CREATE TABLE consent.users (
 	updated_at	timestamp without time zone			NOT NULL
 );
 
-CREATE UNIQUE INDEX idx_users_id ON consent.users(id);
 CREATE UNIQUE INDEX idx_users_email ON consent.users(email);
 
 CREATE TABLE consent.role (
@@ -63,7 +61,7 @@ CREATE TABLE consent.role (
 	updated_at	timestamp without time zone			NOT NULL
 );
 
-CREATE UNIQUE INDEX idx_role_id ON consent.role(id);
+CREATE INDEX idx_role_user_id ON consent.role(user_id);
 
 CREATE TABLE consent.certificates (
 
@@ -87,7 +85,8 @@ CREATE TABLE consent.access (
 	updated_at		timestamp without time zone			NOT NULL
 );
 
-CREATE UNIQUE INDEX idx_access_id ON consent.access(id);
+CREATE INDEX idx_access_provider_id ON consent.access(provider_id);
+CREATE INDEX idx_access_role_id ON consent.access(role_id);
 
 CREATE TABLE consent.resourcegroup (
 
@@ -105,6 +104,8 @@ CREATE TABLE consent.capability (
 	capability		consent.capability_enum				NOT NULL,
 	UNIQUE (access_id, capability)
 );
+
+CREATE INDEX idx_capability_access_id ON consent.capability(access_id);
 
 ALTER TABLE consent.organizations	OWNER TO postgres;
 ALTER TABLE consent.users		OWNER TO postgres;
