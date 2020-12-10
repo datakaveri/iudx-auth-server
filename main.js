@@ -24,7 +24,6 @@ const safe_regex		= require("safe-regex");
 const nodemailer		= require("nodemailer");
 const geoip_lite		= require("geoip-lite");
 const bodyParser		= require("body-parser");
-const compression		= require("compression");
 const http_request		= require("request");
 const pgNativeClient		= require("pg-native");
 
@@ -193,14 +192,6 @@ pg.connectSync (
 		}
 );
 
-/* --- preload negotiator's encoding module for gzip compression --- */
-
-const Negotiator = require("negotiator");
-const negotiator = new Negotiator();
-
-try		{ negotiator.encodings(); }
-catch(x)	{ /* ignore */ }
-
 /* --- express --- */
 
 const app = express();
@@ -223,7 +214,6 @@ app.use(
 	})
 );
 
-app.use(compression());
 app.use(bodyParser.raw({type:"*/*"}));
 
 app.use(parse_cert_header);
