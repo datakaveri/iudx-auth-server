@@ -79,6 +79,7 @@ CREATE TABLE consent.access (
 	provider_id		integer NOT NULL REFERENCES consent.users(id) 	ON DELETE CASCADE,
 	role_id			integer REFERENCES consent.role(id)		ON DELETE CASCADE,
 	policy_text		character varying				NOT NULL,
+	policy_json		jsonb						NOT NULL,
 	access_item_id		integer 						,
 	access_item_type	consent.access_item					,
 	created_at		timestamp without time zone			NOT NULL,

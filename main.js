@@ -3482,7 +3482,7 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 	const provider_email = res.locals.email;
 	let provider_uid, accesser_uid, access_item_id;
 	let rule, resource_name;
-	let rules_array = [];
+	let policy_json;
 
 	try { provider_uid = await check_privilege(provider_email, "provider"); }
 	catch(error) { return END_ERROR (res, 401, "Not allowed!"); }
@@ -3668,6 +3668,14 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 	}
 
 	try {
+		policy_json = parser.parse(rule);
+	}
+	catch(error)
+	{
+		return END_ERROR (res, 500, "Internal error!", error);
+	}
+
+	try {
 		if (! access_item_id)
 		{
 			const access_item = await pool.query (
@@ -3700,26 +3708,28 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 		{
 			access = await pool.query (
 				"INSERT into consent.access (provider_id, "		+
-				" role_id, policy_text, access_item_id, "		+
+				" role_id, policy_text, policy_json, access_item_id, "	+
 				" access_item_type, created_at, updated_at)"		+
-				" VALUES ($1::integer, $2::integer, "			+
-				" $3::text, $4::integer, $5::consent.access_item,"	+
+				" VALUES ($1::integer, $2::integer, $3::text,"		+
+				" $4::jsonb, $5::integer, $6::consent.access_item,"	+
 				" NOW(), NOW()) RETURNING id",
 				[
 					provider_uid,		//$1
 					role_id.rows[0].id,	//$2
 					rule,			//$3
-					access_item_id,		//$4
-					res_type,		//$5
+					policy_json,		//$4
+					access_item_id,		//$5
+					res_type,		//$6
 				]);
 		}
 		else
 		{
 			access = await pool.query (
 				"UPDATE consent.access SET policy_text = $1::text,"	+
-				" updated_at = NOW() WHERE access.id = $2::integer"	+
+				" policy_json = $2::jsonb, "				+
+				" updated_at = NOW() WHERE access.id = $3::integer"	+
 				" RETURNING id",
-				[ rule, consumer_acc_id ]);
+				[ rule, policy_json, consumer_acc_id ]);
 		}
 
 		/* add newly requested capabilities to table if consumer */
@@ -3744,29 +3754,43 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 
 	try {
 		const rules = await pool.query (
-			"SELECT policy_text FROM consent.access,"	+
-			" consent.role WHERE provider_id = $1::integer"	+
-			" AND role.id = access.role_id ORDER BY role",
+			"WITH cte AS (SELECT jsonb_agg(policy_json ORDER BY role)"	+
+			" AS acl FROM consent.access, consent.role WHERE" 		+
+			" provider_id = $1::integer AND access.role_id = role.id)" 	+
+			" UPDATE policy SET policy_in_json = cte.acl, last_updated"	+
+			" = NOW() FROM cte WHERE id = $2::text",
 			[
-				provider_uid
+				provider_uid,
+				provider_id_hash
 			]);
 
-		rules_array = rules.rows.map(
-				(row) => { return row.policy_text; });
+		if (rules.rowCount === 0)
+		{
+			const rules = await pool.query (
+				"WITH cte AS (SELECT jsonb_agg(policy_json ORDER BY role)"	+
+				" AS acl FROM consent.access, consent.role WHERE" 		+
+				" provider_id = $1::integer AND access.role_id = role.id)" 	+
+				" INSERT INTO policy (id, policy, policy_in_json, last_updated)"+
+				" SELECT $2::text, '', acl, NOW() FROM cte",
+				[
+					provider_uid,
+					provider_id_hash
+				]);
+		}
 	}
 	catch(error)
 	{
 		return END_ERROR (res, 500, "Internal error!", error);
 	}
 
-	set_acl(provider_email, rules_array, (err) =>
-	{
-		if (err)
-			return END_ERROR (res, err.http_code, err.message);
-		else
-			return END_SUCCESS (res);
-	});
+	const details = {
+		"provider"  : provider_email,
+		"policy"    : rule
+	};
 
+	log("info", "CREATED_POLICY", true, details);
+
+	return END_SUCCESS (res);
 });
 
 app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
@@ -4114,11 +4138,14 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 								resource_name,
 								existing_caps);
 
+					let policy_json = parser.parse(policy_text);
+
 					const access = await pool.query (
 						"UPDATE consent.access SET policy_text = $1::text,"	+
-						" updated_at = NOW() WHERE access.id = $2::integer"	+
+						" policy_json = $2::jsonb,"				+
+						" updated_at = NOW() WHERE access.id = $3::integer"	+
 						" RETURNING id",
-						[ policy_text, id ]);
+						[ policy_text, policy_json, id ]);
 				}
 			}
 			catch(error)
@@ -4130,26 +4157,22 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 
 	try {
 		const rules = await pool.query (
-			"SELECT policy_text FROM consent.access,"	+
-			" consent.role WHERE provider_id = $1::integer"	+
-			" AND role.id = access.role_id ORDER BY role",
-			[ provider_uid ]);
-
-		rules_array = rules.rows.map(
-				(row) => { return row.policy_text; });
+			"WITH cte AS (SELECT jsonb_agg(policy_json ORDER BY role)"	+
+			" AS acl FROM consent.access, consent.role WHERE" 		+
+			" provider_id = $1::integer AND access.role_id = role.id)" 	+
+			" UPDATE policy SET policy_in_json = cte.acl, last_updated"	+
+			" = NOW() FROM cte WHERE id = $2::text",
+			[
+				provider_uid,
+				provider_id_hash
+			]);
 	}
 	catch(error)
 	{
 		return END_ERROR (res, 500, "Internal error!", error);
 	}
 
-	set_acl(provider_email, rules_array, (err) =>
-	{
-		if (err)
-			return END_ERROR (res, err.http_code, err.message);
-		else
-			return END_SUCCESS (res);
-	});
+	return END_SUCCESS (res);
 });
 
 /* --- Auth Admin APIs --- */
