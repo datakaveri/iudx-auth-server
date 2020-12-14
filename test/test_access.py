@@ -4,12 +4,10 @@ from access import *
 from consent import role_reg
 import random
 import string
-
-init_provider()
+import pytest
 
 # use consumer certificate to register
 email   = "barun@iisc.ac.in"
-assert reset_role(email) == True
 org_id = add_organization("iisc.ac.in")
 
 ingester_id = 0 
@@ -17,13 +15,13 @@ consumer_id = 0
 onboarder_id = 0
 cat_id = ''
 
-# delete all old policies using acl/set API
-policy = "x can access x"
-r = untrusted.set_policy(policy)
-assert r['success'] is True
-
 # provider ID of abc.xyz@rbccps.org
 provider_id = 'rbccps.org/f3dad987e514af08a4ac46cf4a41bd1df645c8cc'
+
+@pytest.fixture(scope="session", autouse=True)
+def init():
+        init_provider("xyz.abc@rbccps.org")
+        assert reset_role(email) == True
 
 ##### consumer #####
 

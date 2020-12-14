@@ -98,6 +98,9 @@ CREATE TABLE consent.resourcegroup (
 	updated_at		timestamp without time zone				NOT NULL
 );
 
+CREATE INDEX idx_resourcegroup_provider_id ON consent.resourcegroup(provider_id);
+CREATE UNIQUE INDEX idx_resourcegroup_cat_id ON consent.resourcegroup(cat_id);
+
 CREATE TABLE consent.capability (
 
 	id			integer GENERATED ALWAYS AS IDENTITY		PRIMARY KEY,

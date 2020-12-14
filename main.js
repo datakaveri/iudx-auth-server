@@ -1562,6 +1562,21 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 	const request_array			= to_array(body.request);
 	const processed_request_array		= [];
 
+	const role_q = pg.querySync (
+
+		"SELECT role.id FROM consent.role,"		+
+		" consent.users WHERE user_id = users.id"	+
+		" AND email = $1::text AND status = 'approved'"	+
+		" AND role = ANY ('{consumer,onboarder,data ingester}'::consent.role_enum[])",
+		[
+			consumer_id,		// 1
+		]
+	);
+
+	const role_ids = role_q.map ((row) => row.id);
+	if (role_ids.length ===0)
+		return END_ERROR (res, 401, "Not allowed!");
+
 	if (! request_array || request_array.length < 1)
 	{
 		return END_ERROR (
@@ -1786,7 +1801,7 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 
 			return END_ERROR (res, 400, error_response);
 		}
-
+/*
 		if (can_access_regex)
 		{
 			let access_denied = true;
@@ -1812,7 +1827,7 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 				return END_ERROR (res, 403, error_response);
 			}
 		}
-
+*/
 		const split			= resource.split("/");
 
 		const email_domain		= split[0].toLowerCase();
@@ -1855,45 +1870,132 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 		// to be generated later
 		sha256_of_resource_server_token	[resource_server]	= true;
 
-		const rows = pg.querySync (
+		let provider_id, policy_in_json;
+		/* since only resource groups are there, we can check */
+		if (resource_server !== CAT_URL)
+		{
+			const rows = pg.querySync (
 
-			"SELECT policy,policy_in_json"	+
-			" FROM policy"			+
-			" WHERE id = $1::text"		+
-			" LIMIT 1",
-			[
-				provider_id_hash,	// 1
-			]
+				"SELECT id, provider_id FROM consent.resourcegroup "	+
+				" WHERE cat_id = $1::text",
+				[
+					resource_group,	// 1
+				]
+			);
+
+			if (rows.length === 0)
+			{
+				const error_response = {
+
+					"message"	:"Invalid 'id'; no access"	+
+					" control policies have been"	+
+					" set for this 'id'"		+
+					" by the data provider",
+
+					"invalid-input"	: xss_safe(resource)
+				};
+
+				return END_ERROR (res, 400, error_response);
+			}
+
+			provider_id = rows[0].provider_id;
+			let access_id = rows[0].id;
+
+			let i = 2;
+			let params = role_ids.map((_) => '$' + (++i)).join(',');
+			role_ids.unshift(provider_id, access_id);
+
+			const result = pg.querySync (
+
+				"SELECT json_agg(policy_json) FROM consent.access"+
+				" WHERE provider_id = $1::integer"		+
+				" AND access_item_id = $2::integer"		+
+				" AND access_item_type = 'resourcegroup'"	+
+				" AND role_id IN (" + params + ")",
+				role_ids
 		);
 
-		if (rows.length === 0)
-		{
-			const error_response = {
+		policy_in_json = result[0].json_agg;
 
-				"message"	:"Invalid 'id'; no access"	+
-						" control policies have been"	+
-						" set for this 'id'"		+
-						" by the data provider",
-
-				"invalid-input"	: xss_safe(resource)
-			};
-
-			return END_ERROR (res, 400, error_response);
 		}
+		else
+		{
+			const rows = pg.querySync (
 
+				"SELECT users.id, email"			+
+				" FROM consent.users, consent.organizations"	+
+				" WHERE organization_id = organizations.id"	+
+				" AND website = $1::text",
+				[
+					email_domain,	// 1
+				]
+			);
+
+			if (rows.length === 0)
+			{
+				const error_response = {
+
+					"message"	:"Invalid 'id'; no access"	+
+					" control policies have been"	+
+					" SET For this 'id'"		+
+					" by the data provider",
+
+					"invalid-input"	: xss_safe(resource)
+				};
+
+				return END_ERROR (res, 400, error_response);
+			}
+
+			for (const g of rows)
+			{
+				if (sha1_of_email === sha1(g.email))
+					provider_id = g.id;
+			}
+
+			if (provider_id === undefined)
+			{
+				const error_response = {
+
+					"message"	:"Invalid 'id'; no access"	+
+					" control policies have been"	+
+					" set for this 'id'"		+
+					" by the data provider",
+
+					"invalid-input"	: xss_safe(resource)
+				};
+
+				return END_ERROR (res, 400, error_response);
+			}
+
+			let i = 1;
+			let params = role_ids.map((_) => '$' + (++i)).join(',');
+			role_ids.unshift(provider_id);
+
+			const result = pg.querySync (
+
+				"SELECT json_agg(policy_json) FROM consent.access"+
+				" WHERE provider_id = $1::integer"		+
+				" AND access_item_type = 'catalogue'"		+
+				" AND role_id IN (" + params + ")",
+				role_ids
+			);
+
+			policy_in_json = result[0].json_agg;
+
+		}
+/*
 		const policy_lowercase = Buffer.from (
 						rows[0].policy, "base64"
 					)
 					.toString("ascii")
 					.toLowerCase();
 
-		const policy_in_json	= rows[0].policy_in_json;
-
+*/
 		// full name of resource eg: bangalore.domain.com/streetlight-1
 		context.resource = resource_server + "/" + resource_name;
 
 		context.conditions.groups = "";
-
+/*
 		if (policy_lowercase.search(" consumer-in-group") >= 0)
 		{
 			const rows = pg.querySync (
@@ -1939,9 +2041,9 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 				rows[0].count, 10
 			);
 		}
-
+*/
 		let CTX = context;
-
+/*
 		if (r.body && policy_lowercase.search(" body.") >= 0)
 		{
 			// deep copy
@@ -1950,7 +2052,7 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 			for (const key in r.body)
 				CTX.conditions["body." + key] = r.body[key];
 		}
-
+*/
 		for (const api of r.apis)
 		{
 			if (typeof api !== "string")
@@ -3694,7 +3796,8 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 		const role_id = await pool.query (
 			"SELECT id from consent.role WHERE"	+
 			" user_id = $1::integer "		+
-			" AND role = $2::consent.role_enum",
+			" AND role = $2::consent.role_enum"	+
+			" AND status = 'approved'",
 			[
 				accesser_uid,		//$1
 				accesser_role		//$2
@@ -3745,37 +3848,6 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 					" ($1::integer, $2::consent.capability_enum)",
 					[ access_id, cap ]);
 			}
-		}
-	}
-	catch(error)
-	{
-		return END_ERROR (res, 500, "Internal error!", error);
-	}
-
-	try {
-		const rules = await pool.query (
-			"WITH cte AS (SELECT jsonb_agg(policy_json ORDER BY role)"	+
-			" AS acl FROM consent.access, consent.role WHERE" 		+
-			" provider_id = $1::integer AND access.role_id = role.id)" 	+
-			" UPDATE policy SET policy_in_json = cte.acl, last_updated"	+
-			" = NOW() FROM cte WHERE id = $2::text",
-			[
-				provider_uid,
-				provider_id_hash
-			]);
-
-		if (rules.rowCount === 0)
-		{
-			const rules = await pool.query (
-				"WITH cte AS (SELECT jsonb_agg(policy_json ORDER BY role)"	+
-				" AS acl FROM consent.access, consent.role WHERE" 		+
-				" provider_id = $1::integer AND access.role_id = role.id)" 	+
-				" INSERT INTO policy (id, policy, policy_in_json, last_updated)"+
-				" SELECT $2::text, '', acl, NOW() FROM cte",
-				[
-					provider_uid,
-					provider_id_hash
-				]);
 		}
 	}
 	catch(error)
@@ -3895,7 +3967,7 @@ app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
 			};
 
 		result.push(response);
-	};
+	}
 
 	return END_SUCCESS (res, result);
 });
@@ -4153,23 +4225,6 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 				return END_ERROR (res, 500, "Internal error!", error);
 			}
 		}
-	}
-
-	try {
-		const rules = await pool.query (
-			"WITH cte AS (SELECT jsonb_agg(policy_json ORDER BY role)"	+
-			" AS acl FROM consent.access, consent.role WHERE" 		+
-			" provider_id = $1::integer AND access.role_id = role.id)" 	+
-			" UPDATE policy SET policy_in_json = cte.acl, last_updated"	+
-			" = NOW() FROM cte WHERE id = $2::text",
-			[
-				provider_uid,
-				provider_id_hash
-			]);
-	}
-	catch(error)
-	{
-		return END_ERROR (res, 500, "Internal error!", error);
 	}
 
 	return END_SUCCESS (res);
