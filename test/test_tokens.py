@@ -311,7 +311,7 @@ def test_token_api():
         expect_failure(False)
 
         assert r['success']     is False
-        assert r['status_code'] == 400
+        assert r['status_code'] == 403
 
         # new api tests
 

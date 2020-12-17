@@ -10,7 +10,7 @@ from init import resource_server
 
 from init import expect_failure
 
-from init import restricted_consumer
+from init import consumer
 
 # for registration and resetting roles
 from access import *
@@ -223,7 +223,7 @@ body = [
 ]
 
 expect_failure(True)
-r = restricted_consumer.get_token(body)
+r = consumer.get_token(body)
 expect_failure(False)
 
 assert r['success']     is False
@@ -243,7 +243,7 @@ body = [
 ]
 
 expect_failure(True)
-r = restricted_consumer.get_token(body)
+r = consumer.get_token(body)
 expect_failure(False)
 
 assert r['success']     is False
@@ -260,7 +260,7 @@ body = [
         }
 ]
 
-r = restricted_consumer.get_token(body)
+r = consumer.get_token(body)
 access_token = r['response']
 
 assert r['success']     is True
@@ -279,11 +279,11 @@ body = [
 ]
 
 expect_failure(True)
-r = restricted_consumer.get_token(body)
+r = consumer.get_token(body)
 expect_failure(False)
 
 assert r['success']     is False
-assert r['status_code'] == 400
+assert r['status_code'] == 403
 
 # new api tests
 

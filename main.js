@@ -1548,7 +1548,7 @@ function sign_csr(raw_csr, user)
 
 /* --- Auth APIs --- */
 
-app.post("/auth/v[1-2]/token", (req, res) => {
+app.post("/auth/v[1-2]/token", async (req, res) => {
 
 	const cert				= res.locals.cert;
 	const cert_class			= res.locals.cert_class;
@@ -1562,20 +1562,28 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 	const request_array			= to_array(body.request);
 	const processed_request_array		= [];
 
-	const role_q = pg.querySync (
+	let role_ids = [];
 
-		"SELECT role.id FROM consent.role,"		+
-		" consent.users WHERE user_id = users.id"	+
-		" AND email = $1::text AND status = 'approved'"	+
-		" AND role = ANY ('{consumer,onboarder,data ingester}'::consent.role_enum[])",
-		[
-			consumer_id,		// 1
-		]
-	);
+	try {
+		const result = await pool.query (
+			"SELECT role.id FROM consent.role,"		+
+			" consent.users WHERE user_id = users.id"	+
+			" AND email = $1::text AND status = 'approved'"	+
+			" AND role = ANY ($2::consent.role_enum[])",
+			[
+				consumer_id,					// 1
+				['consumer', 'onboarder', 'data ingester']	// 2
+			]);
 
-	const role_ids = role_q.map ((row) => row.id);
-	if (role_ids.length ===0)
-		return END_ERROR (res, 401, "Not allowed!");
+		if (result.rowCount === 0)
+			return END_ERROR (res, 401, "Not allowed!");
+
+		role_ids = result.rows.map ((row) => row.id);
+	}
+	catch(error)
+	{
+		return END_ERROR (res, 500, "Internal error!", error);
+	}
 
 	if (! request_array || request_array.length < 1)
 	{
@@ -1607,29 +1615,32 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 		}
 	}
 
-	const rows = pg.querySync (
-
-		"SELECT COUNT(*)/60.0"		+
-		" AS rate"			+
-		" FROM token"			+
-		" WHERE id = $1::text"		+
-		" AND issued_at >= (NOW() - interval '60 seconds')",
-		[
-			consumer_id,		// 1
-		]
-	);
-
-	// in last 1 minute
-	const tokens_rate_per_second = parseFloat (rows[0].rate);
-
-	if (tokens_rate_per_second > 1) // tokens per second
-	{
-		log ("err", "HIGH_TOKEN_RATE", true, {},
-			"Too many requests from user : " + consumer_id +
-			", from ip : " + String (req.ip)
+	try {
+		const result = await pool.query (
+			"SELECT COUNT(*)/60.0"		+
+			" AS rate"			+
+			" FROM token"			+
+			" WHERE id = $1::text"		+
+			" AND issued_at >= (NOW() - interval '60 seconds')",
+			[ consumer_id ]
 		);
 
-		return END_ERROR (res, 429, "Too many requests");
+		// in last 1 minute
+		const tokens_rate_per_second = parseFloat (result.rows[0].rate);
+
+		if (tokens_rate_per_second > 1) // tokens per second
+		{
+			log ("err", "HIGH_TOKEN_RATE", true, {},
+				"Too many requests from user : " + consumer_id +
+				", from ip : " + String (req.ip)
+			);
+
+			return END_ERROR (res, 429, "Too many requests");
+		}
+	}
+	catch(error)
+	{
+		return END_ERROR (res, 500, "Internal error!", error);
 	}
 
 	const ip	= req.ip;
@@ -1684,8 +1695,6 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 	const providers			= {};
 
 	let num_rules_passed		= 0;
-
-	const can_access_regex = res.locals.can_access_regex;
 
 	for (let r of request_array)
 	{
@@ -1801,33 +1810,7 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 
 			return END_ERROR (res, 400, error_response);
 		}
-/*
-		if (can_access_regex)
-		{
-			let access_denied = true;
 
-			for (const regex of can_access_regex)
-			{
-				if (resource.match(regex))
-				{
-					access_denied = false;
-					break;
-				}
-			}
-
-			if (access_denied)
-			{
-				const error_response = {
-					"message"	: "Your certificate does not allow access to this 'id'",
-					"invalid-input"	: {
-						"id"	: xss_safe(resource),
-					}
-				};
-
-				return END_ERROR (res, 403, error_response);
-			}
-		}
-*/
 		const split			= resource.split("/");
 
 		const email_domain		= split[0].toLowerCase();
@@ -1870,93 +1853,105 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 		// to be generated later
 		sha256_of_resource_server_token	[resource_server]	= true;
 
-		let provider_id, policy_in_json;
+		let provider_id, policy_in_json, access_id;
+
 		/* since only resource groups are there, we can check */
 		if (resource_server !== CAT_URL)
 		{
-			const rows = pg.querySync (
+			try {
+				const result = await pool.query (
+					"SELECT id, provider_id FROM consent.resourcegroup "	+
+					" WHERE cat_id = $1::text",
+					[ resource_group ]);
 
-				"SELECT id, provider_id FROM consent.resourcegroup "	+
-				" WHERE cat_id = $1::text",
-				[
-					resource_group,	// 1
-				]
-			);
+				if (result.rowCount === 0)
+					throw new Error("Invalid ID");
 
-			if (rows.length === 0)
-			{
-				const error_response = {
-
-					"message"	:"Invalid 'id'; no access"	+
-					" control policies have been"	+
-					" set for this 'id'"		+
-					" by the data provider",
-
-					"invalid-input"	: xss_safe(resource)
-				};
-
-				return END_ERROR (res, 400, error_response);
+				provider_id 	= result.rows[0].provider_id;
+				access_id 	= result.rows[0].id;
 			}
+			catch (error)
+			{
+				if (error.message === "Invalid ID")
+				{
+					const error_response = {
 
-			provider_id = rows[0].provider_id;
-			let access_id = rows[0].id;
+						"message":"Invalid 'id'; no access"	+
+						" control policies have been"	+
+						" set for this 'id'"		+
+						" by the data provider",
 
-			let i = 2;
-			let params = role_ids.map((_) => '$' + (++i)).join(',');
-			role_ids.unshift(provider_id, access_id);
+						"invalid-input"	: xss_safe(resource)
+					};
 
-			const result = pg.querySync (
-
-				"SELECT json_agg(policy_json) FROM consent.access"+
-				" WHERE provider_id = $1::integer"		+
-				" AND access_item_id = $2::integer"		+
-				" AND access_item_type = 'resourcegroup'"	+
-				" AND role_id IN (" + params + ")",
-				role_ids
-		);
-
-		policy_in_json = result[0].json_agg;
-
+					return END_ERROR (res, 403, error_response);
+				}
+				else 
+					return END_ERROR (res, 500,"Internal error!", error);
+			}
 		}
 		else
 		{
-			const rows = pg.querySync (
+			access_id = -1;
 
-				"SELECT users.id, email"			+
-				" FROM consent.users, consent.organizations"	+
-				" WHERE organization_id = organizations.id"	+
-				" AND website = $1::text",
+			try {
+				const result = await pool.query (
+					"SELECT users.id, email"			+
+					" FROM consent.users, consent.organizations"	+
+					" WHERE organization_id = organizations.id"	+
+					" AND website = $1::text",
+					[ email_domain ]);
+
+				if (result.rowCount === 0)
+					throw new Error("Invalid ID");
+
+				for (const g of result.rows)
+					if (sha1_of_email === sha1(g.email))
+						provider_id = g.id;
+
+				if (provider_id === undefined)
+					throw new Error("Invalid ID");
+			}
+			catch (error)
+			{
+				if (error.message === "Invalid ID")
+				{
+					const error_response = {
+
+						"message":"Invalid 'id'; no access"	+
+						" control policies have been"	+
+						" set for this 'id'"		+
+						" by the data provider",
+
+						"invalid-input"	: xss_safe(resource)
+					};
+
+					return END_ERROR (res, 403, error_response);
+				}
+
+				else 
+					return END_ERROR (res, 500,"Internal error!", error);
+			}
+		}
+
+		try {
+			const result = await pool.query (
+				"SELECT policy_json FROM consent.access"	+
+				" WHERE provider_id = $1::integer"		+
+				" AND access_item_id = $2::integer"		+
+				" AND access_item_type = $3::consent.access_item"		+
+				" AND role_id = ANY ($4::integer[])",
 				[
-					email_domain,	// 1
-				]
-			);
+					provider_id,
+					access_id,
+					access_id === -1 ? "catalogue" : "resourcegroup",
+					role_ids
+				]);
 
-			if (rows.length === 0)
+			if (result.rowCount === 0)
 			{
 				const error_response = {
-
-					"message"	:"Invalid 'id'; no access"	+
-					" control policies have been"	+
-					" SET For this 'id'"		+
-					" by the data provider",
-
-					"invalid-input"	: xss_safe(resource)
-				};
-
-				return END_ERROR (res, 400, error_response);
-			}
-
-			for (const g of rows)
-			{
-				if (sha1_of_email === sha1(g.email))
-					provider_id = g.id;
-			}
-
-			if (provider_id === undefined)
-			{
-				const error_response = {
-
-					"message"	:"Invalid 'id'; no access"	+
+					"message":"Invalid 'id'; no access"	+
 					" control policies have been"	+
 					" set for this 'id'"		+
 					" by the data provider",
@@ -1964,95 +1959,21 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 					"invalid-input"	: xss_safe(resource)
 				};
 
-				return END_ERROR (res, 400, error_response);
+				return END_ERROR (res, 403, error_response);
 			}
 
-			let i = 1;
-			let params = role_ids.map((_) => '$' + (++i)).join(',');
-			role_ids.unshift(provider_id);
-
-			const result = pg.querySync (
-
-				"SELECT json_agg(policy_json) FROM consent.access"+
-				" WHERE provider_id = $1::integer"		+
-				" AND access_item_type = 'catalogue'"		+
-				" AND role_id IN (" + params + ")",
-				role_ids
-			);
-
-			policy_in_json = result[0].json_agg;
-
+			policy_in_json = result.rows[0].policy_json;
 		}
-/*
-		const policy_lowercase = Buffer.from (
-						rows[0].policy, "base64"
-					)
-					.toString("ascii")
-					.toLowerCase();
+		catch (error)
+		{
+			return END_ERROR (res, 500,"Internal error!", error);
+		}
 
-*/
 		// full name of resource eg: bangalore.domain.com/streetlight-1
 		context.resource = resource_server + "/" + resource_name;
 
-		context.conditions.groups = "";
-/*
-		if (policy_lowercase.search(" consumer-in-group") >= 0)
-		{
-			const rows = pg.querySync (
-
-				"SELECT DISTINCT group_name"	+
-				" FROM groups"			+
-				" WHERE id = $1::text"		+
-				" AND consumer = $2::text"	+
-				" AND valid_till > NOW()",
-				[
-					provider_id_hash,	// 1
-					consumer_id		// 2
-				]
-			);
-
-			const group_array = [];
-			for (const g of rows)
-				group_array.push(g.group_name);
-
-			context.conditions.groups = group_array.join();
-		}
-
-		context.conditions.tokens_per_day = 0;
-
-		if (policy_lowercase.search(" tokens_per_day ") >= 0)
-		{
-			const resource_true = {};
-				resource_true [resource] = true;
-
-			const rows = pg.querySync (
-
-				"SELECT COUNT(*) FROM token"		+
-				" WHERE id = $1::text"			+
-				" AND resource_ids @> $2::jsonb"	+
-				" AND issued_at >= DATE_TRUNC('day',NOW())",
-				[
-					consumer_id,			// 1
-					JSON.stringify(resource_true),	// 2
-				]
-			);
-
-			context.conditions.tokens_per_day = parseInt (
-				rows[0].count, 10
-			);
-		}
-*/
 		let CTX = context;
-/*
-		if (r.body && policy_lowercase.search(" body.") >= 0)
-		{
-			// deep copy
-			CTX = JSON.parse(JSON.stringify(context));
 
-			for (const key in r.body)
-				CTX.conditions["body." + key] = r.body[key];
-		}
-*/
 		for (const api of r.apis)
 		{
 			if (typeof api !== "string")
@@ -2249,19 +2170,20 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 		req.headers.origin,				// 12
 	];
 
-	pool.query (query, params, (error,results) =>
+	try {
+		const result = await pool.query (query, params);
+
+		if (result.rowCount === 0)
+			throw new Error("Error in insertion");
+	}
+	catch (error)
 	{
-		if (error || results.rowCount === 0)
-		{
-			return END_ERROR (
-				res, 500,
-				"Internal error!", error
-			);
-		}
+		return END_ERROR (res, 500, "Internal error!", error);
+	}
 
-		const expiry_date = new Date(Date.now() + (token_time * 1000));
+	const expiry_date = new Date(Date.now() + (token_time * 1000));
 
-		const details =
+	const details =
 		{
 			"requester"        : consumer_id,
 			"requesterRole"    : cert_class,
@@ -2269,10 +2191,9 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 			"resource_ids"     : processed_request_array
 		};
 
-		log("info", "ISSUED_TOKEN", true, details);
+	log("info", "ISSUED_TOKEN", true, details);
 
-		return END_SUCCESS (res,response);
-	});
+	return END_SUCCESS (res,response);
 });
 
 app.post("/auth/v[1-2]/token/introspect", (req, res) => {
