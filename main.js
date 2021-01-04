@@ -24,7 +24,6 @@ const safe_regex		= require("safe-regex");
 const nodemailer		= require("nodemailer");
 const geoip_lite		= require("geoip-lite");
 const bodyParser		= require("body-parser");
-const compression		= require("compression");
 const http_request		= require("request");
 const pgNativeClient		= require("pg-native");
 
@@ -193,14 +192,6 @@ pg.connectSync (
 		}
 );
 
-/* --- preload negotiator's encoding module for gzip compression --- */
-
-const Negotiator = require("negotiator");
-const negotiator = new Negotiator();
-
-try		{ negotiator.encodings(); }
-catch(x)	{ /* ignore */ }
-
 /* --- express --- */
 
 const app = express();
@@ -223,7 +214,6 @@ app.use(
 	})
 );
 
-app.use(compression());
 app.use(bodyParser.raw({type:"*/*"}));
 
 app.use(parse_cert_header);
@@ -1558,7 +1548,7 @@ function sign_csr(raw_csr, user)
 
 /* --- Auth APIs --- */
 
-app.post("/auth/v[1-2]/token", (req, res) => {
+app.post("/auth/v[1-2]/token", async (req, res) => {
 
 	const cert				= res.locals.cert;
 	const cert_class			= res.locals.cert_class;
@@ -1571,6 +1561,29 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 
 	const request_array			= to_array(body.request);
 	const processed_request_array		= [];
+
+	let role_ids = [];
+
+	try {
+		const result = await pool.query (
+			"SELECT role.id FROM consent.role,"		+
+			" consent.users WHERE user_id = users.id"	+
+			" AND email = $1::text AND status = 'approved'"	+
+			" AND role = ANY ($2::consent.role_enum[])",
+			[
+				consumer_id,					// 1
+				['consumer', 'onboarder', 'data ingester']	// 2
+			]);
+
+		if (result.rowCount === 0)
+			return END_ERROR (res, 401, "Not allowed!");
+
+		role_ids = result.rows.map ((row) => row.id);
+	}
+	catch(error)
+	{
+		return END_ERROR (res, 500, "Internal error!", error);
+	}
 
 	if (! request_array || request_array.length < 1)
 	{
@@ -1602,29 +1615,32 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 		}
 	}
 
-	const rows = pg.querySync (
-
-		"SELECT COUNT(*)/60.0"		+
-		" AS rate"			+
-		" FROM token"			+
-		" WHERE id = $1::text"		+
-		" AND issued_at >= (NOW() - interval '60 seconds')",
-		[
-			consumer_id,		// 1
-		]
-	);
-
-	// in last 1 minute
-	const tokens_rate_per_second = parseFloat (rows[0].rate);
-
-	if (tokens_rate_per_second > 1) // tokens per second
-	{
-		log ("err", "HIGH_TOKEN_RATE", true, {},
-			"Too many requests from user : " + consumer_id +
-			", from ip : " + String (req.ip)
+	try {
+		const result = await pool.query (
+			"SELECT COUNT(*)/60.0"		+
+			" AS rate"			+
+			" FROM token"			+
+			" WHERE id = $1::text"		+
+			" AND issued_at >= (NOW() - interval '60 seconds')",
+			[ consumer_id ]
 		);
 
-		return END_ERROR (res, 429, "Too many requests");
+		// in last 1 minute
+		const tokens_rate_per_second = parseFloat (result.rows[0].rate);
+
+		if (tokens_rate_per_second > 1) // tokens per second
+		{
+			log ("err", "HIGH_TOKEN_RATE", true, {},
+				"Too many requests from user : " + consumer_id +
+				", from ip : " + String (req.ip)
+			);
+
+			return END_ERROR (res, 429, "Too many requests");
+		}
+	}
+	catch(error)
+	{
+		return END_ERROR (res, 500, "Internal error!", error);
 	}
 
 	const ip	= req.ip;
@@ -1679,8 +1695,6 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 	const providers			= {};
 
 	let num_rules_passed		= 0;
-
-	const can_access_regex = res.locals.can_access_regex;
 
 	for (let r of request_array)
 	{
@@ -1797,32 +1811,6 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 			return END_ERROR (res, 400, error_response);
 		}
 
-		if (can_access_regex)
-		{
-			let access_denied = true;
-
-			for (const regex of can_access_regex)
-			{
-				if (resource.match(regex))
-				{
-					access_denied = false;
-					break;
-				}
-			}
-
-			if (access_denied)
-			{
-				const error_response = {
-					"message"	: "Your certificate does not allow access to this 'id'",
-					"invalid-input"	: {
-						"id"	: xss_safe(resource),
-					}
-				};
-
-				return END_ERROR (res, 403, error_response);
-			}
-		}
-
 		const split			= resource.split("/");
 
 		const email_domain		= split[0].toLowerCase();
@@ -1865,101 +1853,126 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 		// to be generated later
 		sha256_of_resource_server_token	[resource_server]	= true;
 
-		const rows = pg.querySync (
+		let provider_id, policy_in_json, access_id;
 
-			"SELECT policy,policy_in_json"	+
-			" FROM policy"			+
-			" WHERE id = $1::text"		+
-			" LIMIT 1",
-			[
-				provider_id_hash,	// 1
-			]
-		);
-
-		if (rows.length === 0)
+		/* since only resource groups are there, we can check */
+		if (resource_server !== CAT_URL)
 		{
-			const error_response = {
+			try {
+				const result = await pool.query (
+					"SELECT id, provider_id FROM consent.resourcegroup "	+
+					" WHERE cat_id = $1::text",
+					[ resource_group ]);
 
-				"message"	:"Invalid 'id'; no access"	+
+				if (result.rowCount === 0)
+					throw new Error("Invalid ID");
+
+				provider_id 	= result.rows[0].provider_id;
+				access_id 	= result.rows[0].id;
+			}
+			catch (error)
+			{
+				if (error.message === "Invalid ID")
+				{
+					const error_response = {
+
+						"message":"Invalid 'id'; no access"	+
 						" control policies have been"	+
 						" set for this 'id'"		+
 						" by the data provider",
 
-				"invalid-input"	: xss_safe(resource)
-			};
+						"invalid-input"	: xss_safe(resource)
+					};
 
-			return END_ERROR (res, 400, error_response);
+					return END_ERROR (res, 403, error_response);
+				}
+				else 
+					return END_ERROR (res, 500,"Internal error!", error);
+			}
+		}
+		else
+		{
+			access_id = -1;
+
+			try {
+				const result = await pool.query (
+					"SELECT users.id, email"			+
+					" FROM consent.users, consent.organizations"	+
+					" WHERE organization_id = organizations.id"	+
+					" AND website = $1::text",
+					[ email_domain ]);
+
+				if (result.rowCount === 0)
+					throw new Error("Invalid ID");
+
+				for (const g of result.rows)
+					if (sha1_of_email === sha1(g.email))
+						provider_id = g.id;
+
+				if (provider_id === undefined)
+					throw new Error("Invalid ID");
+			}
+			catch (error)
+			{
+				if (error.message === "Invalid ID")
+				{
+					const error_response = {
+
+						"message":"Invalid 'id'; no access"	+
+						" control policies have been"	+
+						" set for this 'id'"		+
+						" by the data provider",
+
+						"invalid-input"	: xss_safe(resource)
+					};
+
+					return END_ERROR (res, 403, error_response);
+				}
+
+				else 
+					return END_ERROR (res, 500,"Internal error!", error);
+			}
 		}
 
-		const policy_lowercase = Buffer.from (
-						rows[0].policy, "base64"
-					)
-					.toString("ascii")
-					.toLowerCase();
+		try {
+			const result = await pool.query (
+				"SELECT policy_json FROM consent.access"	+
+				" WHERE provider_id = $1::integer"		+
+				" AND access_item_id = $2::integer"		+
+				" AND access_item_type = $3::consent.access_item"		+
+				" AND role_id = ANY ($4::integer[])",
+				[
+					provider_id,
+					access_id,
+					access_id === -1 ? "catalogue" : "resourcegroup",
+					role_ids
+				]);
 
-		const policy_in_json	= rows[0].policy_in_json;
+			if (result.rowCount === 0)
+			{
+				const error_response = {
+					"message":"Invalid 'id'; no access"	+
+					" control policies have been"	+
+					" set for this 'id'"		+
+					" by the data provider",
+
+					"invalid-input"	: xss_safe(resource)
+				};
+
+				return END_ERROR (res, 403, error_response);
+			}
+
+			policy_in_json = result.rows[0].policy_json;
+		}
+		catch (error)
+		{
+			return END_ERROR (res, 500,"Internal error!", error);
+		}
 
 		// full name of resource eg: bangalore.domain.com/streetlight-1
 		context.resource = resource_server + "/" + resource_name;
 
-		context.conditions.groups = "";
-
-		if (policy_lowercase.search(" consumer-in-group") >= 0)
-		{
-			const rows = pg.querySync (
-
-				"SELECT DISTINCT group_name"	+
-				" FROM groups"			+
-				" WHERE id = $1::text"		+
-				" AND consumer = $2::text"	+
-				" AND valid_till > NOW()",
-				[
-					provider_id_hash,	// 1
-					consumer_id		// 2
-				]
-			);
-
-			const group_array = [];
-			for (const g of rows)
-				group_array.push(g.group_name);
-
-			context.conditions.groups = group_array.join();
-		}
-
-		context.conditions.tokens_per_day = 0;
-
-		if (policy_lowercase.search(" tokens_per_day ") >= 0)
-		{
-			const resource_true = {};
-				resource_true [resource] = true;
-
-			const rows = pg.querySync (
-
-				"SELECT COUNT(*) FROM token"		+
-				" WHERE id = $1::text"			+
-				" AND resource_ids @> $2::jsonb"	+
-				" AND issued_at >= DATE_TRUNC('day',NOW())",
-				[
-					consumer_id,			// 1
-					JSON.stringify(resource_true),	// 2
-				]
-			);
-
-			context.conditions.tokens_per_day = parseInt (
-				rows[0].count, 10
-			);
-		}
-
 		let CTX = context;
-
-		if (r.body && policy_lowercase.search(" body.") >= 0)
-		{
-			// deep copy
-			CTX = JSON.parse(JSON.stringify(context));
-
-			for (const key in r.body)
-				CTX.conditions["body." + key] = r.body[key];
-		}
 
 		for (const api of r.apis)
 		{
@@ -2157,19 +2170,20 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 		req.headers.origin,				// 12
 	];
 
-	pool.query (query, params, (error,results) =>
+	try {
+		const result = await pool.query (query, params);
+
+		if (result.rowCount === 0)
+			throw new Error("Error in insertion");
+	}
+	catch (error)
 	{
-		if (error || results.rowCount === 0)
-		{
-			return END_ERROR (
-				res, 500,
-				"Internal error!", error
-			);
-		}
+		return END_ERROR (res, 500, "Internal error!", error);
+	}
 
-		const expiry_date = new Date(Date.now() + (token_time * 1000));
+	const expiry_date = new Date(Date.now() + (token_time * 1000));
 
-		const details =
+	const details =
 		{
 			"requester"        : consumer_id,
 			"requesterRole"    : cert_class,
@@ -2177,10 +2191,9 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 			"resource_ids"     : processed_request_array
 		};
 
-		log("info", "ISSUED_TOKEN", true, details);
+	log("info", "ISSUED_TOKEN", true, details);
 
-		return END_SUCCESS (res,response);
-	});
+	return END_SUCCESS (res,response);
 });
 
 app.post("/auth/v[1-2]/token/introspect", (req, res) => {
@@ -3492,7 +3505,7 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 	const provider_email = res.locals.email;
 	let provider_uid, accesser_uid, access_item_id;
 	let rule, resource_name;
-	let rules_array = [];
+	let policy_json;
 
 	try { provider_uid = await check_privilege(provider_email, "provider"); }
 	catch(error) { return END_ERROR (res, 401, "Not allowed!"); }
@@ -3678,6 +3691,14 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 	}
 
 	try {
+		policy_json = parser.parse(rule);
+	}
+	catch(error)
+	{
+		return END_ERROR (res, 500, "Internal error!", error);
+	}
+
+	try {
 		if (! access_item_id)
 		{
 			const access_item = await pool.query (
@@ -3696,7 +3717,8 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 		const role_id = await pool.query (
 			"SELECT id from consent.role WHERE"	+
 			" user_id = $1::integer "		+
-			" AND role = $2::consent.role_enum",
+			" AND role = $2::consent.role_enum"	+
+			" AND status = 'approved'",
 			[
 				accesser_uid,		//$1
 				accesser_role		//$2
@@ -3710,26 +3732,28 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 		{
 			access = await pool.query (
 				"INSERT into consent.access (provider_id, "		+
-				" role_id, policy_text, access_item_id, "		+
+				" role_id, policy_text, policy_json, access_item_id, "	+
 				" access_item_type, created_at, updated_at)"		+
-				" VALUES ($1::integer, $2::integer, "			+
-				" $3::text, $4::integer, $5::consent.access_item,"	+
+				" VALUES ($1::integer, $2::integer, $3::text,"		+
+				" $4::jsonb, $5::integer, $6::consent.access_item,"	+
 				" NOW(), NOW()) RETURNING id",
 				[
 					provider_uid,		//$1
 					role_id.rows[0].id,	//$2
 					rule,			//$3
-					access_item_id,		//$4
-					res_type,		//$5
+					policy_json,		//$4
+					access_item_id,		//$5
+					res_type,		//$6
 				]);
 		}
 		else
 		{
 			access = await pool.query (
 				"UPDATE consent.access SET policy_text = $1::text,"	+
-				" updated_at = NOW() WHERE access.id = $2::integer"	+
+				" policy_json = $2::jsonb, "				+
+				" updated_at = NOW() WHERE access.id = $3::integer"	+
 				" RETURNING id",
-				[ rule, consumer_acc_id ]);
+				[ rule, policy_json, consumer_acc_id ]);
 		}
 
 		/* add newly requested capabilities to table if consumer */
@@ -3752,39 +3776,24 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 		return END_ERROR (res, 500, "Internal error!", error);
 	}
 
-	try {
-		const rules = await pool.query (
-			"SELECT policy_text FROM consent.access,"	+
-			" consent.role WHERE provider_id = $1::integer"	+
-			" AND role.id = access.role_id ORDER BY role",
-			[
-				provider_uid
-			]);
+	const details = {
+		"provider"  : provider_email,
+		"policy"    : rule
+	};
 
-		rules_array = rules.rows.map(
-				(row) => { return row.policy_text; });
-	}
-	catch(error)
-	{
-		return END_ERROR (res, 500, "Internal error!", error);
-	}
+	log("info", "CREATED_POLICY", true, details);
 
-	set_acl(provider_email, rules_array, (err) =>
-	{
-		if (err)
-			return END_ERROR (res, err.http_code, err.message);
-		else
-			return END_SUCCESS (res);
-	});
-
+	return END_SUCCESS (res);
 });
 
 app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
 
 	const email = res.locals.email;
 	let provider_uid, rules;
-	var item_details = [];
-	var cap_details	 = {};
+	let item_details = {};
+	let cap_details	 = {};
+	let access_item_ids = {};
+	let accessid_arr = [];
 
 	try { provider_uid = await check_privilege(email, "provider"); }
 	catch(error) { return END_ERROR (res, 401, "Not allowed"); }
@@ -3807,30 +3816,35 @@ app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
 		return END_ERROR (res, 500, "Internal error!", error);
 	}
 
-	const accessid_arr = rules.map((obj) => obj.id);
-	const access_items = [...new Set(rules.map((obj) => obj.access_item_type ))];
+	for (let obj of rules) {
+		if (! access_item_ids[obj.access_item_type])
+			access_item_ids[obj.access_item_type] = [];
 
-	for (const item of access_items)
+		access_item_ids[obj.access_item_type].push(obj.access_item_id);
+		accessid_arr.push(obj.id);
+	}
+
+	for (const item of Object.keys(access_item_ids))
 	{
+		item_details[item] = {};
+
 		if (item === "catalogue") continue;
 
 		try {
 			const result = await pool.query (
-				"SELECT * FROM consent." + item + " as type, "	+
-				" consent.access"	+
-				" WHERE access_item_type = '" + item +"'"	+
-				" AND access_item_id = type.id"	+
-				" AND access.provider_id = $1::integer",
-				[ provider_uid ]);
+				"SELECT id, cat_id FROM consent." + item +
+				" WHERE id = ANY($1::integer[])",
+				[ access_item_ids[item] ]);
 
-			item_details = [...item_details, ...result.rows];
-
+			for (let val of result.rows)
+			{
+				item_details[item][val.id] = val.cat_id;
+			}
 		}
 		catch(error)
 		{
 			return END_ERROR (res, 500, "Internal error!", error);
 		}
-
 	}
 
 	/* get capability details for each access ID */
@@ -3841,24 +3855,22 @@ app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
 			" WHERE access_id = ANY($1::integer[])",
 			[ accessid_arr ]);
 
-		result.rows.map ( row => {
+		for (let row of result.rows) {
 			if (! cap_details[row.access_id])
 				cap_details[row.access_id] = [];
 
 			cap_details[row.access_id].push(row.capability);
-		});
+		}
 	}
 	catch(error)
 	{
 		return END_ERROR (res, 500, "Internal error!", error);
 	}
 
-	const result = rules.map (rule => {
+	let result = [];
 
-		const filter_item = item_details.filter (item =>
-			item.access_item_type === rule.access_item_type &&
-				item.access_item_id === rule.access_item_id)[0] || null;
-
+	for (let rule of rules) 
+	{
 		let response =  {
 			id		: rule.id,
 			email		: rule.email,
@@ -3870,15 +3882,13 @@ app.get("/auth/v[1-2]/provider/access",  async (req, res) => {
 			capabilities	: cap_details[rule.id] || null
 		};
 
-		if (filter_item !== null)
-		{
+		if (rule.access_item_id !== -1)
 			response.item = {
-				cat_id : filter_item.cat_id
+				cat_id : item_details[rule.access_item_type][rule.access_item_id]
 			};
-		}
 
-		return response;
-	});
+		result.push(response);
+	}
 
 	return END_SUCCESS (res, result);
 });
@@ -4121,11 +4131,14 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 								resource_name,
 								existing_caps);
 
+					let policy_json = parser.parse(policy_text);
+
 					const access = await pool.query (
 						"UPDATE consent.access SET policy_text = $1::text,"	+
-						" updated_at = NOW() WHERE access.id = $2::integer"	+
+						" policy_json = $2::jsonb,"				+
+						" updated_at = NOW() WHERE access.id = $3::integer"	+
 						" RETURNING id",
-						[ policy_text, id ]);
+						[ policy_text, policy_json, id ]);
 				}
 			}
 			catch(error)
@@ -4135,28 +4148,7 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 		}
 	}
 
-	try {
-		const rules = await pool.query (
-			"SELECT policy_text FROM consent.access,"	+
-			" consent.role WHERE provider_id = $1::integer"	+
-			" AND role.id = access.role_id ORDER BY role",
-			[ provider_uid ]);
-
-		rules_array = rules.rows.map(
-				(row) => { return row.policy_text; });
-	}
-	catch(error)
-	{
-		return END_ERROR (res, 500, "Internal error!", error);
-	}
-
-	set_acl(provider_email, rules_array, (err) =>
-	{
-		if (err)
-			return END_ERROR (res, err.http_code, err.message);
-		else
-			return END_SUCCESS (res);
-	});
+	return END_SUCCESS (res);
 });
 
 /* --- Auth Admin APIs --- */
