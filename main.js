@@ -1962,7 +1962,7 @@ app.post("/auth/v[1-2]/token", async (req, res) => {
 				return END_ERROR (res, 403, error_response);
 			}
 
-			policy_in_json = result.rows[0].policy_json;
+			policy_in_json = result.rows.map((row) => row.policy_json);
 		}
 		catch (error)
 		{
