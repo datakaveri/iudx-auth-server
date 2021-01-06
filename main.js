@@ -197,7 +197,7 @@ app.use(timeout("5s"));
 app.use(
 	cors ({
 		credentials	:	true,
-		methods		:	["POST", "GET", "PUT"],
+		methods		:	["POST", "GET", "PUT", "DELETE"],
 		origin		:	(origin, callback) =>
 					{
 						callback (
@@ -623,7 +623,7 @@ function is_secure (req, res, cert, validate_email = true)
 		}
 
 		res.header("Access-Control-Allow-Origin", req.headers.origin);
-		res.header("Access-Control-Allow-Methods","POST, PUT, GET");
+		res.header("Access-Control-Allow-Methods","POST, PUT, GET, DELETE");
 	}
 
 	const error = is_certificate_ok (req,cert,validate_email);
@@ -817,8 +817,9 @@ function is_iudx_certificate(cert)
 			.toLowerCase();
 
 	// certificate issuer should be IUDX CA or a IUDX sub-CA
-
-	return (email ==="ca@iudx.org.in" || email.startsWith("iudx.sub.ca@"));
+	
+	// for dev - ca@iudx.io
+	return (email === "ca@iudx.org.in" || email.startsWith("iudx.sub.ca@") || email === "ca@iudx.io");
 }
 
 function body_to_json (body)
