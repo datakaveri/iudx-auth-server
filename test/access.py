@@ -34,7 +34,7 @@ def init_provider():
         try:
                 cursor.execute("update consent.role as rr set status = 'approved' from consent.users where " + " users.id = rr.user_id and users.email = 'abc.xyz@rbccps.org'")
                 cursor.execute("delete from consent.access using consent.users where access.provider_id = users.id and email = 'abc.xyz@rbccps.org' and access_item_type = 'catalogue'")
-                cursor.execute("delete from consent.access using consent.users where access.provider_id = users.id and email = 'abc.xyz@rbccps.org' and access_item_type = 'delegate'")
+                cursor.execute("delete from consent.access using consent.users where access.provider_id = users.id and email = 'abc.xyz@rbccps.org' and access_item_type = 'provider-caps'")
                 conn.commit()
 
         except psycopg2.DatabaseError as error:

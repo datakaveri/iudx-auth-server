@@ -894,7 +894,7 @@ async function check_valid_delegate(delegate_uid, provider_uid)
 			[
 				provider_uid,			//$1
 				delegate_uid,			//$2
-				'delegate'			//$3
+				'provider-caps'			//$3
 			]);
 
 		if (result.rows.length === 0)
@@ -3638,7 +3638,7 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 			}
 
 			access_item_id 	= -1;
-			res_type 	= "delegate";
+			res_type 	= "provider-caps";
 		}
 
 		/* if rule exists for particular provider+accesser+role+
@@ -3962,7 +3962,7 @@ app.get("/auth/v[1-2]/provider/access", async (req, res) => {
 
 	for (const item of access_items)
 	{
-		if (item === "catalogue" || item === "delegate")
+		if (item === "catalogue" || item === "provider-caps")
 			continue;
 
 		try {
@@ -4116,7 +4116,7 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 				return END_ERROR (res, 403, err);
 			}
 
-			if (is_delegate && (check.rows[0].access_item_type === "delegate"))
+			if (is_delegate && (check.rows[0].access_item_type === "provider-caps"))
 			{
 				err.message = "Delegate cannot delete delegate rules";
 				return END_ERROR (res, 403, err);
@@ -4178,7 +4178,7 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 			accesser_email 	= user_details.rows[0].email;
 			accesser_role	= user_details.rows[0].role;
 			
-			if (! ["delegate", "catalogue"].includes(access_item_type))
+			if (! ["provider-caps", "catalogue"].includes(access_item_type))
 			{
 				const result = await pool.query (
 					"SELECT * FROM consent." + access_item_type +

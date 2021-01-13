@@ -216,7 +216,7 @@ for r in rules:
                 check_dti = True
         if r['email'] == delegate_email and r['role'] == 'delegate':
                 delegate_id = r['id']
-                assert r['item_type'] == 'delegate'
+                assert r['item_type'] == 'provider-caps'
                 check_del = True
 
 assert check_con == True
