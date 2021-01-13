@@ -3878,9 +3878,10 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 				for (const cap of req_capability)
 				{
 					const result = await pool.query (
-						"INSERT INTO consent.capability "		+
-						" (access_id, capability) VALUES"		+
-						" ($1::integer, $2::consent.capability_enum)",
+						"INSERT INTO consent.capability "			+
+						" (access_id, capability, created_at, updated_at)"	+
+						" VALUES ($1::integer, $2::consent.capability_enum,"	+
+						" NOW(), NOW())",
 						[ access_id, cap ]);
 				}
 			}
