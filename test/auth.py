@@ -60,7 +60,7 @@ class Auth():
                 else:
                 #
                         if "EXPECT_FAILURE" not in os.environ:
-                        #
+                        #       
                                 sys.stderr.write (
                                         "WARNING: auth did not send 'application/json' : " + url  + "\n"
                                 )
@@ -159,12 +159,15 @@ class Auth():
                 return self.call("group/list", body)
         #
 
-        def provider_access(self, request, provider_email=None):
+        def provider_access(self, request, provider_email=None,sessionId=None):
         #
                 header = {}
 
                 if provider_email:
                         header['provider-email'] = provider_email
+                if sessionId is not None:
+                        header['tfa'] = "true"
+                        header['session-id'] = sessionId
 
                 return self.call("provider/access", request, "POST", {}, header)
         #
@@ -179,13 +182,16 @@ class Auth():
                 return self.call("provider/access", request, "DELETE", {}, header)
         #
 
-        def get_provider_access(self, provider_email=None):
+        def get_provider_access(self,provider_email=None,sessionId=None):
         #
                 header = {}
 
                 if provider_email:
                         header['provider-email'] = provider_email
-
+                if sessionId is not None:
+                        header['tfa'] = "true"
+                        header['session-id'] = sessionId 
+                
                 return self.call("provider/access", {}, "GET", {}, header)
         #
 
@@ -210,5 +216,10 @@ class Auth():
         def get_delegate_providers(self):
         #
                 return self.call("delegate/providers", {}, "GET")
+        #
+
+        def get_session_id(self,request):
+        #
+                return self.call("get-session-id",request,"POST" )
         #
 #}

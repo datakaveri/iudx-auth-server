@@ -50,6 +50,17 @@ const MAX_SAFE_STRING_LEN	= 512;
 const PG_MAX_INT		= 2147483647;
 const PHONE_PLACEHOLDER		= "0000000000";
 
+
+
+
+//for two factor auth
+const SECURED_ENDPOINTS 	= {
+								'/auth/v1/provider/access' :{'POST':['provider','delegate'],'DELETE':['provider','delegate'],'GET':['provider','delegate']}
+							  };
+
+
+
+
 /* for access API */
 const ACCESS_ROLES		= ["consumer", "data ingester", "onboarder", "delegate"];
 const RESOURCE_ITEM_TYPES	= ["resourcegroup"];
@@ -88,6 +99,8 @@ const MIN_CERT_CLASS_REQUIRED	= Object.freeze ({
 	"/auth/v1/group/list"			: 3,
 
 	"/auth/v1/provider/access"		: -Infinity,
+	"/auth/v1/get-session-id"		: -Infinity,
+
 
 	"/auth/v1/delegate/providers"		: -Infinity,
 
@@ -143,10 +156,14 @@ transporter.verify(function(error, success) {
 		log("info", "MAILER_EVENT", false, {}, success.toString());
 });
 
+//read 2fa config file for url and apikey
+const twoFA_config 	= JSON.parse(fs.readFileSync("2factor_config.json","utf-8"));
+const SESSIONID_EXP_TIME		= twoFA_config.expiryTime;
+
+
 /* --- postgres --- */
 
 const DB_SERVER	= "127.0.0.1";
-
 const password	= {
 	"DB"	: fs.readFileSync("passwords/auth.db.password","ascii").trim(),
 };
@@ -180,6 +197,10 @@ pg.connectSync (
 /* --- preload negotiator's encoding module for gzip compression --- */
 
 const Negotiator = require("negotiator");
+const { each, reject } = require("lodash");
+const { title } = require("process");
+const { Console } = require("console");
+const { resolve } = require("path");
 const negotiator = new Negotiator();
 
 try		{ negotiator.encodings(); }
@@ -213,6 +234,7 @@ app.use(bodyParser.raw({type:"*/*"}));
 app.use(parse_cert_header);
 app.use(basic_security_check);
 app.use(log_conn);
+app.use(sessionIdCheck);
 //app.use(dns_check);
 
 /* --- aperture --- */
@@ -829,6 +851,47 @@ function body_to_json (body)
 		return null;
 	}
 }
+
+
+//generate session id for 2factor auth 
+
+function generateSessionId(sessionIdLen) {
+
+	let code = "";
+	code += Number.parseInt(crypto.randomBytes(3).toString("hex"), 16);
+	
+	if(code.length >= sessionIdLen)
+		return code.slice(0,sessionIdLen);
+
+	return code.padStart(sessionIdLen, '0');
+}
+
+//Trigger 2fact sms service
+
+ function SMS_Service(sessionId,phNo,done) {
+	let errorDetails;
+	let url = twoFA_config.url + twoFA_config.apiKey + '/SMS/' + phNo + '/' + sessionId;
+	var options = {
+  	'method': 'GET',
+  	'url':url ,
+	};
+	return new Promise((resolve,reject) =>{
+		http_request(options, function (error, response) {
+		if (error){ 
+		   reject (error);
+
+	   }
+	   else{
+	   if(response.statusCode !== 200){
+		   reject (new Error(response.body));
+	   }
+	   else
+	    resolve(true);
+	   }
+  		 });
+	});
+ }
+	
 
 /* ---
   Check role/privilege of any registered user.
@@ -1509,6 +1572,83 @@ function dns_check (req, res, next)
 		return next();  // dns check passed
 	});
 }
+
+
+//check before accessing secure end-points
+function sessionIdCheck (req, res, next)
+{
+
+	let apis;
+	let email;
+	const session_regex = new RegExp(/^[0-9]{6}$/); //sessionid can only be numeric and exactly 6 digits
+	let twofaFlow = req.headers.tfa;
+	
+	if(process.env.NODE_ENV === 'development')
+	{ 
+		if(twofaFlow === undefined)
+		{
+			//bypass middleware if this header is present
+			return next();
+		}
+	}
+	const reqURL                  	= req.url.split("?")[0];
+	const reqEndpoint               = reqURL.replace(/\/v[1-2]\//,"/v1/");
+	const userEmail  				= res.locals.email;
+	const method					= req.method;
+
+	
+	//check if secure endpoint else proceed	
+	if(SECURED_ENDPOINTS[reqEndpoint] !== undefined)
+ 	{
+
+	//check if sessionId is present else 403
+	const sessionId =req.headers['session-id'];
+   if(sessionId === undefined)
+   {
+	return END_ERROR (res, 403, 'SessionID not present');
+   }
+
+   if (!session_regex.test(sessionId))
+		return END_ERROR (res, 403, "Invalid SessionId");
+
+	//check if sessionId is valid for the same user-endpoint-method combination
+	try
+	{	
+
+	  let result = pg.querySync (
+
+		" SELECT session.endpoints" +
+		" FROM consent.session,consent.users" 		+
+		" WHERE session.session_id = $1::text "	+
+		" AND session.expiry_time >= NOW() " +
+		" AND users.id = session.user_id" +
+		" AND users.email = $2::text ", 
+		[
+			sessionId,
+			userEmail
+		]);
+
+		if(result.length === 0)
+			return END_ERROR (res, 403, "Invalid SessionID");
+
+		 apis = result[0].endpoints;
+	}
+	catch(error) {
+		return END_ERROR (res, 500, "Internal Server error");
+	}
+
+	//check if endPoint and method are available in 'endpoints' variable else invalid
+	if(!apis.hasOwnProperty(reqEndpoint))
+		return END_ERROR (res, 403, "Invalid SessionID");
+
+	if(!apis[reqEndpoint].includes(method))
+		return END_ERROR (res, 403, "Invalid SessionID");
+
+ }
+	
+ return next();
+}
+
 
 function to_array (o)
 {
@@ -3147,8 +3287,8 @@ app.post("/auth/v[1-2]/audit/tokens", (req, res) => {
 					row.revoked || (! row.is_valid_token_for_provider)
 				);
 
-				/* return only resource IDs belonging to provider
-				   who requested audit */
+					/* return only resource IDs belonging to provider
+					who requested audit */
 
 				let filtered_request = [];
 
@@ -5126,9 +5266,154 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 	return END_SUCCESS (res, response);
 });
 
+
+
 app.get("/consent/v[1-2]/organizations", async (req, res) => {
 	let { rows } = await pool.query("SELECT id, name FROM consent.organizations");
 	return END_SUCCESS(res, { organizations: rows });
+});
+
+//two factor auth
+app.post("/auth/v1/get-session-id", async (req, res) => {
+
+	let method;
+	let endpoint;
+	let roles;
+	let reqObj	= res.locals.body;
+	let is_delegate = false;
+	let userRole;
+	let	titles;
+	let expTime ;
+	let retryTime;
+	let role_id;
+	let user_id;
+	let allowed_roles  =  [];
+	
+	
+	//get details from user table
+	const email = res.locals.email;
+	try {
+		
+		let result = await pool.query (
+			"SELECT users.id, users.title, users.first_name, users.last_name, users.phone , role.role " +
+			"FROM  consent.users, consent.role " +
+			"WHERE email = $1::text AND users.id = role.user_id AND role.status =  $2::consent.status_enum",
+			[ email,
+			'approved' ]); 
+		
+		if(result.rows.length === 0)
+			return END_ERROR (res, 403, "User not found");
+		 
+		titles = result.rows[0];
+		userRole = result.rows.map((row) => row.role   ); //run a map to ensure all roles are in an array
+		user_id = titles.id;
+		
+		}
+	catch(error)
+	{
+		return END_ERROR (res, 500, "Internal error!", error);
+	}
+
+	 //get all the methods and endpoints from the request
+	let apis = {};
+	
+	if(reqObj.apis === undefined) 
+		return END_ERROR (res, 400, "Invalid data (apis)" );
+
+	if(!Array.isArray(reqObj.apis)) 
+			return END_ERROR (res, 400, "Invalid data (apis)" );
+
+	if(reqObj.apis.length <= 0) 
+		return END_ERROR (res, 400, "Invalid data (apis)" );	
+
+	 for (let i in reqObj.apis) {
+	
+		if(reqObj.apis[i].method === undefined || reqObj.apis[i].endpoint === undefined) 
+				return END_ERROR (res, 400, "Invalid data (apis)" );
+
+
+		if(!is_string_safe(reqObj.apis[i].method) || !is_string_safe(reqObj.apis[i].endpoint))
+		    	return END_ERROR (res, 400, "Invalid data (apis)");
+			
+	
+		method    = reqObj.apis[i].method.toUpperCase();
+		endpoint  = reqObj.apis[i].endpoint.toLowerCase();
+		
+		
+		if(!SECURED_ENDPOINTS[endpoint])
+			return END_ERROR (res, 400, "No matching endpoint." );
+		
+		roles  = SECURED_ENDPOINTS[endpoint][method];
+		
+		if(roles === undefined)
+			return END_ERROR (res, 400, "No matching endpoint/method." );
+		
+		allowed_roles = intersect(roles,userRole);
+
+		if(allowed_roles.length === 0)
+			return END_ERROR (res, 400, "No matching endpoint/method." );	
+		
+		//check if api.endpoint exists, if not create and add method as array elemets against this key value
+	
+		if(!apis.hasOwnProperty(endpoint))
+			apis[endpoint]= [];
+		 
+		//avoid multiple entries for same method under same endpoint	
+		 if(!apis[endpoint].includes(method))
+		 		apis[endpoint].push(method);
+	}
+
+	 //generate session_id
+		const session_id =  generateSessionId(6);
+	 
+	/* The Sms_Service is only called when
+	   the node environment is not set as development */
+	   try
+	   {
+		if(process.env.NODE_ENV !== 'development')
+			 await SMS_Service(session_id, titles.phone);
+       }
+	  catch(error)
+	  {
+		
+		return END_ERROR (res, 500, "Internal error!", error );
+	  }
+
+	 try {
+		const time = await pool.query (
+			" INSERT INTO consent.session "			+
+			"(session_id, user_id, endpoints, expiry_time, retry_time, created_at, updated_at)" +
+			"VALUES ( "			+
+			" $1::text ,  $2::int, $3::json,"		+
+			" NOW() + $4::interval, NOW() + $5::interval, NOW(), NOW() )" +
+			"RETURNING expiry_time,retry_time",  
+			[
+				session_id,			//$2
+				user_id,			//$3
+				apis,			//$4
+				SESSIONID_EXP_TIME + " seconds",
+				SESSIONID_EXP_TIME + " seconds",	
+			]);
+
+			expTime =  time.rows[0].expiry_time;
+			retryTime =  time.rows[0].retry_time;
+	}
+	catch(error)
+	{
+		return END_ERROR (res, 500, "Internal error!", error);
+	}
+
+	const response = {success : true, message : "Session id sent to mobile no" ,Validity : expTime};
+
+	const details =
+		{
+			"requester"        	   : email,
+			"sessionId_expiry"     : expTime
+		};
+
+		log("info", "ISSUED_SESSIONID", false, details);
+
+	return END_SUCCESS (res, response);	
 });
 
 /* --- Invalid requests --- */
@@ -5241,5 +5526,7 @@ else
 	log("info", "WORKER_EVENT", false, {},"Worker started with pid " + process.pid);
 
 }
+
+
 
 // EOF

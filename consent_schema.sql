@@ -108,6 +108,19 @@ CREATE TABLE consent.capability (
 	UNIQUE (access_id, capability)
 );
 
+
+CREATE TABLE consent.session (
+
+	id				integer GENERATED ALWAYS AS IDENTITY		PRIMARY KEY,
+	session_id		character varying(6),
+	endpoints      	json, 
+	user_id			integer REFERENCES consent.users(id) 	ON DELETE CASCADE,
+	expiry_time		timestamp without time zone				NOT NULL,
+	retry_time		timestamp without time zone				NOT NULL,
+	created_at		timestamp without time zone				NOT NULL,
+	updated_at		timestamp without time zone				NOT NULL
+);
+
 ALTER TABLE consent.organizations	OWNER TO postgres;
 ALTER TABLE consent.users		OWNER TO postgres;
 ALTER TABLE consent.role		OWNER TO postgres;
@@ -115,12 +128,16 @@ ALTER TABLE consent.certificates	OWNER TO postgres;
 ALTER TABLE consent.access		OWNER TO postgres;
 ALTER TABLE consent.resourcegroup	OWNER TO postgres;
 ALTER TABLE consent.capability		OWNER TO postgres;
+ALTER TABLE consent.session		OWNER TO postgres;
+
 
 GRANT SELECT,INSERT,UPDATE 		ON TABLE consent.organizations	 TO auth;
 GRANT SELECT,INSERT,UPDATE,DELETE 	ON TABLE consent.users		 TO auth;
 GRANT SELECT,INSERT,UPDATE 		ON TABLE consent.certificates	 TO auth;
 
+
 GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE consent.role		 TO auth;
 GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE consent.resourcegroup TO auth;
 GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE consent.access	 TO auth;
 GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE consent.capability	 TO auth;
+GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE consent.session		 TO auth;
