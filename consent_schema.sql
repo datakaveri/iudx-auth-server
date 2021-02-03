@@ -34,7 +34,6 @@ CREATE TABLE consent.organizations (
 	updated_at	timestamp without time zone		NOT NULL
 );
 
-CREATE UNIQUE INDEX idx_organizations_id ON consent.organizations(id);
 CREATE UNIQUE INDEX idx_organizations_website ON consent.organizations(website);
 
 CREATE TABLE consent.users (
@@ -50,7 +49,6 @@ CREATE TABLE consent.users (
 	updated_at	timestamp without time zone			NOT NULL
 );
 
-CREATE UNIQUE INDEX idx_users_id ON consent.users(id);
 CREATE UNIQUE INDEX idx_users_email ON consent.users(email);
 
 CREATE TABLE consent.role (
@@ -63,7 +61,7 @@ CREATE TABLE consent.role (
 	updated_at	timestamp without time zone			NOT NULL
 );
 
-CREATE UNIQUE INDEX idx_role_id ON consent.role(id);
+CREATE INDEX idx_role_user_id ON consent.role(user_id);
 
 CREATE TABLE consent.certificates (
 
@@ -81,13 +79,15 @@ CREATE TABLE consent.access (
 	provider_id		integer NOT NULL REFERENCES consent.users(id) 	ON DELETE CASCADE,
 	role_id			integer REFERENCES consent.role(id)		ON DELETE CASCADE,
 	policy_text		character varying				NOT NULL,
+	policy_json		jsonb						NOT NULL,
 	access_item_id		integer 						,
 	access_item_type	consent.access_item					,
 	created_at		timestamp without time zone			NOT NULL,
 	updated_at		timestamp without time zone			NOT NULL
 );
 
-CREATE UNIQUE INDEX idx_access_id ON consent.access(id);
+CREATE INDEX idx_access_provider_id ON consent.access(provider_id);
+CREATE INDEX idx_access_role_id ON consent.access(role_id);
 
 CREATE TABLE consent.resourcegroup (
 
@@ -98,6 +98,9 @@ CREATE TABLE consent.resourcegroup (
 	updated_at		timestamp without time zone				NOT NULL
 );
 
+CREATE INDEX idx_resourcegroup_provider_id ON consent.resourcegroup(provider_id);
+CREATE UNIQUE INDEX idx_resourcegroup_cat_id ON consent.resourcegroup(cat_id);
+
 CREATE TABLE consent.capability (
 
 	id			integer GENERATED ALWAYS AS IDENTITY			PRIMARY KEY,
@@ -107,6 +110,8 @@ CREATE TABLE consent.capability (
 	updated_at		timestamp without time zone				NOT NULL,
 	UNIQUE (access_id, capability)
 );
+
+CREATE INDEX idx_capability_access_id ON consent.capability(access_id);
 
 ALTER TABLE consent.organizations	OWNER TO postgres;
 ALTER TABLE consent.users		OWNER TO postgres;

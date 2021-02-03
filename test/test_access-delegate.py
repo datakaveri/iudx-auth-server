@@ -34,14 +34,10 @@ provider_set_consumer_id = -1
 
 @pytest.fixture(scope="session", autouse=True)
 def init():
-        init_provider()
+        init_provider("abc.xyz@rbccps.org")
+
         assert reset_role(email) == True
         assert reset_role(delegate_email) == True
-
-        # delete all old policies using acl/set API
-        policy = "x can access x"
-        r = untrusted.set_policy(policy)
-        assert r['success'] is True
 
         # register abc.123 as delegate and set delegate rule
         r = role_reg(delegate_email, '9454234223', name , ["delegate"], org_id, csr)
@@ -241,7 +237,7 @@ def test_delegate_get_all_rules():
                         check_dti = True
                 if r['email'] == delegate_email and r['role'] == 'delegate':
                         delegate_id = r['id']
-                        assert r['item_type'] == 'delegate'
+                        assert r['item_type'] == 'provider-caps'
                         check_del = True
 
         assert check_con == True

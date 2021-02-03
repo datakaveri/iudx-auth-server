@@ -6,7 +6,7 @@ from consent import role_reg
 import random
 import string
 
-init_provider()
+init_provider("xyz.abc@rbccps.org")
 
 # use consumer certificate to register
 email   = "barun@iisc.ac.in"
@@ -15,11 +15,6 @@ org_id = add_organization("iisc.ac.in")
 r = role_reg(email, '9454234223', name , ["consumer","onboarder","data ingester", "delegate"], org_id, csr)
 assert r['success']     == True
 assert r['status_code'] == 200
-
-# delete all old policies using acl/set API
-policy = "x can access x"
-r = untrusted.set_policy(policy)
-assert r['success'] is True
 
 # use alt_provider certificate as delegate
 delegate_email = "abc.123@iisc.ac.in"

@@ -10,7 +10,11 @@ from init import resource_server
 
 from init import expect_failure
 
-from init import restricted_consumer
+from init import consumer
+
+# for registration and resetting roles
+from access import *
+from consent import role_reg
 
 import hashlib
 
@@ -18,37 +22,53 @@ RS = "iisc.iudx.org.in"
 
 TUPLE = type(("x",))
 
-policy = "x can access *" # dummy policy
-provider.set_policy(policy)
+# register the providers
+init_provider("arun.babu@rbccps.org") # provider
+init_provider("abc.123@iisc.ac.in") # alt_provider
 
-policy = 'all can access * for 2 hours if tokens_per_day < 100'
-provider.set_policy(policy)
+# register the consumer
+email   = "barun@iisc.ac.in"
+assert reset_role(email) == True
+org_id = add_organization("iisc.ac.in")
 
-assert policy in provider.get_policy()['response']['policy']
+r = role_reg(email, '9454234223', name , ["consumer"], None, csr)
+assert r['success']     == True
+assert r['status_code'] == 200
 
-new_policy  = "*@rbccps.org can access resource-yyz-abc for 1 hour"
-assert provider.append_policy(new_policy)['success'] is True
+# set policies using access API
+req = {
+        "user_email" : email, 
+        "user_role":'consumer',
+        "item_id":"rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/" + RS + "/resource-xyz-yzz",
+        "capabilities": ['complex'],
+        "item_type":"resourcegroup"
+        }
+r = provider.provider_access([req])
+assert r['success']     == True
+assert r['status_code'] == 200
 
-x = provider.get_policy()['response']['policy']
-assert new_policy in x
-assert policy in x
+req["item_id"] = "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/abc-xyz"
+req["capabilities"] = ['temporal']
+r = provider.provider_access([req])
+assert r['success']     == True
+assert r['status_code'] == 200
 
 r = provider.audit_tokens(5)
 assert r['success'] is True
 audit_report        = r['response']
 as_provider         = audit_report["as-provider"]
 
-
 num_tokens_before = len(as_provider)
 body = [
         {
-                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/" + RS + "/resource-xyz-yzz",
-                "api"           : "/latest",
-                "methods"       : ["GET"],
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/" + RS + "/resource-xyz-yzz/*",
+                "apis"          : ["/ngsi-ld/v1/entities"],
+                "method"        : "GET",
                 "body"          : {"key":"some-key"}
         },
         {
-                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/abc-xyz"
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/abc-xyz/item",
+                "apis"  : ["/ngsi-ld/v1/entities/rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/abc-xyz"],
         }
 ]
 
@@ -57,7 +77,7 @@ access_token = r['response']
 
 assert r['success']     is True
 assert None             != access_token
-assert 60*60*2          == access_token['expires-in']
+assert 60*60*24*7       == access_token['expires-in']
 
 token = access_token['token'],
 
@@ -77,11 +97,12 @@ assert resource_server.introspect_token (token,server_token)['success'] is True
 # introspect once more
 assert resource_server.introspect_token (token,server_token)['success'] is True
 
+
 # introspect with request
 request = [
             {
-                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/" + RS + "/resource-xyz-yzz",
-                "apis"          : ["/latest"],
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/" + RS + "/resource-xyz-yzz/*",
+                "apis"          : ["/ngsi-ld/v1/entities"],
                 "methods"       : ["GET"],
                 "body"          : {"key":"some-key"}
             }
@@ -145,17 +166,16 @@ for a in as_provider:
                 found = a
                 break
 
-
 assert token_hash_found is True
 assert found['revoked'] is True
 
 # test revoke-all (as provider)
-r = provider.get_token(body)
+r = consumer.get_token(body)
 access_token = r['response']
 
 assert r['success']     is True
 assert None             != access_token
-assert 60*60*2          == access_token['expires-in']
+assert 60*60*24*7       == access_token['expires-in']
 
 token = access_token['token']
 
@@ -194,80 +214,85 @@ for a in as_provider:
                 if a['expired'] is False:
                         assert a['revoked'] is True
 
-# test revoke API
-r = provider.get_token(body)
-access_token = r['response']
-
-assert r['success']     is True
-assert None             != access_token
-assert 60*60*2          == access_token['expires-in']
-
-token = access_token['token']
-
-if type(token) == TUPLE:
-        token = token[0]
-
-s = token.split("/")
-
-assert len(s)   == 3
-assert s[0]     == 'auth.iudx.org.in'
-
-r = provider.audit_tokens(5)
-assert r["success"] is True
-audit_report        = r['response']
-as_consumer         = audit_report["as-consumer"]
-num_revoked_before  = 0
-
-for a in as_consumer:
-        if a['revoked'] is True:
-                num_revoked_before = num_revoked_before + 1
-
-r = provider.revoke_tokens(token)
-assert r["success"] is True
-assert r["response"]["num-tokens-revoked"] >= 1
-
-r = provider.audit_tokens(5)
-assert r["success"] is True
-audit_report        = r['response']
-as_consumer         = audit_report["as-consumer"]
-num_revoked_after   = 0
-
-for a in as_consumer:
-        if a['revoked'] is True:
-                num_revoked_after = num_revoked_after + 1
-
-assert num_revoked_before < num_revoked_after
-
-new_policy  = "*@iisc.ac.in can access * for 1 month"
-assert provider.set_policy(new_policy)['success'] is True
-
-body = [
-        {
-                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1",
-        },
-        {
-                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r2"
+# test token request without APIs
+req = {
+        "user_email" : email, 
+        "user_role":'consumer',
+        "item_id":"rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1",
+        "item_type":"resourcegroup",
+        "capabilities": ['temporal']
         }
-]
-
-r = restricted_consumer.get_token(body)
-access_token = r['response']
-
-assert r['success']                     is True
-assert None                             != access_token
-assert r['response']['expires-in']      == 60*60*24*30*1
+r = provider.provider_access([req])
+assert r['success']     == True
+assert r['status_code'] == 200
 
 body = [
         {
-                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1",
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1/*",
         },
         {
-                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs2/r2"
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1/r2"
         }
 ]
 
 expect_failure(True)
-r = restricted_consumer.get_token(body)
+r = consumer.get_token(body)
+expect_failure(False)
+
+assert r['success']     is False
+assert r['status_code'] == 400
+
+# test token request with invalid API
+
+body = [
+        {
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1/*",
+                "apis"  : ["/ngsi-invalid"]
+        },
+        {
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1/r2",
+                "apis"  : ["/ngsi-invalid"]
+        }
+]
+
+expect_failure(True)
+r = consumer.get_token(body)
+expect_failure(False)
+
+assert r['success']     is False
+assert r['status_code'] == 400
+
+body = [
+        {
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1/*",
+                "apis"  : ["/ngsi-ld/v1/temporal/entities"]
+        },
+        {
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1/r2",
+                "apis"  : ["/ngsi-ld/v1/temporal/entities"]
+        }
+]
+
+r = consumer.get_token(body)
+access_token = r['response']
+
+assert r['success']     is True
+assert None             != access_token
+assert 60*60*24*7       == access_token['expires-in']
+
+body = [
+        {
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1/*",
+                "apis"  : ["/ngsi-ld/v1/temporal/entities"]
+        },
+        {
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs331/r2",
+                "apis"  : ["/ngsi-ld/v1/temporal/entities"]
+        }
+]
+
+expect_failure(True)
+r = consumer.get_token(body)
 expect_failure(False)
 
 assert r['success']     is False
@@ -275,45 +300,51 @@ assert r['status_code'] == 403
 
 # new api tests
 
-new_policy  = "*@iisc.ac.in can access * for 5 months"
-assert provider.set_policy(new_policy)['success'] is True
-
 body = [
-        "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1",
-        "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs2/r2"
-]
+        {
+            "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1/item-0",
+            "apis"  : ["/ngsi-ld/v1/temporal/entities"]
+            },
+        {
+            "id" : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1/item-1",
+            "apis"  : ["/ngsi-ld/v1/temporal/entities"]
+            }
+        ]
 
 r = consumer.get_token(body)
 assert r['success']                     is True
-assert r['response']['expires-in']      == 60*60*24*30*5
-
-body = "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1";
-r = consumer.get_token(body)
-assert r['success']                     is True
-assert r['response']['expires-in']      == 60*60*24*30*5
-
-body = { "id" : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1"};
-r = consumer.get_token(body)
-assert r['success']                     is True
-assert r['response']['expires-in']      == 60*60*24*30*5
+assert r['response']['expires-in']      == 60*60*24*7
 
 # test audit for multiple providers
 
-policy = "all can access abc.com/*"
-provider.set_policy(policy)
+req = {
+        "user_email" : email, 
+        "user_role":'consumer',
+        "item_id":"rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/r1",
+        "capabilities": ['complex', 'temporal', 'subscription'],
+        "item_type":"resourcegroup"
+        }
+r = provider.provider_access([req])
+assert r['success']     == True
+assert r['status_code'] == 200
 
-policy = 'all can access example.com/test-providers'
-alt_provider.set_policy(policy)
+req["item_id"] = "iisc.ac.in/2052f450ac2dde345335fb18b82e21da92e3388c/example.com/test-providers"
+r = alt_provider.provider_access([req])
+assert r['success']     == True
+assert r['status_code'] == 200
 
 body = [
         {
-                "id"    : "iisc.ac.in/2052f450ac2dde345335fb18b82e21da92e3388c/example.com/test-providers",
+                "id"    : "iisc.ac.in/2052f450ac2dde345335fb18b82e21da92e3388c/example.com/test-providers/*",
+                "apis"  : ["/ngsi-ld/v1/temporal/entities"]
         },
         {
-                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/ABC123"
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/r1/ABC123",
+                "apis"  : ["/ngsi-ld/v1/temporal/entities"]
         },
         {
-                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/abc-xyz"
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/r1/abc-xyz",
+                "apis"  : ["/ngsi-ld/v1/temporal/entities"]
         }
 ]
 

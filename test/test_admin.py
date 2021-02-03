@@ -6,8 +6,7 @@ from init import *
 from consent import *
 import random
 import string
-
-init_admin()
+import pytest
 
 ### Organization APIs ###
 
@@ -25,6 +24,10 @@ org_id = 0
 user_id = 0
 ruser_id = 0
 borg = org.copy()
+
+@pytest.fixture(scope="session", autouse=True)
+def init():
+        init_admin()
 
 def test_invalid_state():
         # invalid state
@@ -91,7 +94,7 @@ csr = "-----BEGIN CERTIFICATE REQUEST-----\nMIICjDCCAXQCAQAwRzELMAkGA1UEBhMCVVMx
 
 # random email 
 email_name  = ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(6)) 
-email       = email_name + '@gmail.com' 
+email       = email_name + '@' + website 
 
 
 def test_get_provider_reg():
@@ -167,7 +170,7 @@ def test_check_approved_provider():
 
 # test rejected flow
 remail_name  = ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(6)) 
-remail       = remail_name + '@gmail.com' 
+remail       = remail_name + '@' + website 
 
 def test_reject_provider():
         global org_id

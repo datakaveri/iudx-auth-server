@@ -20,13 +20,8 @@ provider_id = 'rbccps.org/f3dad987e514af08a4ac46cf4a41bd1df645c8cc'
 
 @pytest.fixture(scope="session", autouse=True)
 def init():
-        init_provider()
+        init_provider("xyz.abc@rbccps.org")
         assert reset_role(email) == True
-
-        # delete all old policies using acl/set API
-        policy = "x can access x"
-        r = untrusted.set_policy(policy)
-        assert r['success'] is True
 
 ##### consumer #####
 
@@ -36,10 +31,11 @@ resource_id = provider_id + '/rs.example.com/' + resource_group
 req = {"user_email": email, "user_role":'consumer', "item_id":resource_id, "item_type":"resourcegroup"}
 
 def test_consumer_no_rule_set():
-        # token request should fail
+        # token request should fail - not registered 
         body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/entities"] }
         r = consumer.get_token(body)
         assert r['success']     is False
+        assert r['status_code'] == 401
 
 def test_consumer_reg():
         assert reset_role(email) == True
@@ -178,6 +174,7 @@ def test_get_onboarder_token_fail():
         # onboarder token request should fail
         r = consumer.get_token(body)
         assert r['success']     is False
+        assert r['status_code'] == 403
 
 def test_reg_onboarder():
         r = role_reg(email, '9454234223', name , ["onboarder"], org_id)
@@ -238,6 +235,7 @@ def test_get_ingester_token_fail():
         # data ingester token request should fail
         r = consumer.get_token(body)
         assert r['success']     is False
+        assert r['status_code'] == 403
 
 def test_reg_ingester():
         r = role_reg(email, '9454234223', name , ["data ingester"], org_id)
@@ -332,6 +330,7 @@ def test_delete_onboarder_rule():
         # onboarder token request should fail
         r = consumer.get_token(token_body)
         assert r['success']     is False
+        assert r['status_code'] == 403
 
 def test_delete_ingester_temporal():
         global ingester_id, consumer_id
@@ -344,6 +343,12 @@ def test_delete_ingester_temporal():
         r = consumer.get_token(token_body)
         assert r['success']     is True
 
+        # invalid body, some items not objects
+        body = [ingester_id, ["complex"], {"id": consumer_id, "capabilities": ["temporal"]}]
+        r = untrusted.delete_rule(body)
+        assert r['success']     == False
+        assert r['status_code'] == 400
+
         body = [{"id": ingester_id}, {"id": consumer_id, "capabilities": ["temporal"]}]
         r = untrusted.delete_rule(body)
         assert r['success']     == True
@@ -352,10 +357,12 @@ def test_delete_ingester_temporal():
         token_body = {"id" : diresource_id + "/someitem/someotheritem", "api" : "/iudx/v1/adapter" }
         r = consumer.get_token(token_body)
         assert r['success']     is False
+        assert r['status_code'] == 403
 
         token_body = {"id" : resource_id + "/something", "apis" : ["/ngsi-ld/v1/temporal/entities"] }
         r = consumer.get_token(token_body)
         assert r['success']     is False
+        assert r['status_code'] == 403
 
         body = [{"id": ingester_id}, {"id": consumer_id, "capabilities": ["temporal"]}]
         r = untrusted.delete_rule(body)
@@ -387,10 +394,12 @@ def test_delete_consumer_rule():
         token_body = {"id" : resource_id + "/someitem", "apis" : apis }
         r = consumer.get_token(token_body)
         assert r['success']     is False
+        assert r['status_code'] == 403
 
         token_body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/subscription"] }
         r = consumer.get_token(token_body)
         assert r['success']     is False
+        assert r['status_code'] == 403
 
 ### setting multiple rules ###
 remail_name  = ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(6)) 
@@ -498,7 +507,7 @@ def test_multiple_get_all_rules():
                         assert r['item_type'] == 'catalogue'
                         check_onb = True
                 if r['email'] == remail and r['role'] == 'delegate':
-                        assert r['item_type'] == 'delegate'
+                        assert r['item_type'] == 'provider-caps'
                         check_del = True
                 if r['email'] == remail and r['role'] == 'data ingester':
                         assert r['policy'].endswith('"/iudx/v1/adapter"')
