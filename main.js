@@ -4,14 +4,12 @@
 
 const fs			= require("fs");
 const os			= require("os");
-const dns			= require("dns");
 const cors			= require("cors");
 const x509			= require('x509');
 const Pool			= require("pg").Pool;
 const http			= require("http");
 const assert			= require("assert").strict;
 const forge			= require("node-forge");
-const chroot			= require("chroot");
 const crypto			= require("crypto");
 const logger			= require("node-color-log");
 const lodash			= require("lodash");
@@ -34,9 +32,6 @@ const TOKEN_LEN_HEX		= 2 * TOKEN_LEN;
 const CSR_SIZE			= 2048;
 
 const EUID			= process.geteuid();
-const is_openbsd		= os.type() === "OpenBSD";
-const pledge			= is_openbsd ? require("node-pledge")	: null;
-const unveil			= is_openbsd ? require("openbsd-unveil"): null;
 
 const NUM_CPUS			= os.cpus().length;
 const SERVER_NAME		= "auth.iudx.org.in";
@@ -108,16 +103,6 @@ const MIN_CERT_CLASS_REQUIRED	= Object.freeze ({
 /* --- environment variables--- */
 
 // process.env.TZ = "Asia/Kolkata";
-
-/* --- dns --- */
-
-dns.setServers ([
-	"1.1.1.1",
-	"4.4.4.4",
-	"8.8.8.8",
-	"[2001:4860:4860::8888]",
-	"[2001:4860:4860::8844]",
-]);
 
 /* --- telegram --- */
 
@@ -1033,9 +1018,6 @@ function basic_security_check (req, res, next)
 {
 	if (! has_started_serving_apis)
 	{
-		if (is_openbsd) // drop "rpath" in worker
-			pledge.init("error stdio tty prot_exec inet dns recvfd");
-
 		has_started_serving_apis = true;
 	}
 
@@ -4478,29 +4460,6 @@ app.on("error", () => {
 
 /* --- The main application --- */
 
-if (! is_openbsd)
-{
-	// ======================== START preload code for chroot =============
-
-	const _tmp = ["x can y z"].map (
-		(r) => {
-			return (parser.parse(r.trim()));
-		}
-	);
-
-	evaluator.evaluate(_tmp, {});
-
-	dns.lookup("google.com", {all:true},
-		(error) => {
-			if (error)
-				log("err", "EVENT", false, {},
-					"DNS to google.com failed ");
-		}
-	);
-
-	// ======================== END preload code for chroot ===============
-}
-
 function drop_worker_privileges()
 {
 	for (const k in password)
@@ -4509,53 +4468,16 @@ function drop_worker_privileges()
 		delete password[k];	// forget all passwords
 	}
 
-	if (is_openbsd)
+	if (EUID === 0)
 	{
-		if (EUID === 0)
-		{
-			process.setgid("_aaa");
-			process.setuid("_aaa");
-		}
-
-		unveil("/usr/lib",			"r" );
-		unveil("/usr/libexec/ld.so",		"r" );
-		unveil(__dirname + "/node_modules",	"r" );
-		unveil(__dirname + "/node-aperture",	"r" );
-
-		unveil();
+		process.setgid("_aaa");
 	}
-	else
-	{
-		if (EUID === 0)
-		{
-			process.setgid("_aaa");
-			chroot("/home/iudx-auth-server","_aaa");
-			process.chdir ("/");
-		}
-	}
-
-	if (is_openbsd)
-		pledge.init ("error stdio tty prot_exec inet rpath dns recvfd");
 
 	assert (has_started_serving_apis === false);
 }
 
 if (cluster.isMaster)
 {
-	if (is_openbsd)
-	{
-		unveil("/usr/local/bin/node",	"x");
-		unveil("/usr/lib",		"r");
-		unveil("/usr/libexec/ld.so",	"r");
-
-		unveil();
-
-		pledge.init (
-			"error stdio tty prot_exec inet rpath dns recvfd " +
-			"sendfd exec proc"
-		);
-	}
-
 	log("info", "EVENT", false, {}, "Master started with pid " + process.pid);
 
 	for (let i = 0; i < NUM_CPUS; i++) {
@@ -4568,15 +4490,6 @@ if (cluster.isMaster)
 
 		cluster.fork();
 	});
-
-	if (is_openbsd) // drop "rpath"
-	{
-		pledge.init (
-			"error stdio tty prot_exec inet dns recvfd " +
-			"sendfd exec proc"
-		);
-	}
-
 }
 else
 {
