@@ -498,7 +498,7 @@ def test_multiple_get_all_rules():
                         assert r['item_type'] == 'catalogue'
                         check_onb = True
                 if r['email'] == remail and r['role'] == 'delegate':
-                        assert r['item_type'] == 'delegate'
+                        assert r['item_type'] == 'provider-caps'
                         check_del = True
                 if r['email'] == remail and r['role'] == 'data ingester':
                         assert r['policy'].endswith('"/iudx/v1/adapter"')
