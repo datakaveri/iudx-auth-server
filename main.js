@@ -4,14 +4,12 @@
 
 const fs			= require("fs");
 const os			= require("os");
-const dns			= require("dns");
 const cors			= require("cors");
 const x509			= require('x509');
 const Pool			= require("pg").Pool;
 const http			= require("http");
 const assert			= require("assert").strict;
 const forge			= require("node-forge");
-const chroot			= require("chroot");
 const crypto			= require("crypto");
 const logger			= require("node-color-log");
 const lodash			= require("lodash");
@@ -108,16 +106,6 @@ const MIN_CERT_CLASS_REQUIRED	= Object.freeze ({
 /* --- environment variables--- */
 
 // process.env.TZ = "Asia/Kolkata";
-
-/* --- dns --- */
-
-dns.setServers ([
-	"1.1.1.1",
-	"4.4.4.4",
-	"8.8.8.8",
-	"[2001:4860:4860::8888]",
-	"[2001:4860:4860::8844]",
-]);
 
 /* --- telegram --- */
 
@@ -5169,29 +5157,6 @@ app.on("error", () => {
 
 /* --- The main application --- */
 
-if (! is_openbsd)
-{
-	// ======================== START preload code for chroot =============
-
-	const _tmp = ["x can y z"].map (
-		(r) => {
-			return (parser.parse(r.trim()));
-		}
-	);
-
-	evaluator.evaluate(_tmp, {});
-
-	dns.lookup("google.com", {all:true},
-		(error) => {
-			if (error)
-				log("err", "EVENT", false, {},
-					"DNS to google.com failed ");
-		}
-	);
-
-	// ======================== END preload code for chroot ===============
-}
-
 function drop_worker_privileges()
 {
 	for (const k in password)
@@ -5220,8 +5185,6 @@ function drop_worker_privileges()
 		if (EUID === 0)
 		{
 			process.setgid("_aaa");
-			chroot("/home/iudx-auth-server","_aaa");
-			process.chdir ("/");
 		}
 	}
 
