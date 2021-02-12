@@ -106,6 +106,8 @@ CREATE TABLE consent.capability (
 	id			integer GENERATED ALWAYS AS IDENTITY		PRIMARY KEY,
 	access_id		integer NOT NULL REFERENCES consent.access(id)	ON DELETE CASCADE,
 	capability		consent.capability_enum				NOT NULL,
+	created_at		timestamp without time zone			NOT NULL,
+	updated_at		timestamp without time zone			NOT NULL,
 	UNIQUE (access_id, capability)
 );
 
