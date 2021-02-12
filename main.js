@@ -1036,20 +1036,6 @@ function basic_security_check (req, res, next)
 			}
 		}
 
-		if (user_notice.untrusted)
-		{
-			res.locals.untrusted = true;
-		}
-
-		if (user_notice["delegated-by"])
-		{
-			return END_ERROR (
-				res, 403,
-					"Delegated certificates cannot"	+
-					" be used to call auth/marketplace APIs"
-			);
-		}
-
 		const	cert_class		= user_notice["class"];
 		let	integer_cert_class	= 0;
 
@@ -1119,70 +1105,6 @@ function basic_security_check (req, res, next)
 							.subject
 							.emailAddress
 							.toLowerCase();
-
-			if (user_notice["can-access"])
-			{
-				res.locals.can_access_regex	= [];
-
-				const can_access_regex		= user_notice["can-access"]
-									.split(";");
-				let regex_number		= 0;
-
-				for (const r of can_access_regex)
-				{
-					++regex_number;
-
-					const regex = r.trim();
-
-					if (regex === "")
-						continue;
-
-					/*
-						allow '^' '*' and '$' characters
-						but not unsafe RegEx
-					*/
-
-					if (! is_string_safe(regex,"^*$"))
-					{
-						const error_response = {
-							"message"	: "Unsafe 'can-access' RegEx in certificate",
-							"invalid-input"	: "RegEx no. " + regex_number,
-						};
-
-						return END_ERROR (
-							res, 400,
-								error_response
-						);
-					}
-
-					/*
-						We don't support ".", replace:
-							"."	with	"\."
-							"*"	with	".*"
-					*/
-
-					const final_regex = regex
-								.replace(/\./g,"\\.")
-								.replace(/\*/g,".*");
-
-					if (! safe_regex(final_regex))
-					{
-						const error_response = {
-							"message"	: "Unsafe 'can-access' RegEx in certificate",
-							"invalid-input"	: "RegEx no. " + regex_number,
-						};
-
-						return END_ERROR (
-							res, 400,
-								error_response
-						);
-					}
-
-					res.locals.can_access_regex.push (
-						new RegExp(final_regex)
-					);
-				}
-			}
 
 			Object.freeze(res.locals);
 			Object.freeze(res.locals.body);
@@ -2796,11 +2718,11 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 		if (! res_type || ! RESOURCE_ITEM_TYPES.includes(res_type))
 			return END_ERROR (res, 400, "Invalid data (item-type)");
 
-		// resource group must have 3 slashes
-		if ((resource.match(/\//g) || []).length !== 3)
+		if (! is_string_safe(resource, "_") || resource.indexOf("..") >= 0)
 			return END_ERROR (res, 400, "Invalid data (item-id)");
 
-		if (! is_string_safe(resource, "_") || resource.indexOf("..") >= 0)
+		// resource group must have 3 slashes
+		if ((resource.match(/\//g) || []).length !== 3)
 			return END_ERROR (res, 400, "Invalid data (item-id)");
 
 		if (! resource.startsWith(provider_id_hash))
@@ -3003,9 +2925,10 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 			for (const cap of req_capability)
 			{
 				const result = await pool.query (
-					"INSERT INTO consent.capability "		+
-					" (access_id, capability) VALUES"		+
-					" ($1::integer, $2::consent.capability_enum)",
+					"INSERT INTO consent.capability "			+
+					" (access_id, capability, created_at, updated_at)"	+ 
+					" VALUES ($1::integer, $2::consent.capability_enum," 	+
+					" NOW(), NOW())",
 					[ access_id, cap ]);
 			}
 		}
