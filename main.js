@@ -2718,11 +2718,11 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 		if (! res_type || ! RESOURCE_ITEM_TYPES.includes(res_type))
 			return END_ERROR (res, 400, "Invalid data (item-type)");
 
-		// resource group must have 3 slashes
-		if ((resource.match(/\//g) || []).length !== 3)
+		if (! is_string_safe(resource, "_") || resource.indexOf("..") >= 0)
 			return END_ERROR (res, 400, "Invalid data (item-id)");
 
-		if (! is_string_safe(resource, "_") || resource.indexOf("..") >= 0)
+		// resource group must have 3 slashes
+		if ((resource.match(/\//g) || []).length !== 3)
 			return END_ERROR (res, 400, "Invalid data (item-id)");
 
 		if (! resource.startsWith(provider_id_hash))
