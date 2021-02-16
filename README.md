@@ -41,7 +41,11 @@ Install [Ubuntu 20.04](https://releases.ubuntu.com/20.04/)
 	- **If the environment variable is not set, then PostgreSQL will be installed on the same machine**
 	- Update the `DB_SERVER` variable in [main.js](main.js)
 
-8. Finally, run `setup`
+8. In order to make the 2factor flow work, the file [2factor_config](2factor_config) must be populated with the required details.
+
+9. In order to make sessionIds work in test/development, the header 'tfa' is required. To change the environment in which the instance is running, NODE_ENV must be set to 'development'. This can be changed in [auth-server.service](auth-server.service).  
+
+10. Finally, run `setup`
 
 ```
 	./setup
