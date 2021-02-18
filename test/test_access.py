@@ -310,7 +310,7 @@ def test_get_access_rules():
                         assert r['item_type'] == 'catalogue'
                         onboarder_id = r['id']
                 if r['email'] == email and r['role'] == 'data ingester' and diresource_id == r['item']['cat_id']:
-                        assert r['policy'].endswith('"/iudx/v1/adapter"')
+                        assert r['item_type'] == 'resourcegroup'
                         ingester_id = r['id']
 
 ### deleting rules ###
@@ -501,7 +501,7 @@ def test_multiple_get_all_rules():
                         assert r['item_type'] == 'provider-caps'
                         check_del = True
                 if r['email'] == remail and r['role'] == 'data ingester':
-                        assert r['policy'].endswith('"/iudx/v1/adapter"')
+                        assert r['item_type'] == 'resourcegroup'
                         check_dti = True
 
         assert check_con == True

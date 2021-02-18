@@ -3073,22 +3073,31 @@ app.post("/auth/v[1-2]/group/delete", (req, res) => {
 app.post("/auth/v[1-2]/certificate-info", async (req, res) => {
   const cert = res.locals.cert;
   let roles = [];
+  let name = {};
 
   try {
     const result = await pool.query(
-      "SELECT role FROM consent.role JOIN" +
+      "SELECT title, first_name, last_name, role FROM consent.role JOIN" +
         " consent.users ON users.id = user_id" +
         " WHERE users.email = $1::text",
       [res.locals.email]
     );
 
-    roles = [...new Set(result.rows.map((row) => row.role))];
+    if (result.rows.length !== 0) {
+      roles = [...new Set(result.rows.map((row) => row.role))];
+      name = {
+        title: result.rows[0].title,
+        first_name: result.rows[0].first_name,
+        last_name: result.rows[0].last_name,
+      };
+    }
   } catch (error) {
     return END_ERROR(res, 500, "Internal error!", error);
   }
 
   const response = {
     id: res.locals.email,
+    user_name: name,
     "certificate-class": res.locals.cert_class,
     serial: cert.serialNumber.toLowerCase(),
     fingerprint: cert.fingerprint.toLowerCase(),
@@ -3557,7 +3566,7 @@ app.get("/auth/v[1-2]/provider/access", async (req, res) => {
   try {
     let result = await pool.query(
       "SELECT a.id, a.created_at, a.updated_at," +
-        " a.policy_text, a.access_item_type, a.access_item_id," +
+        " a.access_item_type, a.access_item_id," +
         " email, role, title, first_name, last_name" +
         " FROM consent.access as a, consent.users, consent.role " +
         " WHERE a.role_id = role.id AND role.user_id = users.id " +
@@ -3634,7 +3643,6 @@ app.get("/auth/v[1-2]/provider/access", async (req, res) => {
       },
       item_type: rule.access_item_type,
       item: null,
-      policy: rule.policy_text,
       created: rule.created_at,
       capabilities: cap_details[rule.id] || null,
     };

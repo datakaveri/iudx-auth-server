@@ -212,7 +212,7 @@ for r in rules:
                 check_onb = True
         if r['email'] == email and r['role'] == 'data ingester' and diresource_id == r['item']['cat_id']:
                 ingester_id = r['id']
-                assert r['policy'].endswith('"/iudx/v1/adapter"')
+                assert r['item_type'] == 'resourcegroup'
                 check_dti = True
         if r['email'] == delegate_email and r['role'] == 'delegate':
                 delegate_id = r['id']
