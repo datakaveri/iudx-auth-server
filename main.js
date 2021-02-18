@@ -50,15 +50,6 @@ const MAX_SAFE_STRING_LEN = 512;
 const PG_MAX_INT = 2147483647;
 const PHONE_PLACEHOLDER = "0000000000";
 
-//for two factor auth
-const SECURED_ENDPOINTS = {
-  "/auth/v1/provider/access": {
-    POST: ["provider", "delegate"],
-    DELETE: ["provider", "delegate"],
-    GET: ["provider", "delegate"],
-  },
-};
-
 /* for access API */
 const ACCESS_ROLES = ["consumer", "data ingester", "onboarder", "delegate"];
 const RESOURCE_ITEM_TYPES = ["resourcegroup"];
@@ -165,9 +156,13 @@ transporter.verify(function (error, success) {
 });
 
 //read 2fa config file for url and apikey
-const twoFA_config = JSON.parse(
+const sessionidConfig = JSON.parse(
   fs.readFileSync("2factor_config.json", "utf-8")
 );
+const twoFA_config = sessionidConfig.config;
+
+const SECURED_ENDPOINTS = sessionidConfig.secured_endpoints;
+
 const SESSIONID_EXP_TIME = twoFA_config.expiryTime;
 
 /* --- postgres --- */
@@ -1376,14 +1371,14 @@ function sessionIdCheck(req, res, next) {
   let apis;
   let email;
   const session_regex = new RegExp(/^[0-9]{6}$/); //sessionid can only be numeric and exactly 6 digits
-  let twofaFlow = req.headers.tfa;
 
-  if (process.env.NODE_ENV === "development") {
-    if (twofaFlow === undefined) {
-      //bypass middleware if this header is present
-      return next();
-    }
+  //TO-DO remove tfa header check when deploying to production.
+  let twofaFlow = req.headers.tfa;
+  if (twofaFlow === undefined) {
+    //bypass middleware if this header is undefined
+    return next();
   }
+
   const reqURL = req.url.split("?")[0];
   const reqEndpoint = reqURL.replace(/\/v[1-2]\//, "/v1/");
   const userEmail = res.locals.email;
@@ -4864,7 +4859,7 @@ app.post("/auth/v1/get-session-id", async (req, res) => {
   }
 
   //generate session_id
-  const session_id = generateSessionId(6);
+  const session_id = generateSessionId(twoFA_config.sessionIdLen);
 
   /* The Sms_Service is only called when
 	   the node environment is not set as development */
