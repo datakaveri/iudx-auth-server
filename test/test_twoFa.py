@@ -42,14 +42,6 @@ provider_id = 'rbccps.org/f3dad987e514af08a4ac46cf4a41bd1df645c8cc'
 resource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
 resource_id = provider_id + '/rs.example.com/' + resource_group
 
-consumer_id = -1
-onboarder_id = -1
-ingester_id = -1
-delegate_id = -1
-id = -1
-
-
-
 def test_apis_missing():
         # session id req should fail since body doesnt contain 'apis'
         body ={"asdf": [
@@ -80,7 +72,6 @@ def test_method_missing():
         r = untrusted.get_session_id(body)
         assert r['success']     is False
         assert r['status_code'] == 400
-
 
 def test_endpoint_missing():
         # session id req should fail since 'apis'doesnt contain 'endpoint'
@@ -115,7 +106,6 @@ def test_userRole_not_secure():
     assert r['success']     is False
     assert r['status_code'] == 400
 
-
 def test_Success():
     # successful flow
     body ={"apis": [
@@ -125,17 +115,16 @@ def test_Success():
               }]}
     r = untrusted.get_session_id(body)
     assert r['success']     is True
-    id = fetch_sessionId('abc.xyz@rbccps.org')
-    print(id)
-    r = untrusted.get_provider_access(None,id)
+    untrusted.set_user_session_id(fetch_sessionId('abc.xyz@rbccps.org'))
+
+    r = untrusted.get_provider_access()
     assert r['success']     is True
     assert r['status_code'] == 200
 
 def test_unauthorized_session():
     #session id not valid for endpoint
     req = {"user_email": email, "user_role":'consumer','capabilities':['temporal'], "item_id":resource_id, "item_type":"resourcegroup"}
-    id = fetch_sessionId('abc.xyz@rbccps.org')
-    r = untrusted.provider_access([req],None,id)
+    r = untrusted.provider_access([req])
     assert r['success']  is False
     assert r['status_code'] == 403 
 
@@ -148,35 +137,34 @@ def test_incorrect_user():
               }]}
     r = untrusted.get_session_id(body)
     assert r['success']     is True
-    id = fetch_sessionId('abc.xyz@rbccps.org')
+    untrusted.set_user_session_id(fetch_sessionId('abc.xyz@rbccps.org'))
+
     req = {"user_email": delegate_email, "user_role":'delegate'}
-    r = untrusted.provider_access([req],None,id)
-    print(r)
+    r = untrusted.provider_access([req])
     assert r['success']     == True
     assert r['status_code'] == 200
-    r = alt_provider.get_provider_access('abc.xyz@rbccps.org',id)
+
+    alt_provider.set_user_session_id(fetch_sessionId('abc.xyz@rbccps.org'))
+    r = alt_provider.get_provider_access('abc.xyz@rbccps.org')
     assert r['success']     is False
     assert r['status_code'] == 403
 
 def test_sessionId_incorrect():
     #passing incorrect session id while accessing Secure endpoint
-    global id 
-    body ={"apis": [
-                  {
-                    "method": "get",
-                    "endpoint": "/auth/v1/provider/access"
-            }]}
-    r = untrusted.get_session_id(body)
-    assert r['success']     is True
-    id = ""
-    r = untrusted.get_provider_access(None,id)
+    untrusted.set_user_session_id("")
+    r = untrusted.get_provider_access()
     assert r['success']     is False
     assert r['status_code'] == 403
 
+def test_no_sessionId_header():
+    # setting session ID None will not set the header in requests
+    untrusted.set_user_session_id(None)
+    r = untrusted.get_provider_access()
+    assert r['success']     is False
+    assert r['status_code'] == 403
 
 def test_sessionId_multiple_sucess():
     #get session id for multiple end points and check if success      
-    global id 
     body ={"apis": [
                   {
                     "method": "get",
@@ -190,14 +178,16 @@ def test_sessionId_multiple_sucess():
             ]}
     r = untrusted.get_session_id(body)
     assert r['success']     is True
-    id = fetch_sessionId('abc.xyz@rbccps.org')
-    r = untrusted.get_provider_access(None,id)
+    untrusted.set_user_session_id(fetch_sessionId('abc.xyz@rbccps.org'))
+
+    r = untrusted.get_provider_access()
     assert r['success']     is True
     assert r['status_code'] == 200
+
     resource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
     resource_id = provider_id + '/rs.example.com/' + resource_group
     req = {"user_email": email, "user_role":'consumer','capabilities':['temporal'], "item_id":resource_id, "item_type":"resourcegroup"}
-    r = untrusted.provider_access([req],None,id)
+    r = untrusted.provider_access([req])
     assert r['success']     is True
     assert r['status_code'] == 200
 
@@ -208,13 +198,20 @@ def test_delegate_flow():
                     "method": "get",
                     "endpoint": "/auth/v1/provider/access"
               }]}
+
     r = alt_provider.get_session_id(body)
     assert r['success']     is True
     assert r['status_code'] == 200
-    id = fetch_sessionId(delegate_email)
-    r = alt_provider.get_provider_access('abc.xyz@rbccps.org',id)
+
+    alt_provider.set_user_session_id(fetch_sessionId(delegate_email))
+
+    r = alt_provider.get_provider_access('abc.xyz@rbccps.org')
     assert r['success']     is True
     assert r['status_code'] == 200
-    r = untrusted.get_provider_access(None,id)
+
+    # using delegates session ID for provider
+    untrusted.set_user_session_id(fetch_sessionId(delegate_email))
+
+    r = untrusted.get_provider_access(None)
     assert r['success']     is False
     assert r['status_code'] == 403

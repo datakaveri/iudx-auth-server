@@ -1,6 +1,7 @@
 from init import untrusted
 from init import consumer
 from access import *
+from session import *
 from consent import role_reg
 import random
 import string
@@ -11,6 +12,12 @@ init_provider()
 email   = "barun@iisc.ac.in"
 assert reset_role(email) == True
 org_id = add_organization("iisc.ac.in")
+
+######### session ID setup ###########
+r = untrusted.get_session_id(ALL_SECURE_ENDPOINTS_BODY)
+assert r['success'] is True
+
+untrusted.set_user_session_id(fetch_sessionId('abc.xyz@rbccps.org'))
 
 # delete all old policies using acl/set API
 policy = "x can access x"
