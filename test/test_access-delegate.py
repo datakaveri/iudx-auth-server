@@ -2,6 +2,7 @@ from init import untrusted
 from init import alt_provider
 from init import consumer
 from access import *
+from session import *
 from consent import role_reg
 import random
 import string
@@ -52,6 +53,22 @@ def init():
         r = role_reg(email, '9454234223', name , ["consumer","onboarder","data ingester", "delegate"], org_id, csr)
         assert r['success']     == True
         assert r['status_code'] == 200
+
+        ######### session ID setup for provider, delegate and consumer with delegate role ###########
+        r = untrusted.get_session_id(ALL_SECURE_ENDPOINTS_BODY)
+        assert r['success'] is True
+
+        untrusted.set_user_session_id(fetch_sessionId('abc.xyz@rbccps.org'))
+
+        r = alt_provider.get_session_id(ALL_SECURE_ENDPOINTS_BODY)
+        assert r['success'] is True
+
+        alt_provider.set_user_session_id(fetch_sessionId(delegate_email))
+
+        r = consumer.get_session_id(ALL_SECURE_ENDPOINTS_BODY)
+        assert r['success'] is True
+
+        consumer.set_user_session_id(fetch_sessionId(email))
 
 def test_set_rule_unassigned_delegate():
 

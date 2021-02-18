@@ -1,6 +1,25 @@
 {
-	"url"		    : "",
-	"apiKey"	    : "",
-    "expiryTime"    : 0,
-    "retryTime"     : ""
-}
+    "config":{
+       "url":"",
+       "apiKey":"",
+       "expiryTime":0,
+       "retryTime":"",
+       "sessionIdLen":0
+    },
+    "secured_endpoints":{
+       "/auth/v1/provider/access":{
+          "POST":[
+             "provider",
+             "delegate"
+          ],
+          "DELETE":[
+             "provider",
+             "delegate"
+          ],
+          "GET":[
+             "provider",
+             "delegate"
+          ]
+       }
+    }
+ }

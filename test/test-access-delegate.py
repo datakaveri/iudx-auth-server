@@ -2,8 +2,10 @@ from init import untrusted
 from init import alt_provider
 from init import consumer
 from access import *
+from session import *
 from consent import role_reg
 import random
+import json
 import string
 
 init_provider()
@@ -15,6 +17,12 @@ org_id = add_organization("iisc.ac.in")
 r = role_reg(email, '9454234223', name , ["consumer","onboarder","data ingester", "delegate"], org_id, csr)
 assert r['success']     == True
 assert r['status_code'] == 200
+
+######### session ID setup ###########
+r = untrusted.get_session_id(ALL_SECURE_ENDPOINTS_BODY)
+assert r['success'] is True
+
+untrusted.set_user_session_id(fetch_sessionId('abc.xyz@rbccps.org'))
 
 # delete all old policies using acl/set API
 policy = "x can access x"
@@ -45,6 +53,12 @@ assert r['success']     is False
 # set temporal consumer rule as delegate
 req = {"user_email": email, "user_role":'consumer', "item_id":resource_id, "item_type":"resourcegroup"}
 req["capabilities"] = ['temporal']
+
+######### session ID setup for delegate ###########
+r = alt_provider.get_session_id(ALL_SECURE_ENDPOINTS_BODY)
+assert r['success'] is True
+
+alt_provider.set_user_session_id(fetch_sessionId(delegate_email))
 
 # should fail because unapproved delegate
 r = alt_provider.provider_access([req], 'abc.xyz@rbccps.org')
@@ -260,6 +274,12 @@ req = {"user_email": email, "user_role":'delegate'}
 r = untrusted.provider_access([req])
 assert r['success']     == True
 assert r['status_code'] == 200
+
+######### session ID setup for delegate ###########
+r = consumer.get_session_id(ALL_SECURE_ENDPOINTS_BODY)
+assert r['success'] is True
+
+consumer.set_user_session_id(fetch_sessionId(email))
 
 resource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
 resource_id = provider_id + '/rs.example.com/' + resource_group
