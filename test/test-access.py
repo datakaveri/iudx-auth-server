@@ -247,8 +247,8 @@ for r in rules:
                 onboarder_id = r['id']
                 assert r['item_type'] == 'catalogue'
         if r['email'] == email and r['role'] == 'data ingester' and diresource_id == r['item']['cat_id']:
+                assert r['item_type'] == 'resourcegroup'
                 ingester_id = r['id']
-                assert r['policy'].endswith('"/iudx/v1/adapter"')
 
 ### deleting rules ###
 
@@ -428,7 +428,7 @@ for r in rules:
                 assert r['item_type'] == 'provider-caps'
                 check_del = True
         if r['email'] == email and r['role'] == 'data ingester':
-                assert r['policy'].endswith('"/iudx/v1/adapter"')
+                assert r['item_type'] == 'resourcegroup'
                 check_dti = True
 
 assert check_con == True
