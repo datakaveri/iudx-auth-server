@@ -8,7 +8,7 @@ import random
 import json
 import string
 
-init_provider()
+init_provider("xyz.abc@rbccps.org")
 
 # use consumer certificate to register
 email   = "barun@iisc.ac.in"
@@ -24,11 +24,6 @@ assert r['success'] is True
 
 untrusted.set_user_session_id(fetch_sessionId('abc.xyz@rbccps.org'))
 
-# delete all old policies using acl/set API
-policy = "x can access x"
-r = untrusted.set_policy(policy)
-assert r['success'] is True
-
 # use alt_provider certificate as delegate
 delegate_email = "abc.123@iisc.ac.in"
 assert reset_role(delegate_email) == True
@@ -37,7 +32,6 @@ assert reset_role(delegate_email) == True
 provider_id = 'rbccps.org/f3dad987e514af08a4ac46cf4a41bd1df645c8cc'
 
 # register abc.123 as delegate
-
 r = role_reg(delegate_email, '9454234223', name , ["delegate"], org_id, csr)
 assert r['success']     == True
 assert r['status_code'] == 200

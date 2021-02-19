@@ -22,7 +22,6 @@ const safe_regex = require("safe-regex");
 const nodemailer = require("nodemailer");
 const geoip_lite = require("geoip-lite");
 const bodyParser = require("body-parser");
-const compression = require("compression");
 const http_request = require("request");
 const pgNativeClient = require("pg-native");
 
@@ -33,9 +32,6 @@ const TOKEN_LEN_HEX = 2 * TOKEN_LEN;
 const CSR_SIZE = 2048;
 
 const EUID = process.geteuid();
-const is_openbsd = os.type() === "OpenBSD";
-const pledge = is_openbsd ? require("node-pledge") : null;
-const unveil = is_openbsd ? require("openbsd-unveil") : null;
 
 const NUM_CPUS = os.cpus().length;
 const SERVER_NAME = "auth.iudx.org.in";
@@ -67,6 +63,16 @@ const CAPABILITIES = {
   subscription: ["/ngsi-ld/v1/subscription"],
 };
 
+/* LATEST *must* be index 0 */
+const ALL_APIS = [
+  LATEST,
+  "/ngsi-ld/v1/temporal/entities",
+  "/ngsi-ld/v1/entityOperations/query",
+  "/ngsi-ld/v1/entities",
+  "/ngsi-ld/v1/subscription",
+  INGEST_API_RULE,
+];
+
 const MIN_CERT_CLASS_REQUIRED = Object.freeze({
   /* resource server API */
   "/auth/v1/token/introspect": 1,
@@ -80,15 +86,6 @@ const MIN_CERT_CLASS_REQUIRED = Object.freeze({
 
   "/auth/v1/token/revoke": 3,
   "/auth/v1/token/revoke-all": 3,
-
-  "/auth/v1/acl": 3,
-  "/auth/v1/acl/set": 3,
-  "/auth/v1/acl/revert": 3,
-  "/auth/v1/acl/append": 3,
-
-  "/auth/v1/group/add": 3,
-  "/auth/v1/group/delete": 3,
-  "/auth/v1/group/list": 3,
 
   "/auth/v1/provider/access": -Infinity,
   "/auth/v1/get-session-id": -Infinity,
@@ -197,17 +194,6 @@ pg.connectSync(
   }
 );
 
-/* --- preload negotiator's encoding module for gzip compression --- */
-
-const Negotiator = require("negotiator");
-const negotiator = new Negotiator();
-
-try {
-  negotiator.encodings();
-} catch (x) {
-  /* ignore */
-}
-
 /* --- express --- */
 
 const app = express();
@@ -226,14 +212,12 @@ app.use(
   })
 );
 
-app.use(compression());
 app.use(bodyParser.raw({ type: "*/*" }));
 
 app.use(parse_cert_header);
 app.use(basic_security_check);
 app.use(log_conn);
 app.use(sessionIdCheck);
-//app.use(dns_check);
 
 /* --- aperture --- */
 
@@ -313,6 +297,10 @@ function is_valid_tokenhash(token_hash) {
   if (token_hash.length < MIN_TOKEN_HASH_LEN) return false;
 
   if (token_hash.length > MAX_TOKEN_HASH_LEN) return false;
+
+  const hex_regex = new RegExp(/^[a-f0-9]+$/);
+
+  if (!hex_regex.test(token_hash)) return false;
 
   return true;
 }
@@ -482,7 +470,6 @@ function is_valid_email(email) {
         case "_":
         case "@":
           break;
-
         case ".":
           ++num_dots;
           break;
@@ -630,12 +617,12 @@ function has_certificate_been_revoked(socket, cert, CRL) {
       }
     } else {
       /*
-				if the issuerCertificate is empty,
-				then the session must have been reused
-				by the browser.
+	if the issuerCertificate is empty,
+	then the session must have been reused
+	by the browser.
 
-			if (! socket.isSessionReused())
-				return true;
+	if (! socket.isSessionReused())
+	  return true;
 			*/
     }
 
@@ -657,12 +644,12 @@ function has_certificate_been_revoked(socket, cert, CRL) {
         }
       } else {
         /*
-					if fingerprint OR serial is undefined,
-					then the session must have been reused
-					by the browser.
+	  if fingerprint OR serial is undefined,
+	  then the session must have been reused
+	  by the browser.
 
-				if (! socket.isSessionReused())
-					return true;
+	  if (! socket.isSessionReused())
+	    return true;
 				*/
       }
     }
@@ -679,6 +666,25 @@ function xss_safe(input) {
 
     return input;
   }
+}
+
+/* check if name is valid. Name can have ', spaces
+ * and hyphens. function parameter title set to true
+ * if testing a title */
+
+function is_name_safe(str, title = false) {
+  if (!str || typeof str !== "string") return false;
+
+  if (str.length === 0 || str.length > MAX_SAFE_STRING_LEN) return false;
+
+  const name_regex = new RegExp(/^[a-zA-Z]+(?:(?: |[' -])[a-zA-Z]+)*$/);
+  const title_regex = new RegExp(/^[a-zA-Z]+\.?$/);
+
+  if (!name_regex.test(str) && title === false) return false;
+
+  if (!title_regex.test(str) && title === true) return false;
+
+  return true;
 }
 
 function is_string_safe(str, exceptions = "") {
@@ -710,7 +716,12 @@ function is_iudx_certificate(cert) {
 
   // certificate issuer should be IUDX CA or a IUDX sub-CA
 
-  return email === "ca@iudx.org.in" || email.startsWith("iudx.sub.ca@");
+  // for dev - ca@iudx.io
+  return (
+    email === "ca@iudx.org.in" ||
+    email.startsWith("iudx.sub.ca@") ||
+    email === "ca@iudx.io"
+  );
 }
 
 function body_to_json(body) {
@@ -829,122 +840,6 @@ async function check_valid_delegate(delegate_uid, provider_uid) {
   }
 }
 
-/* ---
-  Set aperture policies for a specific provider
-  provider_id is email address of provider,
-  uid is the user ID of the provider,
-  rules is an array of strings.
-
-  If rules is null, then fetch rules from access table
-  using uid.
-		--- */
-
-async function set_acl(provider_id, uid, rules, callback) {
-  if (rules === null && uid !== null) {
-    try {
-      const result = await pool.query(
-        "SELECT policy_text FROM consent.access," +
-          " consent.role WHERE provider_id = $1::integer" +
-          " AND role.id = access.role_id ORDER BY role",
-        [uid]
-      );
-
-      rules = result.rows.map((row) => {
-        return row.policy_text;
-      });
-
-      /* remove empty strings (delegate rules) */
-      rules = rules.filter((val) => val !== "");
-    } catch (error) {
-      let err = new Error(error.message);
-      err.http_code = 500;
-      callback(err);
-      return;
-    }
-  }
-
-  let policy_in_json;
-
-  try {
-    policy_in_json = rules.map((r) => {
-      return parser.parse(r.trim());
-    });
-  } catch (x) {
-    let error = new Error("Syntax error in policy. ");
-    log("warn", "APERTURE_ERROR", false, {}, x.message);
-    error.http_code = 500;
-    callback(error);
-    return;
-  }
-
-  const email_domain = provider_id.split("@")[1];
-  const sha1_of_email = sha1(provider_id);
-
-  const provider_id_hash = email_domain + "/" + sha1_of_email;
-
-  const base64policy = base64(rules.join(";"));
-
-  try {
-    const results = await pool.query(
-      "SELECT 1 FROM policy WHERE id = $1::text LIMIT 1",
-      [provider_id_hash]
-    );
-
-    let query;
-    let params;
-
-    if (results.rows.length > 0) {
-      query =
-        "UPDATE policy" +
-        " SET policy = $1::text," +
-        " policy_in_json = $2::jsonb," +
-        " previous_policy = policy," +
-        " last_updated = NOW()," +
-        " api_called_from = $3::text" +
-        " WHERE id = $4::text";
-
-      params = [
-        base64policy, // 1
-        JSON.stringify(policy_in_json), // 2
-        null, // 3
-        provider_id_hash, // 4
-      ];
-    } else {
-      query =
-        "INSERT INTO policy VALUES(" +
-        "$1::text," +
-        "$2::text," +
-        "$3::jsonb," +
-        "NULL," +
-        "NOW()," +
-        "$4::text" +
-        ")";
-
-      params = [
-        provider_id_hash, // 1
-        base64policy, // 2
-        JSON.stringify(policy_in_json), // 3
-        null, // 4
-      ];
-    }
-
-    const result_1 = await pool.query(query, params);
-
-    if (result_1.rowCount === 0) throw new Error("Error in deletion");
-  } catch (error) {
-    let err = new Error("Internal error!");
-    err.http_code = 500;
-    callback(err);
-    return;
-  }
-
-  callback(null);
-}
-
-function intersect(array1, array2) {
-  return array1.filter((val) => array2.includes(val));
-}
-
 function create_consumer_policy_text(
   accesser_email,
   resource,
@@ -1039,10 +934,6 @@ function parse_cert_header(req, res, next) {
 
 function basic_security_check(req, res, next) {
   if (!has_started_serving_apis) {
-    if (is_openbsd)
-      // drop "rpath" in worker
-      pledge.init("error stdio tty prot_exec inet dns recvfd");
-
     has_started_serving_apis = true;
   }
 
@@ -1094,19 +985,6 @@ function basic_security_check(req, res, next) {
       }
     }
 
-    if (user_notice.untrusted) {
-      res.locals.untrusted = true;
-    }
-
-    if (user_notice["delegated-by"]) {
-      return END_ERROR(
-        res,
-        403,
-        "Delegated certificates cannot" +
-          " be used to call auth/marketplace APIs"
-      );
-    }
-
     const cert_class = user_notice["class"];
     let integer_cert_class = 0;
 
@@ -1128,11 +1006,10 @@ function basic_security_check(req, res, next) {
 
     if (min_class_required === 1 && integer_cert_class !== 1) {
       /*
-				class-1 APIs are special,
-				user needs a class-1 certificate
-
-				except in case of "/certificate-info"
-			*/
+	class-1 APIs are special,
+	user needs a class-1 certificate
+	except in case of "/certificate-info"
+      */
 
       if (!api.endsWith("/certificate-info")) {
         return END_ERROR(
@@ -1162,54 +1039,6 @@ function basic_security_check(req, res, next) {
       res.locals.cert_class = integer_cert_class;
       res.locals.email = cert.subject.emailAddress.toLowerCase();
 
-      if (user_notice["can-access"]) {
-        res.locals.can_access_regex = [];
-
-        const can_access_regex = user_notice["can-access"].split(";");
-        let regex_number = 0;
-
-        for (const r of can_access_regex) {
-          ++regex_number;
-
-          const regex = r.trim();
-
-          if (regex === "") continue;
-
-          /*
-						allow '^' '*' and '$' characters
-						but not unsafe RegEx
-					*/
-
-          if (!is_string_safe(regex, "^*$")) {
-            const error_response = {
-              message: "Unsafe 'can-access' RegEx in certificate",
-              "invalid-input": "RegEx no. " + regex_number,
-            };
-
-            return END_ERROR(res, 400, error_response);
-          }
-
-          /*
-						We don't support ".", replace:
-							"."	with	"\."
-							"*"	with	".*"
-					*/
-
-          const final_regex = regex.replace(/\./g, "\\.").replace(/\*/g, ".*");
-
-          if (!safe_regex(final_regex)) {
-            const error_response = {
-              message: "Unsafe 'can-access' RegEx in certificate",
-              "invalid-input": "RegEx no. " + regex_number,
-            };
-
-            return END_ERROR(res, 400, error_response);
-          }
-
-          res.locals.can_access_regex.push(new RegExp(final_regex));
-        }
-      }
-
       Object.freeze(res.locals);
       Object.freeze(res.locals.body);
       Object.freeze(res.locals.cert);
@@ -1218,10 +1047,10 @@ function basic_security_check(req, res, next) {
     });
   } else {
     /*
-			Certificates issued by other CAs
-			may not have an "emailAddress" field.
-			By default consider them as a class-1 certificate
-		*/
+      Certificates issued by other CAs
+      may not have an "emailAddress" field.
+      By default consider them as a class-1 certificate
+     */
 
     const error = is_secure(req, res, cert, false);
 
@@ -1232,8 +1061,8 @@ function basic_security_check(req, res, next) {
     res.locals.cert = cert;
 
     /*
-			But if the certificate has a valid "emailAddress"
-			field then we consider it as a class-2 certificate
+      But if the certificate has a valid "emailAddress"
+      field then we consider it as a class-2 certificate
 		*/
 
     if (is_valid_email(cert.subject.emailAddress)) {
@@ -1242,14 +1071,14 @@ function basic_security_check(req, res, next) {
     }
 
     /*
-			class-1 APIs are special,
-			user needs a class-1 certificate
+	class-1 APIs are special,
+	user needs a class-1 certificate
 
-			except in case of "/certificate-info"
+	except in case of "/certificate-info"
 
-			if user is trying to call a class-1 API,
-			then downgrade his certificate class
-		*/
+	if user is trying to call a class-1 API,
+	then downgrade his certificate class
+    */
 
     if (min_class_required === 1) {
       if (!api.endsWith("/certificate-info")) {
@@ -1309,61 +1138,6 @@ function log_conn(req, res, next) {
   log("info", type, false, details);
 
   return next();
-}
-
-function dns_check(req, res, next) {
-  const cert = res.locals.cert;
-  const cert_class = res.locals.cert_class;
-
-  // No dns check required if certificate is class-2 or above
-
-  if (cert_class > 1) return next();
-
-  if (!cert.subject || !is_string_safe(cert.subject.CN))
-    return END_ERROR(res, 400, "Invalid 'CN' in the certificate");
-
-  const ip = req.ip;
-  let ip_matched = false;
-  const hostname_in_certificate = cert.subject.CN.toLowerCase();
-
-  dns.lookup(hostname_in_certificate, { all: true }, (error, ip_addresses) => {
-    /*
-			No dns checks for "example.com"
-			this for developer's testing purposes.
-		*/
-
-    if (hostname_in_certificate === "example.com") {
-      error = null;
-      ip_matched = true;
-      ip_addresses = [];
-    }
-
-    if (error) {
-      const error_response = {
-        message: "Invalid 'hostname' in certificate",
-        "invalid-input": xss_safe(hostname_in_certificate),
-      };
-
-      return END_ERROR(res, 400, error_response);
-    }
-
-    for (const a of ip_addresses) {
-      if (a.address === ip) {
-        ip_matched = true;
-        break;
-      }
-    }
-
-    if (!ip_matched) {
-      return END_ERROR(
-        res,
-        403,
-        "Your certificate's hostname in CN " + "and your IP does not match!"
-      );
-    }
-
-    return next(); // dns check passed
-  });
 }
 
 //check before accessing secure end-points
@@ -1472,7 +1246,7 @@ function sign_csr(raw_csr, user) {
 
 /* --- Auth APIs --- */
 
-app.post("/auth/v[1-2]/token", (req, res) => {
+app.post("/auth/v[1-2]/token", async (req, res) => {
   const cert = res.locals.cert;
   const cert_class = res.locals.cert_class;
   const body = res.locals.body;
@@ -1484,6 +1258,27 @@ app.post("/auth/v[1-2]/token", (req, res) => {
 
   const request_array = to_array(body.request);
   const processed_request_array = [];
+
+  let role_ids = [];
+
+  try {
+    const result = await pool.query(
+      "SELECT role.id FROM consent.role," +
+        " consent.users WHERE user_id = users.id" +
+        " AND email = $1::text AND status = 'approved'" +
+        " AND role = ANY ($2::consent.role_enum[])",
+      [
+        consumer_id, // 1
+        ["consumer", "onboarder", "data ingester"], // 2
+      ]
+    );
+
+    if (result.rowCount === 0) return END_ERROR(res, 401, "Not allowed!");
+
+    role_ids = result.rows.map((row) => row.id);
+  } catch (error) {
+    return END_ERROR(res, 500, "Internal error!", error);
+  }
 
   if (!request_array || request_array.length < 1) {
     return END_ERROR(
@@ -1512,34 +1307,36 @@ app.post("/auth/v[1-2]/token", (req, res) => {
     }
   }
 
-  const rows = pg.querySync(
-    "SELECT COUNT(*)/60.0" +
-      " AS rate" +
-      " FROM token" +
-      " WHERE id = $1::text" +
-      " AND issued_at >= (NOW() - interval '60 seconds')",
-    [
-      consumer_id, // 1
-    ]
-  );
-
-  // in last 1 minute
-  const tokens_rate_per_second = parseFloat(rows[0].rate);
-
-  if (tokens_rate_per_second > 1) {
-    // tokens per second
-    log(
-      "err",
-      "HIGH_TOKEN_RATE",
-      true,
-      {},
-      "Too many requests from user : " +
-        consumer_id +
-        ", from ip : " +
-        String(req.ip)
+  try {
+    const result = await pool.query(
+      "SELECT COUNT(*)/60.0" +
+        " AS rate" +
+        " FROM token" +
+        " WHERE id = $1::text" +
+        " AND issued_at >= (NOW() - interval '60 seconds')",
+      [consumer_id]
     );
 
-    return END_ERROR(res, 429, "Too many requests");
+    // in last 1 minute
+    const tokens_rate_per_second = parseFloat(result.rows[0].rate);
+
+    if (tokens_rate_per_second > 1) {
+      // tokens per second
+      log(
+        "err",
+        "HIGH_TOKEN_RATE",
+        true,
+        {},
+        "Too many requests from user : " +
+          consumer_id +
+          ", from ip : " +
+          String(req.ip)
+      );
+
+      return END_ERROR(res, 429, "Too many requests");
+    }
+  } catch (error) {
+    return END_ERROR(res, 500, "Internal error!", error);
   }
 
   const ip = req.ip;
@@ -1593,8 +1390,6 @@ app.post("/auth/v[1-2]/token", (req, res) => {
   const providers = {};
 
   let num_rules_passed = 0;
-
-  const can_access_regex = res.locals.can_access_regex;
 
   for (let r of request_array) {
     let resource;
@@ -1694,28 +1489,6 @@ app.post("/auth/v[1-2]/token", (req, res) => {
       return END_ERROR(res, 400, error_response);
     }
 
-    if (can_access_regex) {
-      let access_denied = true;
-
-      for (const regex of can_access_regex) {
-        if (resource.match(regex)) {
-          access_denied = false;
-          break;
-        }
-      }
-
-      if (access_denied) {
-        const error_response = {
-          message: "Your certificate does not allow access to this 'id'",
-          "invalid-input": {
-            id: xss_safe(resource),
-          },
-        };
-
-        return END_ERROR(res, 403, error_response);
-      }
-    }
-
     const split = resource.split("/");
 
     const email_domain = split[0].toLowerCase();
@@ -1726,6 +1499,29 @@ app.post("/auth/v[1-2]/token", (req, res) => {
     const resource_server = split[2].toLowerCase();
     const resource_name = split.slice(3).join("/");
 
+    const resource_group =
+      provider_id_hash + "/" + resource_server + "/" + split[3];
+
+    /* only tokens for onboarding may have no APIs in request
+     * If apis only contains "/*" and not onboarder token,
+     * throw error
+     */
+    if (resource_server === CAT_URL) r.apis = ["/*"];
+    else if (r.apis[0] === "/*" && r.apis.length === 1) {
+      const error_response = {
+        message: "'apis' is required for this id",
+        "invalid-input": {
+          id: xss_safe(resource),
+        },
+      };
+
+      return END_ERROR(res, 400, error_response);
+    }
+
+    const all_apis = [...ALL_APIS];
+    /* latest API is index 0 in ALL_APIS */
+    all_apis[0] = all_apis[0](resource_group);
+
     providers[provider_id_hash] = true;
 
     // to be generated later
@@ -1734,93 +1530,126 @@ app.post("/auth/v[1-2]/token", (req, res) => {
     // to be generated later
     sha256_of_resource_server_token[resource_server] = true;
 
-    const rows = pg.querySync(
-      "SELECT policy,policy_in_json" +
-        " FROM policy" +
-        " WHERE id = $1::text" +
-        " LIMIT 1",
-      [
-        provider_id_hash, // 1
-      ]
-    );
+    let provider_id, policy_in_json, access_id;
 
-    if (rows.length === 0) {
-      const error_response = {
-        message:
-          "Invalid 'id'; no access" +
-          " control policies have been" +
-          " set for this 'id'" +
-          " by the data provider",
+    /* since only resource groups are there, we can check */
+    if (resource_server !== CAT_URL) {
+      try {
+        const result = await pool.query(
+          "SELECT id, provider_id FROM consent.resourcegroup " +
+            " WHERE cat_id = $1::text",
+          [resource_group]
+        );
 
-        "invalid-input": xss_safe(resource),
-      };
+        if (result.rowCount === 0) throw new Error("Invalid ID");
 
-      return END_ERROR(res, 400, error_response);
+        provider_id = result.rows[0].provider_id;
+        access_id = result.rows[0].id;
+      } catch (error) {
+        if (error.message === "Invalid ID") {
+          const error_response = {
+            message:
+              "Invalid 'id'; no access" +
+              " control policies have been" +
+              " set for this 'id'" +
+              " by the data provider",
+
+            "invalid-input": xss_safe(resource),
+          };
+
+          return END_ERROR(res, 403, error_response);
+        } else return END_ERROR(res, 500, "Internal error!", error);
+      }
+    } else {
+      access_id = -1;
+
+      try {
+        const result = await pool.query(
+          "SELECT users.id, email" +
+            " FROM consent.users, consent.organizations" +
+            " WHERE organization_id = organizations.id" +
+            " AND website = $1::text",
+          [email_domain]
+        );
+
+        if (result.rowCount === 0) throw new Error("Invalid ID");
+
+        for (const g of result.rows)
+          if (sha1_of_email === sha1(g.email)) provider_id = g.id;
+
+        if (provider_id === undefined) throw new Error("Invalid ID");
+      } catch (error) {
+        if (error.message === "Invalid ID") {
+          const error_response = {
+            message:
+              "Invalid 'id'; no access" +
+              " control policies have been" +
+              " set for this 'id'" +
+              " by the data provider",
+
+            "invalid-input": xss_safe(resource),
+          };
+
+          return END_ERROR(res, 403, error_response);
+        } else return END_ERROR(res, 500, "Internal error!", error);
+      }
     }
 
-    const policy_lowercase = Buffer.from(rows[0].policy, "base64")
-      .toString("ascii")
-      .toLowerCase();
+    try {
+      const result = await pool.query(
+        "SELECT policy_json FROM consent.access" +
+          " WHERE provider_id = $1::integer" +
+          " AND access_item_id = $2::integer" +
+          " AND access_item_type = $3::consent.access_item" +
+          " AND role_id = ANY ($4::integer[])",
+        [
+          provider_id,
+          access_id,
+          access_id === -1 ? "catalogue" : "resourcegroup",
+          role_ids,
+        ]
+      );
 
-    const policy_in_json = rows[0].policy_in_json;
+      if (result.rowCount === 0) {
+        const error_response = {
+          message:
+            "Invalid 'id'; no access" +
+            " control policies have been" +
+            " set for this 'id'" +
+            " by the data provider",
+
+          "invalid-input": xss_safe(resource),
+        };
+
+        return END_ERROR(res, 403, error_response);
+      }
+
+      policy_in_json = result.rows.map((row) => row.policy_json);
+    } catch (error) {
+      return END_ERROR(res, 500, "Internal error!", error);
+    }
 
     // full name of resource eg: bangalore.domain.com/streetlight-1
     context.resource = resource_server + "/" + resource_name;
 
-    context.conditions.groups = "";
-
-    if (policy_lowercase.search(" consumer-in-group") >= 0) {
-      const rows = pg.querySync(
-        "SELECT DISTINCT group_name" +
-          " FROM groups" +
-          " WHERE id = $1::text" +
-          " AND consumer = $2::text" +
-          " AND valid_till > NOW()",
-        [
-          provider_id_hash, // 1
-          consumer_id, // 2
-        ]
-      );
-
-      const group_array = [];
-      for (const g of rows) group_array.push(g.group_name);
-
-      context.conditions.groups = group_array.join();
-    }
-
-    context.conditions.tokens_per_day = 0;
-
-    if (policy_lowercase.search(" tokens_per_day ") >= 0) {
-      const resource_true = {};
-      resource_true[resource] = true;
-
-      const rows = pg.querySync(
-        "SELECT COUNT(*) FROM token" +
-          " WHERE id = $1::text" +
-          " AND resource_ids @> $2::jsonb" +
-          " AND issued_at >= DATE_TRUNC('day',NOW())",
-        [
-          consumer_id, // 1
-          JSON.stringify(resource_true), // 2
-        ]
-      );
-
-      context.conditions.tokens_per_day = parseInt(rows[0].count, 10);
-    }
-
     let CTX = context;
-
-    if (r.body && policy_lowercase.search(" body.") >= 0) {
-      // deep copy
-      CTX = JSON.parse(JSON.stringify(context));
-
-      for (const key in r.body) CTX.conditions["body." + key] = r.body[key];
-    }
 
     for (const api of r.apis) {
       if (typeof api !== "string") {
         const error_response = {
           message: "'api' must be a string",
+          "invalid-input": {
+            id: xss_safe(resource),
+            api: xss_safe(api),
+          },
+        };
+
+        return END_ERROR(res, 400, error_response);
+      }
+
+      if (!all_apis.includes(api) && api !== "/*") {
+        const error_response = {
+          message: "Invalid api",
           "invalid-input": {
             id: xss_safe(resource),
             api: xss_safe(api),
@@ -1975,24 +1804,26 @@ app.post("/auth/v[1-2]/token", (req, res) => {
     req.headers.origin, // 12
   ];
 
-  pool.query(query, params, (error, results) => {
-    if (error || results.rowCount === 0) {
-      return END_ERROR(res, 500, "Internal error!", error);
-    }
+  try {
+    const result = await pool.query(query, params);
 
-    const expiry_date = new Date(Date.now() + token_time * 1000);
+    if (result.rowCount === 0) throw new Error("Error in insertion");
+  } catch (error) {
+    return END_ERROR(res, 500, "Internal error!", error);
+  }
 
-    const details = {
-      requester: consumer_id,
-      requesterRole: cert_class,
-      token_expiry: expiry_date,
-      resource_ids: processed_request_array,
-    };
+  const expiry_date = new Date(Date.now() + token_time * 1000);
 
-    log("info", "ISSUED_TOKEN", true, details);
+  const details = {
+    requester: consumer_id,
+    requesterRole: cert_class,
+    token_expiry: expiry_date,
+    resource_ids: processed_request_array,
+  };
 
-    return END_SUCCESS(res, response);
-  });
+  log("info", "ISSUED_TOKEN", true, details);
+
+  return END_SUCCESS(res, response);
 });
 
 app.post("/auth/v[1-2]/token/introspect", (req, res) => {
@@ -2377,10 +2208,12 @@ app.post("/auth/v[1-2]/token/revoke", (req, res) => {
 app.post("/auth/v[1-2]/token/revoke-all", (req, res) => {
   const id = res.locals.email;
   const body = res.locals.body;
+  const serial_regex = new RegExp(/^-?[a-fA-F0-9]{40}$/);
+  const fingerprint_regex = new RegExp(/^([a-fA-F0-9]{2}:){19}[a-fA-F0-9]{2}$/);
 
   if (!body.serial) return END_ERROR(res, 400, "No 'serial' found in the body");
 
-  if (!is_string_safe(body.serial))
+  if (!serial_regex.test(body.serial))
     return END_ERROR(res, 400, "Invalid 'serial'");
 
   const serial = body.serial.toLowerCase();
@@ -2389,7 +2222,7 @@ app.post("/auth/v[1-2]/token/revoke-all", (req, res) => {
     return END_ERROR(res, 400, "No 'fingerprint' found in the body");
   }
 
-  if (!is_string_safe(body.fingerprint, ":"))
+  if (!fingerprint_regex.test(body.fingerprint))
     // fingerprint contains ':'
     return END_ERROR(res, 400, "Invalid 'fingerprint'");
 
@@ -2462,279 +2295,6 @@ app.post("/auth/v[1-2]/token/revoke-all", (req, res) => {
           return END_SUCCESS(res, response);
         }
       );
-    }
-  );
-});
-
-app.post("/auth/v[1-2]/acl/set", (req, res) => {
-  const body = res.locals.body;
-  const provider_id = res.locals.email;
-
-  if (!body.policy) return END_ERROR(res, 400, "No 'policy' found in request");
-
-  if (typeof body.policy !== "string")
-    return END_ERROR(res, 400, "'policy' must be a string");
-
-  const policy = body.policy.trim();
-  const policy_lowercase = policy.toLowerCase();
-
-  if (
-    policy_lowercase.search(" like ") >= 0 ||
-    policy_lowercase.search("::regex") >= 0
-  ) {
-    return END_ERROR(res, 400, "RegEx in 'policy' is not supported");
-  }
-
-  const rules = policy.split(";");
-
-  set_acl(provider_id, null, rules, (err) => {
-    if (err) return END_ERROR(res, err.http_code, err.message, err);
-    else return END_SUCCESS(res);
-  });
-});
-
-app.post("/auth/v[1-2]/acl/append", (req, res) => {
-  const body = res.locals.body;
-  const provider_id = res.locals.email;
-
-  if (!body.policy) return END_ERROR(res, 400, "No 'policy' found in request");
-
-  if (typeof body.policy !== "string")
-    return END_ERROR(res, 400, "'policy' must be a string");
-
-  const policy = body.policy.trim();
-  const policy_lowercase = policy.toLowerCase();
-
-  if (
-    policy_lowercase.search(" like ") >= 0 ||
-    policy_lowercase.search("::regex") >= 0
-  ) {
-    return END_ERROR(res, 400, "RegEx in 'policy' is not supported");
-  }
-
-  const rules = policy.split(";");
-
-  let policy_in_json;
-
-  try {
-    policy_in_json = rules.map((r) => {
-      return parser.parse(r.trim());
-    });
-  } catch (x) {
-    const err = String(x);
-    return END_ERROR(res, 400, "Syntax error in policy. " + err);
-  }
-
-  const email_domain = provider_id.split("@")[1];
-  const sha1_of_email = sha1(provider_id);
-
-  const provider_id_hash = email_domain + "/" + sha1_of_email;
-
-  pool.query(
-    "SELECT policy FROM policy WHERE id = $1::text LIMIT 1",
-    [
-      provider_id_hash, // 1
-    ],
-
-    (error, results) => {
-      if (error) return END_ERROR(res, 500, "Internal error!", error);
-
-      let query;
-      let params;
-
-      if (results.rows.length === 1) {
-        const old_policy = Buffer.from(
-          results.rows[0].policy,
-          "base64"
-        ).toString("ascii");
-
-        const new_policy = old_policy + ";" + policy;
-        const new_rules = new_policy.split(";");
-
-        try {
-          policy_in_json = new_rules.map((r) => {
-            return parser.parse(r.trim());
-          });
-        } catch (x) {
-          const err = String(x);
-
-          return END_ERROR(res, 400, "Syntax error in policy. " + err);
-        }
-
-        const base64policy = Buffer.from(new_policy).toString("base64");
-
-        query =
-          "UPDATE policy" +
-          " SET policy = $1::text," +
-          " policy_in_json = $2::jsonb," +
-          " previous_policy = policy," +
-          " last_updated = NOW()," +
-          " api_called_from = $3::text" +
-          " WHERE id = $4::text";
-
-        params = [
-          base64policy, // 1
-          JSON.stringify(policy_in_json), // 2
-          req.headers.origin, // 3
-          provider_id_hash, // 4
-        ];
-      } else {
-        const base64policy = Buffer.from(policy).toString("base64");
-
-        query =
-          "INSERT INTO policy VALUES(" +
-          "$1::text," +
-          "$2::text," +
-          "$3::jsonb," +
-          "NULL," +
-          "NOW()," +
-          "$4::text" +
-          ")";
-
-        params = [
-          provider_id_hash, // 1
-          base64policy, // 2
-          JSON.stringify(policy_in_json), // 3
-          req.headers.origin, // 4
-        ];
-      }
-
-      pool.query(query, params, (error_1, results_1) => {
-        if (error_1 || results_1.rowCount === 0) {
-          return END_ERROR(res, 500, "Internal error!", error_1);
-        }
-
-        const details = {
-          provider: provider_id,
-          policy: policy,
-        };
-
-        log("info", "APPENDED_POLICY", true, details);
-
-        return END_SUCCESS(res);
-      });
-    }
-  );
-});
-
-app.post("/auth/v[1-2]/acl", (req, res) => {
-  const provider_id = res.locals.email;
-
-  const email_domain = provider_id.split("@")[1];
-  const sha1_of_email = sha1(provider_id);
-
-  const provider_id_hash = email_domain + "/" + sha1_of_email;
-
-  pool.query(
-    "SELECT policy, previous_policy, last_updated, api_called_from" +
-      " FROM policy" +
-      " WHERE id = $1::text " +
-      " LIMIT 1",
-    [
-      provider_id_hash, // 1
-    ],
-
-    (error, results) => {
-      if (error) return END_ERROR(res, 500, "Internal error!", error);
-
-      if (results.rows.length === 0)
-        return END_ERROR(res, 400, "No policies set yet!");
-
-      const policy = Buffer.from(results.rows[0].policy, "base64")
-        .toString("ascii")
-        .split(";");
-
-      let previous_policy = [];
-
-      if (results.rows[0].previous_policy) {
-        previous_policy = Buffer.from(results.rows[0].previous_policy, "base64")
-          .toString("ascii")
-          .split(";");
-      }
-
-      const response = {
-        policy: policy,
-        "previous-policy": previous_policy,
-        "last-updated": results.rows[0].last_updated,
-        "api-called-from": results.rows[0].api_called_from,
-      };
-
-      return END_SUCCESS(res, response);
-    }
-  );
-});
-
-app.post("/auth/v[1-2]/acl/revert", (req, res) => {
-  const provider_id = res.locals.email;
-
-  const email_domain = provider_id.split("@")[1];
-  const sha1_of_email = sha1(provider_id);
-
-  const provider_id_hash = email_domain + "/" + sha1_of_email;
-
-  pool.query(
-    "SELECT previous_policy FROM policy" +
-      " WHERE id = $1::text" +
-      " AND previous_policy IS NOT NULL" +
-      " LIMIT 1",
-    [
-      provider_id_hash, // 1
-    ],
-
-    (error, results) => {
-      if (error) return END_ERROR(res, 500, "Internal error!", error);
-
-      if (results.rows.length === 0)
-        return END_ERROR(res, 400, "No previous policies found!");
-
-      const previous_policy = Buffer.from(
-        results.rows[0].previous_policy,
-        "base64"
-      )
-        .toString("ascii")
-        .split(";");
-
-      let policy_in_json;
-
-      try {
-        policy_in_json = previous_policy.map((r) => {
-          return parser.parse(r.trim());
-        });
-      } catch (x) {
-        const err = String(x);
-
-        return END_ERROR(res, 400, "Syntax error in previous-policy. " + err);
-      }
-
-      const query =
-        "UPDATE policy" +
-        " SET policy = previous_policy," +
-        " policy_in_json = $1::jsonb," +
-        " previous_policy = NULL," +
-        " last_updated = NOW()," +
-        " api_called_from = $2::text" +
-        " WHERE id = $3::text";
-
-      const params = [
-        JSON.stringify(policy_in_json), // 1
-        req.headers.origin, // 2
-        provider_id_hash, // 3
-      ];
-
-      pool.query(query, params, (error_1, results_1) => {
-        if (error_1 || results_1.rowCount === 0) {
-          return END_ERROR(res, 500, "Internal error!", error_1);
-        }
-
-        const details = {
-          provider: provider_id,
-          policy: previous_policy,
-        };
-
-        log("info", "REVERTED_POLICY", true, details);
-
-        return END_SUCCESS(res);
-      });
     }
   );
 });
@@ -2819,7 +2379,7 @@ app.post("/auth/v[1-2]/audit/tokens", (req, res) => {
             const revoked = row.revoked || !row.is_valid_token_for_provider;
 
             /* return only resource IDs belonging to provider
-					who requested audit */
+				   who requested audit */
 
             let filtered_request = [];
 
@@ -2860,209 +2420,6 @@ app.post("/auth/v[1-2]/audit/tokens", (req, res) => {
       );
     }
   );
-});
-
-app.post("/auth/v[1-2]/group/add", (req, res) => {
-  const body = res.locals.body;
-  const provider_id = res.locals.email;
-
-  if (!body.consumer)
-    return END_ERROR(res, 400, "No 'consumer' found in the body");
-
-  if (!is_valid_email(body.consumer))
-    return END_ERROR(res, 400, "'consumer' must be an e-mail");
-
-  const consumer_id = body.consumer.toLowerCase();
-
-  if (!body.group) return END_ERROR(res, 400, "No 'group' found in the body");
-
-  if (!is_string_safe(body.group))
-    return END_ERROR(res, 400, "Invalid 'group'");
-
-  const group = body.group.toLowerCase();
-
-  if (!body["valid-till"])
-    return END_ERROR(res, 400, "No 'valid-till' found in the body");
-
-  const valid_till = parseInt(body["valid-till"], 10);
-
-  // 1 year max
-  if (isNaN(valid_till) || valid_till < 1 || valid_till > 8760) {
-    return END_ERROR(res, 400, "'valid-till' must be a positive number");
-  }
-
-  const email_domain = provider_id.split("@")[1];
-  const sha1_of_email = sha1(provider_id);
-
-  const provider_id_hash = email_domain + "/" + sha1_of_email;
-
-  pool.query(
-    "INSERT INTO groups" +
-      " VALUES ($1::text, $2::text, $3::text, NOW() + $4::interval)",
-    [
-      provider_id_hash, // 1
-      consumer_id, // 2
-      group, // 3
-      valid_till + " hours", // 4
-    ],
-
-    (error, results) => {
-      if (error || results.rowCount === 0)
-        return END_ERROR(res, 500, "Internal error!", error);
-
-      const details = {
-        provider: provider_id,
-        consumer: consumer_id,
-        group: group,
-        valid_for: valid_till + " hours",
-      };
-
-      log("info", "CONSUMER_ADDED_GROUP", true, details);
-
-      return END_SUCCESS(res);
-    }
-  );
-});
-
-app.post("/auth/v[1-2]/group/list", (req, res) => {
-  const body = res.locals.body;
-  const provider_id = res.locals.email;
-
-  if (body.group) {
-    if (!is_string_safe(body.group))
-      return END_ERROR(res, 400, "Invalid 'group'");
-  }
-
-  const group = body.group ? body.group.toLowerCase() : null;
-
-  const email_domain = provider_id.split("@")[1];
-  const sha1_of_email = sha1(provider_id);
-
-  const provider_id_hash = email_domain + "/" + sha1_of_email;
-
-  const response = [];
-
-  if (group) {
-    pool.query(
-      "SELECT consumer, valid_till FROM groups" +
-        " WHERE id = $1::text" +
-        " AND group_name = $2::text" +
-        " AND valid_till > NOW()",
-      [
-        provider_id_hash, // 1
-        group, // 2
-      ],
-
-      (error, results) => {
-        if (error) {
-          return END_ERROR(res, 500, "Internal error!", error);
-        }
-
-        for (const row of results.rows) {
-          response.push({
-            consumer: row.consumer,
-            "valid-till": row.valid_till,
-          });
-        }
-
-        return END_SUCCESS(res, response);
-      }
-    );
-  } else {
-    pool.query(
-      "SELECT consumer,group_name,valid_till" +
-        " FROM groups" +
-        " WHERE id = $1::text" +
-        " AND valid_till > NOW()",
-      [
-        provider_id_hash, // 1
-      ],
-
-      (error, results) => {
-        if (error) {
-          return END_ERROR(res, 500, "Internal error!", error);
-        }
-
-        for (const row of results.rows) {
-          response.push({
-            consumer: row.consumer,
-            group: row.group_name,
-            "valid-till": row.valid_till,
-          });
-        }
-
-        return END_SUCCESS(res, response);
-      }
-    );
-  }
-});
-
-app.post("/auth/v[1-2]/group/delete", (req, res) => {
-  const body = res.locals.body;
-  const provider_id = res.locals.email;
-
-  if (!body.consumer)
-    return END_ERROR(res, 400, "No 'consumer' found in the body");
-
-  if (body.consumer !== "*") {
-    if (!is_valid_email(body.consumer)) {
-      return END_ERROR(res, 400, "'consumer' must be an e-mail");
-    }
-  }
-
-  const consumer_id = body.consumer.toLowerCase();
-
-  if (!body.group) return END_ERROR(res, 400, "No 'group' found in the body");
-
-  if (!is_string_safe(body.group))
-    return END_ERROR(res, 400, "Invalid 'group'");
-
-  const group = body.group.toLowerCase();
-
-  const email_domain = provider_id.split("@")[1];
-  const sha1_of_email = sha1(provider_id);
-
-  const provider_id_hash = email_domain + "/" + sha1_of_email;
-
-  let query =
-    "UPDATE groups SET" +
-    " valid_till = (NOW() - interval '1 seconds')" +
-    " WHERE id = $1::text" +
-    " AND group_name = $2::text" +
-    " AND valid_till > NOW()";
-
-  const params = [
-    provider_id_hash, // 1
-    group, // 2
-  ];
-
-  if (consumer_id !== "*") {
-    query += " AND consumer = $3::text";
-    params.push(consumer_id); // 3
-  }
-
-  pool.query(query, params, (error, results) => {
-    if (error) return END_ERROR(res, 500, "Internal error!", error);
-
-    if (consumer_id !== "*" && results.rowCount === 0) {
-      return END_ERROR(res, 400, "Consumer not found in the group");
-    }
-
-    const response = {
-      "num-consumers-deleted": results.rowCount,
-    };
-
-    const details = {
-      provider: provider_id,
-      consumer: consumer_id,
-      group: group,
-      deleted: results.rowCount,
-    };
-
-    log("info", "CONSUMER_DELETED_GROUP", true, details);
-
-    return END_SUCCESS(res, response);
-  });
 });
 
 app.post("/auth/v[1-2]/certificate-info", async (req, res) => {
@@ -3221,13 +2578,13 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
         return END_ERROR(res, 400, err);
       }
 
-      // resource group must have 3 slashes
-      if ((resource.match(/\//g) || []).length !== 3) {
+      if (!is_string_safe(resource, "_") || resource.indexOf("..") >= 0) {
         err.message = "Invalid data (item-id)";
         return END_ERROR(res, 400, err);
       }
 
-      if (!is_string_safe(resource, "_") || resource.indexOf("..") >= 0) {
+      // resource group must have 3 slashes
+      if ((resource.match(/\//g) || []).length !== 3) {
         err.message = "Invalid data (item-id)";
         return END_ERROR(res, 400, err);
       }
@@ -3379,7 +2736,7 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
     const { req_capability } = obj;
     const { accesser_uid, accesser_email, accesser_role } = obj;
     let { access_item_id } = obj;
-    let rule, resource_name;
+    let rule, resource_name, policy_json;
 
     if (accesser_role === "data ingester" || accesser_role === "consumer")
       resource_name = resource.replace(provider_id_hash + "/", "");
@@ -3436,6 +2793,15 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
     }
 
     try {
+      /* cannot parse an empty policy, so set as {} */
+      if (accesser_role === "delegate") policy_json = {};
+      else policy_json = parser.parse(rule);
+    } catch (error) {
+      let err = new Error("Error in policy text");
+      return END_ERROR(res, 500, "Internal error!", err);
+    }
+
+    try {
       if (!access_item_id) {
         const access_item = await pool.query(
           "INSERT INTO consent." +
@@ -3469,26 +2835,27 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
       if (consumer_acc_id === null) {
         access = await pool.query(
           "INSERT into consent.access (provider_id, " +
-            " role_id, policy_text, access_item_id, " +
-            " access_item_type," +
-            " created_at, updated_at) VALUES" +
-            " ($1::integer, $2::integer, $3::text," +
-            " $4::integer, $5::consent.access_item, " +
+            " role_id, policy_text, policy_json, access_item_id, " +
+            " access_item_type, created_at, updated_at)" +
+            " VALUES ($1::integer, $2::integer, $3::text," +
+            " $4::jsonb, $5::integer, $6::consent.access_item," +
             " NOW(), NOW()) RETURNING id",
           [
             provider_uid, //$1
             role_id.rows[0].id, //$2
             rule, //$3
-            access_item_id, //$4
-            res_type, //$5
+            policy_json, //$4
+            access_item_id, //$5
+            res_type, //$6
           ]
         );
       } else {
         access = await pool.query(
           "UPDATE consent.access SET policy_text = $1::text," +
-            " updated_at = NOW() WHERE access.id = $2::integer" +
+            " policy_json = $2::jsonb, " +
+            " updated_at = NOW() WHERE access.id = $3::integer" +
             " RETURNING id",
-          [rule, consumer_acc_id]
+          [rule, policy_json, consumer_acc_id]
         );
       }
 
@@ -3523,10 +2890,7 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
     log("info", "CREATED_POLICY", true, details);
   }
 
-  set_acl(provider_email, provider_uid, null, (err) => {
-    if (err) return END_ERROR(res, err.http_code, err.message, err);
-    else return END_SUCCESS(res);
-  });
+  return END_SUCCESS(res);
 });
 
 app.get("/auth/v[1-2]/provider/access", async (req, res) => {
@@ -3534,9 +2898,10 @@ app.get("/auth/v[1-2]/provider/access", async (req, res) => {
 
   let provider_uid, rules;
   let is_delegate = false;
-  let item_details = [];
+  let item_details = {};
   let cap_details = {};
-  let owner_details = {};
+  let access_item_ids = {};
+  let accessid_arr = [];
 
   try {
     provider_uid = await check_privilege(email, "provider");
@@ -3574,34 +2939,37 @@ app.get("/auth/v[1-2]/provider/access", async (req, res) => {
     return END_ERROR(res, 500, "Internal error!", error);
   }
 
-  const accessid_arr = rules.map((obj) => obj.id);
-  const access_items = [...new Set(rules.map((obj) => obj.access_item_type))];
+  for (let obj of rules) {
+    if (!access_item_ids[obj.access_item_type])
+      access_item_ids[obj.access_item_type] = [];
 
-  for (const item of access_items) {
+    access_item_ids[obj.access_item_type].push(obj.access_item_id);
+    accessid_arr.push(obj.id);
+  }
+
+  /* get resource ID of each resourcegroup item */
+  for (const item of Object.keys(access_item_ids)) {
     if (item === "catalogue" || item === "provider-caps") continue;
+
+    item_details[item] = {};
 
     try {
       const result = await pool.query(
-        "SELECT * FROM consent." +
+        "SELECT id, cat_id FROM consent." +
           item +
-          " as type, " +
-          " consent.access" +
-          " WHERE access_item_type = '" +
-          item +
-          "'" +
-          " AND access_item_id = type.id" +
-          " AND access.provider_id = $1::integer",
-        [provider_uid]
+          " WHERE id = ANY($1::integer[])",
+        [access_item_ids[item]]
       );
 
-      item_details = [...item_details, ...result.rows];
+      for (let val of result.rows) {
+        item_details[item][val.id] = val.cat_id;
+      }
     } catch (error) {
       return END_ERROR(res, 500, "Internal error!", error);
     }
   }
 
-  /* get capability details for each access ID
-   * get delegate details */
+  /* get capability details for each access ID */
   try {
     const result = await pool.query(
       "SELECT access_id, capability " +
@@ -3610,23 +2978,18 @@ app.get("/auth/v[1-2]/provider/access", async (req, res) => {
       [accessid_arr]
     );
 
-    result.rows.map((row) => {
+    for (let row of result.rows) {
       if (!cap_details[row.access_id]) cap_details[row.access_id] = [];
 
       cap_details[row.access_id].push(row.capability);
-    });
+    }
   } catch (error) {
     return END_ERROR(res, 500, "Internal error!", error);
   }
 
-  const result = rules.map((rule) => {
-    const filter_item =
-      item_details.filter(
-        (item) =>
-          item.access_item_type === rule.access_item_type &&
-          item.access_item_id === rule.access_item_id
-      )[0] || null;
+  let result = [];
 
+  for (let rule of rules) {
     let response = {
       id: rule.id,
       email: rule.email,
@@ -3642,14 +3005,13 @@ app.get("/auth/v[1-2]/provider/access", async (req, res) => {
       capabilities: cap_details[rule.id] || null,
     };
 
-    if (filter_item !== null) {
+    if (rule.access_item_id !== -1)
       response.item = {
-        cat_id: filter_item.cat_id,
+        cat_id: item_details[rule.access_item_type][rule.access_item_id],
       };
-    }
 
-    return response;
-  });
+    result.push(response);
+  }
 
   return END_SUCCESS(res, result);
 });
@@ -3694,6 +3056,9 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
     return END_ERROR(res, 400, "Invalid data (body)");
 
   for (const obj of request) {
+    if (typeof obj !== "object" || obj === null)
+      return END_ERROR(res, 400, "Invalid data (body)");
+
     let id = obj.id;
     let capability = obj.capabilities || null;
     let delete_rule = false;
@@ -3886,11 +3251,14 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
             existing_caps
           );
 
+          let policy_json = parser.parse(policy_text);
+
           const access = await pool.query(
             "UPDATE consent.access SET policy_text = $1::text," +
-              " updated_at = NOW() WHERE access.id = $2::integer" +
+              " policy_json = $2::jsonb," +
+              " updated_at = NOW() WHERE access.id = $3::integer" +
               " RETURNING id",
-            [policy_text, id]
+            [policy_text, policy_json, id]
           );
         }
       } catch (error) {
@@ -3916,10 +3284,7 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
     log("info", "DELETED_POLICY", true, details);
   }
 
-  set_acl(provider_email, provider_uid, null, (err) => {
-    if (err) return END_ERROR(res, err.http_code, err.message, err);
-    else return END_SUCCESS(res);
-  });
+  return END_SUCCESS(res);
 });
 
 app.get("/auth/v[1-2]/delegate/providers", async (req, res) => {
@@ -4294,64 +3659,15 @@ app.delete("/auth/v[1-2]/admin/users", async (req, res) => {
   if (is_provider && is_otherrole)
     return END_ERROR(res, 500, "Internal error!");
 
-  if (is_provider) {
-    const email_domain = email_todel.split("@")[1];
-    const sha1_of_email = sha1(email_todel);
+  try {
+    let result = await pool.query(
+      "DELETE FROM consent.users WHERE id = $1::integer",
+      [uid]
+    );
 
-    const provider_id_hash = email_domain + "/" + sha1_of_email;
-
-    try {
-      let result1 = await pool.query(
-        "DELETE FROM consent.users WHERE id = $1::integer",
-        [uid]
-      );
-
-      if (result1.rowCount === 0) throw new Error("Error in deletion");
-
-      let result2 = await pool.query("DELETE FROM policy WHERE id = $1::text", [
-        provider_id_hash,
-      ]);
-
-      if (result2.rowCount === 0) throw new Error("Error in deletion");
-    } catch (error) {
-      return END_ERROR(res, 500, "Internal error!", error);
-    }
-  } else if (is_otherrole) {
-    try {
-      /* apart from deleting user, we update policy table for providers who
-			have set rules for this user */
-
-      let ids = await pool.query(
-        "SELECT provider_id FROM consent.access JOIN consent.role " +
-          " ON role.id = role_id WHERE role.user_id = $1::integer",
-        [uid]
-      );
-
-      let provider_ids = [...new Set(ids.rows.map((row) => row.provider_id))];
-
-      let details = await pool.query(
-        "SELECT id, email FROM consent.users" +
-          " WHERE id = ANY($1::integer[])",
-        [provider_ids]
-      );
-
-      let affected_providers = details.rows;
-
-      let result = await pool.query(
-        "DELETE FROM consent.users WHERE id = $1::integer",
-        [uid]
-      );
-
-      if (result.rowCount === 0) throw new Error("Error in deletion");
-
-      for (const provider of affected_providers) {
-        set_acl(provider.email, provider.id, null, (err) => {
-          if (err) return END_ERROR(res, err.http_code, err.message, err);
-        });
-      }
-    } catch (error) {
-      return END_ERROR(res, 500, "Internal error!", error);
-    }
+    if (result.rowCount === 0) throw new Error("Error in deletion");
+  } catch (error) {
+    return END_ERROR(res, 500, "Internal error!", error);
   }
 
   const details = { email: email_todel, admin: email };
@@ -4373,6 +3689,13 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
   const phone_regex = new RegExp(/^[9876]\d{9}$/);
 
   if (!name || !name.title || !name.firstName || !name.lastName)
+    return END_ERROR(res, 400, "Invalid data (name)");
+
+  if (
+    !is_name_safe(name.title, true) ||
+    !is_name_safe(name.firstName) ||
+    !is_name_safe(name.lastName)
+  )
     return END_ERROR(res, 400, "Invalid data (name)");
 
   if (!raw_csr || raw_csr.length > CSR_SIZE)
@@ -4415,6 +3738,13 @@ app.post("/consent/v[1-2]/provider/registration", async (req, res) => {
 
     if (org_reg.rows.length === 0)
       return END_ERROR(res, 403, "Invalid organization");
+
+    let domain = org_reg.rows[0].website;
+    let email_domain = email.split("@")[1];
+
+    // check if org domain matches email domain
+    if (email_domain !== domain)
+      return END_ERROR(res, 403, "Invalid data (domains do not match)");
   } catch (error) {
     return END_ERROR(res, 500, "Internal error!", error);
   }
@@ -4514,6 +3844,13 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
   const phone_regex = new RegExp(/^[9876]\d{9}$/);
 
   if (!name || !name.title || !name.firstName || !name.lastName)
+    return END_ERROR(res, 400, "Invalid data (name)");
+
+  if (
+    !is_name_safe(name.title, true) ||
+    !is_name_safe(name.firstName) ||
+    !is_name_safe(name.lastName)
+  )
     return END_ERROR(res, 400, "Invalid data (name)");
 
   if (!is_valid_email(email))
@@ -4943,43 +4280,14 @@ function drop_worker_privileges() {
     delete password[k]; // forget all passwords
   }
 
-  if (is_openbsd) {
-    if (EUID === 0) {
-      process.setgid("_aaa");
-      process.setuid("_aaa");
-    }
-
-    unveil("/usr/lib", "r");
-    unveil("/usr/libexec/ld.so", "r");
-    unveil(__dirname + "/node_modules", "r");
-    unveil(__dirname + "/node-aperture", "r");
-
-    unveil();
-  } else {
-    if (EUID === 0) {
-      process.setgid("_aaa");
-    }
+  if (EUID === 0) {
+    process.setgid("_aaa");
   }
-
-  if (is_openbsd)
-    pledge.init("error stdio tty prot_exec inet rpath dns recvfd");
 
   assert(has_started_serving_apis === false);
 }
 
 if (cluster.isMaster) {
-  if (is_openbsd) {
-    unveil("/usr/local/bin/node", "x");
-    unveil("/usr/lib", "r");
-    unveil("/usr/libexec/ld.so", "r");
-
-    unveil();
-
-    pledge.init(
-      "error stdio tty prot_exec inet rpath dns recvfd " + "sendfd exec proc"
-    );
-  }
-
   log("info", "EVENT", false, {}, "Master started with pid " + process.pid);
 
   for (let i = 0; i < NUM_CPUS; i++) {
@@ -4997,13 +4305,6 @@ if (cluster.isMaster) {
 
     cluster.fork();
   });
-
-  if (is_openbsd) {
-    // drop "rpath"
-    pledge.init(
-      "error stdio tty prot_exec inet dns recvfd " + "sendfd exec proc"
-    );
-  }
 } else {
   http.createServer(app).listen(3000, "0.0.0.0");
 

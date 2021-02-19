@@ -23,18 +23,25 @@ except psycopg2.DatabaseError as error:
 
 cursor = conn.cursor()
 
-def init_provider():
+# create a provider role for the email address
+def init_provider(email):
+        
+        org_domain = email.split('@')[1]
 
-        org_id = add_organization("rbccps.org")
-
-        # use abc.xyz@rbccps.org certificate as provider
-        # do not assert, can already be approved
-        r = provider_reg("abc.xyz@rbccps.org", '7529547992', name , org_id, csr)
+        org_id = add_organization(org_domain)
 
         try:
-                cursor.execute("update consent.role as rr set status = 'approved' from consent.users where " + " users.id = rr.user_id and users.email = 'abc.xyz@rbccps.org'")
-                cursor.execute("delete from consent.access using consent.users where access.provider_id = users.id and email = 'abc.xyz@rbccps.org' and access_item_type = 'catalogue'")
-                cursor.execute("delete from consent.access using consent.users where access.provider_id = users.id and email = 'abc.xyz@rbccps.org' and access_item_type = 'provider-caps'")
+                # deletes all rules also
+                cursor.execute("delete from consent.users where users.email = '" + email + "'")
+                conn.commit()
+
+        except psycopg2.DatabaseError as error:
+                return {}
+
+        r = provider_reg(email, '7529547992', name , org_id, csr)
+
+        try:
+                cursor.execute("update consent.role as rr set status = 'approved' from consent.users where " + " users.id = rr.user_id and users.email = '" + email + "'")
                 conn.commit()
 
         except psycopg2.DatabaseError as error:
@@ -44,7 +51,7 @@ def reset_role(email):
 # set all roles with this email as rejected
         
         try:
-                cursor.execute("update consent.role as rr set status = 'rejected' from consent.users where users.id = rr.user_id and users.email = '" + email + "'")
+                cursor.execute("delete from  consent.users where  users.email = '" + email + "'")
                 conn.commit()
 
         except psycopg2.DatabaseError as error:

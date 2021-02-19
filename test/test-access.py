@@ -6,7 +6,7 @@ from consent import role_reg
 import random
 import string
 
-init_provider()
+init_provider("xyz.abc@rbccps.org")
 
 # use consumer certificate to register
 email   = "barun@iisc.ac.in"
@@ -19,11 +19,6 @@ assert r['success'] is True
 
 untrusted.set_user_session_id(fetch_sessionId('abc.xyz@rbccps.org'))
 
-# delete all old policies using acl/set API
-policy = "x can access x"
-r = untrusted.set_policy(policy)
-assert r['success'] is True
-
 # provider ID of abc.xyz@rbccps.org
 provider_id = 'rbccps.org/f3dad987e514af08a4ac46cf4a41bd1df645c8cc'
 
@@ -32,10 +27,11 @@ provider_id = 'rbccps.org/f3dad987e514af08a4ac46cf4a41bd1df645c8cc'
 resource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
 resource_id = provider_id + '/rs.example.com/' + resource_group
 
-# token request should fail
+# token request should fail - not registered
 body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/entities"] }
 r = consumer.get_token(body)
 assert r['success']     is False
+assert r['status_code'] == 401
 
 r = role_reg(email, '9454234223', name , ["consumer"], None, csr)
 assert r['success']     == True
@@ -67,6 +63,7 @@ assert r['status_code'] == 403
 body    = { "id"    : resource_id + "/someitem"}
 r       = consumer.get_token(body)
 assert r['success']     is False
+assert r['status_code'] == 400
 
 body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/entities/" + resource_id] }
 r = consumer.get_token(body)
@@ -76,6 +73,7 @@ assert r['success']     is True
 body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/entities", "/ngsi-ld/v1/temporal/entities"] }
 r = consumer.get_token(body)
 assert r['success']     is False
+assert r['status_code'] == 403
 
 body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/temporal/entities"] }
 r = consumer.get_token(body)
@@ -85,6 +83,7 @@ assert r['success']     is True
 body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/entityOperations/query"] }
 r = consumer.get_token(body)
 assert r['success']     is False
+assert r['status_code'] == 403
 
 # temporal rule already exists
 req["capabilities"] = ['subscription', 'temporal'];
@@ -145,6 +144,7 @@ body = { "id"    : provider_id + "/catalogue.iudx.io/catalogue/crud" }
 # onboarder token request should fail
 r = consumer.get_token(body)
 assert r['success']     is False
+assert r['status_code'] == 403
 
 r = role_reg(email, '9454234223', name , ["onboarder"], org_id)
 assert r['success']     == True
@@ -190,6 +190,7 @@ body        = {"id" : diresource_id + "/someitem", "api" : "/iudx/v1/adapter" }
 # data ingester token request should fail
 r = consumer.get_token(body)
 assert r['success']     is False
+assert r['status_code'] == 403
 
 r = role_reg(email, '9454234223', name , ["data ingester"], org_id)
 assert r['success']     == True
@@ -212,6 +213,7 @@ assert r['status_code'] == 200
 body = {"id"    : diresource_id + "/*" }
 r = consumer.get_token(body)
 assert r['success']     is False
+assert r['status_code'] == 400
 
 body["api"] = "/iudx/v1/adapter"
 r = consumer.get_token(body)
@@ -266,8 +268,8 @@ assert r['status_code'] == 200
 # onboarder token request should fail
 r = consumer.get_token(token_body)
 assert r['success']     is False
+assert r['status_code'] == 403
 
-# 
 token_body = {"id" : diresource_id + "/someitem/someotheritem", "api" : "/iudx/v1/adapter" }
 r = consumer.get_token(token_body)
 assert r['success']     is True
@@ -275,6 +277,12 @@ assert r['success']     is True
 token_body = {"id" : resource_id + "/something", "apis" : ["/ngsi-ld/v1/temporal/entities"] }
 r = consumer.get_token(token_body)
 assert r['success']     is True
+
+# invalid body, some items not objects
+body = [ingester_id, ["complex"], {"id": consumer_id, "capabilities": ["temporal"]}]
+r = untrusted.delete_rule(body)
+assert r['success']     == False
+assert r['status_code'] == 400
 
 body = [{"id": ingester_id}, {"id": consumer_id, "capabilities": ["temporal"]}]
 r = untrusted.delete_rule(body)
@@ -289,10 +297,12 @@ assert r['status_code'] == 403
 token_body = {"id" : diresource_id + "/someitem/someotheritem", "api" : "/iudx/v1/adapter" }
 r = consumer.get_token(token_body)
 assert r['success']     is False
+assert r['status_code'] == 403
 
 token_body = {"id" : resource_id + "/something", "apis" : ["/ngsi-ld/v1/temporal/entities"] }
 r = consumer.get_token(token_body)
 assert r['success']     is False
+assert r['status_code'] == 403
 
 # get token for subscription, complex
 apis = ["/ngsi-ld/v1/entityOperations/query", "/ngsi-ld/v1/entities","/ngsi-ld/v1/entities/" +  resource_id, "/ngsi-ld/v1/subscription"]
@@ -319,10 +329,12 @@ assert r['status_code'] == 200
 token_body = {"id" : resource_id + "/someitem", "apis" : apis }
 r = consumer.get_token(token_body)
 assert r['success']     is False
+assert r['status_code'] == 403
 
 token_body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/subscription"] }
 r = consumer.get_token(token_body)
 assert r['success']     is False
+assert r['status_code'] == 403
 
 ### setting multiple rules ###
 

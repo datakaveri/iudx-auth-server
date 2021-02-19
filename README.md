@@ -80,7 +80,6 @@ for a test instance of IUDX-AAA, add `test` to the command. Please read Section 
 
 The tables used in the project are:
 * `token` : Token related information
-* `policy`: Policies associated with individual providers
 * `crl`	  : Information regarding revoked certificates
 * `organizations` : Organization related information
 * `users`		: Individual user related information
