@@ -2,8 +2,10 @@ from init import untrusted
 from init import alt_provider
 from init import consumer
 from access import *
+from session import *
 from consent import role_reg
 import random
+import json
 import string
 
 init_provider("xyz.abc@rbccps.org")
@@ -16,6 +18,12 @@ r = role_reg(email, '9454234223', name , ["consumer","onboarder","data ingester"
 assert r['success']     == True
 assert r['status_code'] == 200
 
+######### session ID setup ###########
+r = untrusted.get_session_id(ALL_SECURE_ENDPOINTS_BODY)
+assert r['success'] is True
+
+untrusted.set_user_session_id(fetch_sessionId('abc.xyz@rbccps.org'))
+
 # use alt_provider certificate as delegate
 delegate_email = "abc.123@iisc.ac.in"
 assert reset_role(delegate_email) == True
@@ -24,7 +32,6 @@ assert reset_role(delegate_email) == True
 provider_id = 'rbccps.org/f3dad987e514af08a4ac46cf4a41bd1df645c8cc'
 
 # register abc.123 as delegate
-
 r = role_reg(delegate_email, '9454234223', name , ["delegate"], org_id, csr)
 assert r['success']     == True
 assert r['status_code'] == 200
@@ -40,6 +47,12 @@ assert r['success']     is False
 # set temporal consumer rule as delegate
 req = {"user_email": email, "user_role":'consumer', "item_id":resource_id, "item_type":"resourcegroup"}
 req["capabilities"] = ['temporal']
+
+######### session ID setup for delegate ###########
+r = alt_provider.get_session_id(ALL_SECURE_ENDPOINTS_BODY)
+assert r['success'] is True
+
+alt_provider.set_user_session_id(fetch_sessionId(delegate_email))
 
 # should fail because unapproved delegate
 r = alt_provider.provider_access([req], 'abc.xyz@rbccps.org')
@@ -207,7 +220,7 @@ for r in rules:
                 check_onb = True
         if r['email'] == email and r['role'] == 'data ingester' and diresource_id == r['item']['cat_id']:
                 ingester_id = r['id']
-                assert r['policy'].endswith('"/iudx/v1/adapter"')
+                assert r['item_type'] == 'resourcegroup'
                 check_dti = True
         if r['email'] == delegate_email and r['role'] == 'delegate':
                 delegate_id = r['id']
@@ -255,6 +268,12 @@ req = {"user_email": email, "user_role":'delegate'}
 r = untrusted.provider_access([req])
 assert r['success']     == True
 assert r['status_code'] == 200
+
+######### session ID setup for delegate ###########
+r = consumer.get_session_id(ALL_SECURE_ENDPOINTS_BODY)
+assert r['success'] is True
+
+consumer.set_user_session_id(fetch_sessionId(email))
 
 resource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
 resource_id = provider_id + '/rs.example.com/' + resource_group

@@ -88,6 +88,7 @@ const MIN_CERT_CLASS_REQUIRED = Object.freeze({
   "/auth/v1/token/revoke-all": 3,
 
   "/auth/v1/provider/access": -Infinity,
+  "/auth/v1/get-session-id": -Infinity,
 
   "/auth/v1/delegate/providers": -Infinity,
 
@@ -151,10 +152,19 @@ transporter.verify(function (error, success) {
   else log("info", "MAILER_EVENT", false, {}, success.toString());
 });
 
+//read 2fa config file for url and apikey
+const sessionidConfig = JSON.parse(
+  fs.readFileSync("2factor_config.json", "utf-8")
+);
+const twoFA_config = sessionidConfig.config;
+
+const SECURED_ENDPOINTS = sessionidConfig.secured_endpoints;
+
+const SESSIONID_EXP_TIME = twoFA_config.expiryTime;
+
 /* --- postgres --- */
 
 const DB_SERVER = "127.0.0.1";
-
 const password = {
   DB: fs.readFileSync("passwords/auth.db.password", "ascii").trim(),
 };
@@ -207,6 +217,7 @@ app.use(bodyParser.raw({ type: "*/*" }));
 app.use(parse_cert_header);
 app.use(basic_security_check);
 app.use(log_conn);
+app.use(sessionIdCheck);
 
 /* --- aperture --- */
 
@@ -459,7 +470,6 @@ function is_valid_email(email) {
         case "_":
         case "@":
           break;
-
         case ".":
           ++num_dots;
           break;
@@ -607,12 +617,12 @@ function has_certificate_been_revoked(socket, cert, CRL) {
       }
     } else {
       /*
-				if the issuerCertificate is empty,
-				then the session must have been reused
-				by the browser.
+	if the issuerCertificate is empty,
+	then the session must have been reused
+	by the browser.
 
-			if (! socket.isSessionReused())
-				return true;
+	if (! socket.isSessionReused())
+	  return true;
 			*/
     }
 
@@ -634,12 +644,12 @@ function has_certificate_been_revoked(socket, cert, CRL) {
         }
       } else {
         /*
-					if fingerprint OR serial is undefined,
-					then the session must have been reused
-					by the browser.
+	  if fingerprint OR serial is undefined,
+	  then the session must have been reused
+	  by the browser.
 
-				if (! socket.isSessionReused())
-					return true;
+	  if (! socket.isSessionReused())
+	    return true;
 				*/
       }
     }
@@ -737,6 +747,40 @@ function body_to_json(body) {
   }
 }
 
+//generate session id for 2factor auth
+
+function generateSessionId(sessionIdLen) {
+  let code = "";
+  code += Number.parseInt(crypto.randomBytes(3).toString("hex"), 16);
+
+  if (code.length >= sessionIdLen) return code.slice(0, sessionIdLen);
+
+  return code.padStart(sessionIdLen, "0");
+}
+
+//Trigger 2fact sms service
+
+function SMS_Service(sessionId, phNo, done) {
+  let errorDetails;
+  let url =
+    twoFA_config.url + twoFA_config.apiKey + "/SMS/" + phNo + "/" + sessionId;
+  var options = {
+    method: "GET",
+    url: url,
+  };
+  return new Promise((resolve, reject) => {
+    http_request(options, function (error, response) {
+      if (error) {
+        reject(error);
+      } else {
+        if (response.statusCode !== 200) {
+          reject(new Error(response.body));
+        } else resolve(true);
+      }
+    });
+  });
+}
+
 /* ---
   Check role/privilege of any registered user.
   If user has particular role, return user ID.
@@ -794,10 +838,6 @@ async function check_valid_delegate(delegate_uid, provider_uid) {
   } catch (error) {
     throw error;
   }
-}
-
-function intersect(array1, array2) {
-  return array1.filter((val) => array2.includes(val));
 }
 
 function create_consumer_policy_text(
@@ -966,11 +1006,10 @@ function basic_security_check(req, res, next) {
 
     if (min_class_required === 1 && integer_cert_class !== 1) {
       /*
-				class-1 APIs are special,
-				user needs a class-1 certificate
-
-				except in case of "/certificate-info"
-			*/
+	class-1 APIs are special,
+	user needs a class-1 certificate
+	except in case of "/certificate-info"
+      */
 
       if (!api.endsWith("/certificate-info")) {
         return END_ERROR(
@@ -1008,10 +1047,10 @@ function basic_security_check(req, res, next) {
     });
   } else {
     /*
-			Certificates issued by other CAs
-			may not have an "emailAddress" field.
-			By default consider them as a class-1 certificate
-		*/
+      Certificates issued by other CAs
+      may not have an "emailAddress" field.
+      By default consider them as a class-1 certificate
+     */
 
     const error = is_secure(req, res, cert, false);
 
@@ -1022,8 +1061,8 @@ function basic_security_check(req, res, next) {
     res.locals.cert = cert;
 
     /*
-			But if the certificate has a valid "emailAddress"
-			field then we consider it as a class-2 certificate
+      But if the certificate has a valid "emailAddress"
+      field then we consider it as a class-2 certificate
 		*/
 
     if (is_valid_email(cert.subject.emailAddress)) {
@@ -1032,14 +1071,14 @@ function basic_security_check(req, res, next) {
     }
 
     /*
-			class-1 APIs are special,
-			user needs a class-1 certificate
+	class-1 APIs are special,
+	user needs a class-1 certificate
 
-			except in case of "/certificate-info"
+	except in case of "/certificate-info"
 
-			if user is trying to call a class-1 API,
-			then downgrade his certificate class
-		*/
+	if user is trying to call a class-1 API,
+	then downgrade his certificate class
+    */
 
     if (min_class_required === 1) {
       if (!api.endsWith("/certificate-info")) {
@@ -1097,6 +1136,65 @@ function log_conn(req, res, next) {
   };
 
   log("info", type, false, details);
+
+  return next();
+}
+
+//check before accessing secure end-points
+function sessionIdCheck(req, res, next) {
+  let apis;
+  let email;
+  const session_regex = new RegExp(/^[0-9]{6}$/); //sessionid can only be numeric and exactly 6 digits
+
+  //TO-DO remove tfa header check when deploying to production.
+  let twofaFlow = req.headers.tfa;
+  if (twofaFlow === undefined) {
+    //bypass middleware if this header is undefined
+    return next();
+  }
+
+  const reqURL = req.url.split("?")[0];
+  const reqEndpoint = reqURL.replace(/\/v[1-2]\//, "/v1/");
+  const userEmail = res.locals.email;
+  const method = req.method;
+
+  //check if secure endpoint else proceed
+  if (SECURED_ENDPOINTS[reqEndpoint] !== undefined) {
+    //check if sessionId is present else 403
+    const sessionId = req.headers["session-id"];
+    if (sessionId === undefined) {
+      return END_ERROR(res, 403, "SessionID not present");
+    }
+
+    if (!session_regex.test(sessionId))
+      return END_ERROR(res, 403, "Invalid SessionId");
+
+    //check if sessionId is valid for the same user-endpoint-method combination
+    try {
+      let result = pg.querySync(
+        " SELECT session.endpoints" +
+          " FROM consent.session,consent.users" +
+          " WHERE session.session_id = $1::text " +
+          " AND session.expiry_time >= NOW() " +
+          " AND users.id = session.user_id" +
+          " AND users.email = $2::text ",
+        [sessionId, userEmail]
+      );
+
+      if (result.length === 0) return END_ERROR(res, 403, "Invalid SessionID");
+
+      apis = result[0].endpoints;
+    } catch (error) {
+      return END_ERROR(res, 500, "Internal Server error");
+    }
+
+    //check if endPoint and method are available in 'endpoints' variable else invalid
+    if (!apis.hasOwnProperty(reqEndpoint))
+      return END_ERROR(res, 403, "Invalid SessionID");
+
+    if (!apis[reqEndpoint].includes(method))
+      return END_ERROR(res, 403, "Invalid SessionID");
+  }
 
   return next();
 }
@@ -1937,6 +2035,7 @@ app.post("/auth/v[1-2]/token/introspect", (req, res) => {
 
           const details = {
             resource_server: hostname_in_certificate,
+            token_hash: sha256_of_token,
             issued_to: issued_to,
           };
 
@@ -2326,22 +2425,31 @@ app.post("/auth/v[1-2]/audit/tokens", (req, res) => {
 app.post("/auth/v[1-2]/certificate-info", async (req, res) => {
   const cert = res.locals.cert;
   let roles = [];
+  let name = {};
 
   try {
     const result = await pool.query(
-      "SELECT role FROM consent.role JOIN" +
+      "SELECT title, first_name, last_name, role FROM consent.role JOIN" +
         " consent.users ON users.id = user_id" +
         " WHERE users.email = $1::text",
       [res.locals.email]
     );
 
-    roles = [...new Set(result.rows.map((row) => row.role))];
+    if (result.rows.length !== 0) {
+      roles = [...new Set(result.rows.map((row) => row.role))];
+      name = {
+        title: result.rows[0].title,
+        first_name: result.rows[0].first_name,
+        last_name: result.rows[0].last_name,
+      };
+    }
   } catch (error) {
     return END_ERROR(res, 500, "Internal error!", error);
   }
 
   const response = {
     id: res.locals.email,
+    user_name: name,
     "certificate-class": res.locals.cert_class,
     serial: cert.serialNumber.toLowerCase(),
     fingerprint: cert.fingerprint.toLowerCase(),
@@ -2675,6 +2783,7 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
       }
 
       let capability = existing_caps.concat(req_capability);
+
       rule = create_consumer_policy_text(
         accesser_email,
         resource,
@@ -2776,7 +2885,6 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
       capabilities: req_capability || null,
       delegated: is_delegate,
       performed_by: email,
-      policy: rule,
     };
 
     log("info", "CREATED_POLICY", true, details);
@@ -2818,7 +2926,7 @@ app.get("/auth/v[1-2]/provider/access", async (req, res) => {
   try {
     let result = await pool.query(
       "SELECT a.id, a.created_at, a.updated_at," +
-        " a.policy_text, a.access_item_type, a.access_item_id," +
+        " a.access_item_type, a.access_item_id," +
         " email, role, title, first_name, last_name" +
         " FROM consent.access as a, consent.users, consent.role " +
         " WHERE a.role_id = role.id AND role.user_id = users.id " +
@@ -2893,7 +3001,6 @@ app.get("/auth/v[1-2]/provider/access", async (req, res) => {
       },
       item_type: rule.access_item_type,
       item: null,
-      policy: rule.policy_text,
       created: rule.created_at,
       capabilities: cap_details[rule.id] || null,
     };
@@ -4011,6 +4118,140 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 app.get("/consent/v[1-2]/organizations", async (req, res) => {
   let { rows } = await pool.query("SELECT id, name FROM consent.organizations");
   return END_SUCCESS(res, { organizations: rows });
+});
+
+//two factor auth
+app.post("/auth/v1/get-session-id", async (req, res) => {
+  let method;
+  let endpoint;
+  let roles;
+  let reqObj = res.locals.body;
+  let is_delegate = false;
+  let userRole;
+  let titles;
+  let expTime;
+  let retryTime;
+  let role_id;
+  let user_id;
+  let allowed_roles = [];
+
+  //get details from user table
+  const email = res.locals.email;
+  try {
+    let result = await pool.query(
+      "SELECT users.id, users.title, users.first_name, users.last_name, users.phone , role.role " +
+        "FROM  consent.users, consent.role " +
+        "WHERE email = $1::text AND users.id = role.user_id AND role.status =  $2::consent.status_enum",
+      [email, "approved"]
+    );
+
+    if (result.rows.length === 0) return END_ERROR(res, 403, "User not found");
+
+    titles = result.rows[0];
+    userRole = result.rows.map((row) => row.role); //run a map to ensure all roles are in an array
+    user_id = titles.id;
+  } catch (error) {
+    return END_ERROR(res, 500, "Internal error!", error);
+  }
+
+  //get all the methods and endpoints from the request
+  let apis = {};
+
+  if (reqObj.apis === undefined)
+    return END_ERROR(res, 400, "Invalid data (apis)");
+
+  if (!Array.isArray(reqObj.apis))
+    return END_ERROR(res, 400, "Invalid data (apis)");
+
+  if (reqObj.apis.length <= 0)
+    return END_ERROR(res, 400, "Invalid data (apis)");
+
+  for (let i in reqObj.apis) {
+    if (
+      reqObj.apis[i].method === undefined ||
+      reqObj.apis[i].endpoint === undefined
+    )
+      return END_ERROR(res, 400, "Invalid data (apis)");
+
+    if (
+      !is_string_safe(reqObj.apis[i].method) ||
+      !is_string_safe(reqObj.apis[i].endpoint)
+    )
+      return END_ERROR(res, 400, "Invalid data (apis)");
+
+    method = reqObj.apis[i].method.toUpperCase();
+    endpoint = reqObj.apis[i].endpoint.toLowerCase();
+
+    if (!SECURED_ENDPOINTS[endpoint])
+      return END_ERROR(res, 400, "No matching endpoint.");
+
+    roles = SECURED_ENDPOINTS[endpoint][method];
+
+    if (roles === undefined)
+      return END_ERROR(res, 400, "No matching endpoint/method.");
+
+    allowed_roles = intersect(roles, userRole);
+
+    if (allowed_roles.length === 0)
+      return END_ERROR(res, 400, "No matching endpoint/method.");
+
+    //check if api.endpoint exists, if not create and add method as array elemets against this key value
+
+    if (!apis.hasOwnProperty(endpoint)) apis[endpoint] = [];
+
+    //avoid multiple entries for same method under same endpoint
+    if (!apis[endpoint].includes(method)) apis[endpoint].push(method);
+  }
+
+  //generate session_id
+  const session_id = generateSessionId(twoFA_config.sessionIdLen);
+
+  /* The Sms_Service is only called when
+	   the node environment is not set as development */
+  try {
+    if (process.env.NODE_ENV !== "development")
+      await SMS_Service(session_id, titles.phone);
+  } catch (error) {
+    return END_ERROR(res, 500, "Internal error!", error);
+  }
+
+  try {
+    const time = await pool.query(
+      " INSERT INTO consent.session " +
+        "(session_id, user_id, endpoints, expiry_time, retry_time, created_at, updated_at)" +
+        "VALUES ( " +
+        " $1::text ,  $2::int, $3::json," +
+        " NOW() + $4::interval, NOW() + $5::interval, NOW(), NOW() )" +
+        "RETURNING expiry_time,retry_time",
+      [
+        session_id, //$2
+        user_id, //$3
+        apis, //$4
+        SESSIONID_EXP_TIME + " seconds",
+        SESSIONID_EXP_TIME + " seconds",
+      ]
+    );
+
+    expTime = time.rows[0].expiry_time;
+    retryTime = time.rows[0].retry_time;
+  } catch (error) {
+    return END_ERROR(res, 500, "Internal error!", error);
+  }
+
+  const response = {
+    success: true,
+    message: "Session id sent to mobile no",
+    Validity: expTime,
+  };
+
+  const details = {
+    requester: email,
+    sessionId_expiry: expTime,
+  };
+
+  log("info", "ISSUED_SESSIONID", false, details);
+
+  return END_SUCCESS(res, response);
 });
 
 /* --- Invalid requests --- */

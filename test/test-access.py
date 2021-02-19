@@ -1,6 +1,7 @@
 from init import untrusted
 from init import consumer
 from access import *
+from session import *
 from consent import role_reg
 import random
 import string
@@ -11,6 +12,12 @@ init_provider("xyz.abc@rbccps.org")
 email   = "barun@iisc.ac.in"
 assert reset_role(email) == True
 org_id = add_organization("iisc.ac.in")
+
+######### session ID setup ###########
+r = untrusted.get_session_id(ALL_SECURE_ENDPOINTS_BODY)
+assert r['success'] is True
+
+untrusted.set_user_session_id(fetch_sessionId('abc.xyz@rbccps.org'))
 
 # provider ID of abc.xyz@rbccps.org
 provider_id = 'rbccps.org/f3dad987e514af08a4ac46cf4a41bd1df645c8cc'
@@ -242,8 +249,8 @@ for r in rules:
                 onboarder_id = r['id']
                 assert r['item_type'] == 'catalogue'
         if r['email'] == email and r['role'] == 'data ingester' and diresource_id == r['item']['cat_id']:
+                assert r['item_type'] == 'resourcegroup'
                 ingester_id = r['id']
-                assert r['policy'].endswith('"/iudx/v1/adapter"')
 
 ### deleting rules ###
 
@@ -433,7 +440,7 @@ for r in rules:
                 assert r['item_type'] == 'provider-caps'
                 check_del = True
         if r['email'] == email and r['role'] == 'data ingester':
-                assert r['policy'].endswith('"/iudx/v1/adapter"')
+                assert r['item_type'] == 'resourcegroup'
                 check_dti = True
 
 assert check_con == True

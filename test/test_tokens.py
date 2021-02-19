@@ -17,6 +17,9 @@ from init import restricted_consumer
 from access import *
 from consent import role_reg
 
+# for setting session ID 
+from session import *
+
 import hashlib
 
 body = ""
@@ -30,6 +33,17 @@ email = "barun@iisc.ac.in"
 def init():
         init_provider("arun.babu@rbccps.org") # provider
         init_provider("abc.123@iisc.ac.in") # alt_provider
+
+        ######### session ID setup for provider, alt_provider ###########
+        r = provider.get_session_id(ALL_SECURE_ENDPOINTS_BODY)
+        assert r['success'] is True
+
+        provider.set_user_session_id(fetch_sessionId("arun.babu@rbccps.org"))
+
+        r = alt_provider.get_session_id(ALL_SECURE_ENDPOINTS_BODY)
+        assert r['success'] is True
+
+        alt_provider.set_user_session_id(fetch_sessionId("abc.123@iisc.ac.in"))
 
         # register the consumer
         assert reset_role(email) == True

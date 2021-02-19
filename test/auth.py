@@ -5,8 +5,13 @@ import sys
 import json
 import requests
 
+f = open('../2factor_config.json')
+data = json.load(f)
+
 class Auth():
 #{
+        secured_endpoints = data['secured_endpoints']
+
         def __init__(self, certificate, key, auth_server="auth.iudx.org.in", version=1):
         #
                 # Since we are testing on localhost
@@ -14,6 +19,7 @@ class Auth():
 
                 self.url                = "https://" + auth_server
                 self.credentials        = (certificate, key)
+                self.session_id         = '0'
         #
 
         def call(self, api, body=None, method = "POST", params=None, header={}):
@@ -23,7 +29,13 @@ class Auth():
                 api_type = "/auth"
 
                 body = json.dumps(body)
-                url = self.url + api_type + "/v1/" + api
+                endpoint = api_type + "/v1/" + api
+                url = self.url + endpoint
+
+                if endpoint in Auth.secured_endpoints and method in Auth.secured_endpoints[endpoint]:
+                        header['session-id'] = self.session_id
+                        header['tfa'] = 'true'
+
                 response = requests.request (
                         method      = method,
                         url         = url,
@@ -60,7 +72,7 @@ class Auth():
                 else:
                 #
                         if "EXPECT_FAILURE" not in os.environ:
-                        #
+                        #       
                                 sys.stderr.write (
                                         "WARNING: auth did not send 'application/json' : " + url  + "\n"
                                 )
@@ -69,6 +81,9 @@ class Auth():
                         return {"success":ret, "response":None}
                 #
         #
+
+        def set_user_session_id(self, id):
+                self.session_id = id
 
         def certificate_info(self):
                 return self.call("certificate-info")
@@ -179,13 +194,13 @@ class Auth():
                 return self.call("provider/access", request, "DELETE", {}, header)
         #
 
-        def get_provider_access(self, provider_email=None):
+        def get_provider_access(self,provider_email=None):
         #
                 header = {}
 
                 if provider_email:
                         header['provider-email'] = provider_email
-
+                
                 return self.call("provider/access", {}, "GET", {}, header)
         #
 
@@ -210,5 +225,10 @@ class Auth():
         def get_delegate_providers(self):
         #
                 return self.call("delegate/providers", {}, "GET")
+        #
+
+        def get_session_id(self,request):
+        #
+                return self.call("get-session-id",request,"POST" )
         #
 #}

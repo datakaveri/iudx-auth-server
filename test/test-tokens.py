@@ -16,6 +16,9 @@ from init import consumer
 from access import *
 from consent import role_reg
 
+# for setting session ID 
+from session import *
+
 import hashlib
 
 RS = "iisc.iudx.org.in"
@@ -34,6 +37,17 @@ org_id = add_organization("iisc.ac.in")
 r = role_reg(email, '9454234223', name , ["consumer"], None, csr)
 assert r['success']     == True
 assert r['status_code'] == 200
+
+######### session ID setup for provider, alt_provider ###########
+r = provider.get_session_id(ALL_SECURE_ENDPOINTS_BODY)
+assert r['success'] is True
+
+provider.set_user_session_id(fetch_sessionId("arun.babu@rbccps.org"))
+
+r = alt_provider.get_session_id(ALL_SECURE_ENDPOINTS_BODY)
+assert r['success'] is True
+
+alt_provider.set_user_session_id(fetch_sessionId("abc.123@iisc.ac.in"))
 
 # set policies using access API
 req = {
