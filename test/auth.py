@@ -98,20 +98,6 @@ class Auth():
                 return self.call("token", body)
         #
 
-        def get_policy(self):
-                return self.call("acl")
-
-        def set_policy(self, policy):
-                body = {'policy': policy}
-                return self.call("acl/set", body)
-
-        def revert_policy(self):
-                return self.call("acl/revert")
-
-        def append_policy(self, policy):
-                body = {'policy': policy}
-                return self.call("acl/append", body)
-
         def introspect_token(self, token, server_token=None, request=None):
         #
                 body = {'token': token}
@@ -155,24 +141,6 @@ class Auth():
         def audit_tokens(self, hours):
                 body = {'hours': hours}
                 return self.call("audit/tokens", body)
-
-        def add_consumer_to_group(self, consumer, group, valid_till):
-                body = {'consumer': consumer, 'group': group, 'valid-till' : valid_till}
-                return self.call("group/add", body)
-
-        def delete_consumer_from_group(self, consumer, group):
-                body = {'consumer': consumer, 'group': group}
-                return self.call("group/delete", body)
-
-        def list_group(self, consumer, group=None):
-        #
-                body = {'consumer': consumer}
-
-                if group:
-                        body['group'] = group
-
-                return self.call("group/list", body)
-        #
 
         def provider_access(self, request, provider_email=None):
         #
