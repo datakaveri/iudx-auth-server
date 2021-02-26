@@ -824,7 +824,8 @@ async function check_valid_delegate(delegate_uid, provider_uid) {
         " consent.access.role_id = consent.role.id " +
         " WHERE provider_id = $1::integer AND " +
         " role.user_id = $2::integer AND " +
-        " access_item_type = $3::consent.access_item",
+        " access_item_type = $3::consent.access_item" +
+        " AND access.status = 'active'",
       [
         provider_uid, //$1
         delegate_uid, //$2
@@ -1601,6 +1602,7 @@ app.post("/auth/v[1-2]/token", async (req, res) => {
           " WHERE provider_id = $1::integer" +
           " AND access_item_id = $2::integer" +
           " AND access_item_type = $3::consent.access_item" +
+          " AND status = 'active'" +
           " AND role_id = ANY ($4::integer[])",
         [
           provider_id,
@@ -2630,6 +2632,7 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
             " FROM consent.role, consent.access as a" +
             " WHERE consent.role.id = a.role_id" +
             " AND a.provider_id = $1::integer" +
+            " AND a.status = 'active'" +
             " AND role.user_id = $2::integer" +
             " AND a.access_item_id = $3::integer" +
             " AND role.role = $4::consent.role_enum",
@@ -2655,7 +2658,8 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 
           const caps = await pool.query(
             "SELECT capability from consent.capability" +
-              " WHERE access_id = $1::integer",
+              " WHERE access_id = $1::integer" +
+              " AND status = 'active'",
             [consumer_acc_id]
           );
 
@@ -2772,7 +2776,8 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
         try {
           caps = await pool.query(
             "SELECT capability from consent.capability" +
-              " WHERE access_id = $1::integer",
+              " WHERE access_id = $1::integer" +
+              " AND status = 'active'",
             [consumer_acc_id]
           );
 
@@ -2836,10 +2841,10 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
         access = await pool.query(
           "INSERT into consent.access (provider_id, " +
             " role_id, policy_text, policy_json, access_item_id, " +
-            " access_item_type, created_at, updated_at)" +
+            " access_item_type, status, created_at, updated_at)" +
             " VALUES ($1::integer, $2::integer, $3::text," +
             " $4::jsonb, $5::integer, $6::consent.access_item," +
-            " NOW(), NOW()) RETURNING id",
+            " $7::consent.access_status_enum, NOW(), NOW()) RETURNING id",
           [
             provider_uid, //$1
             role_id.rows[0].id, //$2
@@ -2847,6 +2852,7 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
             policy_json, //$4
             access_item_id, //$5
             res_type, //$6
+            "active", //$7
           ]
         );
       } else {
@@ -2866,10 +2872,10 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
         for (const cap of req_capability) {
           const result = await pool.query(
             "INSERT INTO consent.capability " +
-              " (access_id, capability, created_at, updated_at)" +
+              " (access_id, capability, status, created_at, updated_at)" +
               " VALUES ($1::integer, $2::consent.capability_enum," +
-              " NOW(), NOW())",
-            [access_id, cap]
+              " $3::consent.access_status_enum, NOW(), NOW())",
+            [access_id, cap, "active"]
           );
         }
       }
@@ -2930,7 +2936,7 @@ app.get("/auth/v[1-2]/provider/access", async (req, res) => {
         " email, role, title, first_name, last_name" +
         " FROM consent.access as a, consent.users, consent.role " +
         " WHERE a.role_id = role.id AND role.user_id = users.id " +
-        " AND a.provider_id = $1::integer",
+        " AND a.provider_id = $1::integer AND a.status = 'active'",
       [provider_uid]
     );
 
@@ -2974,7 +2980,8 @@ app.get("/auth/v[1-2]/provider/access", async (req, res) => {
     const result = await pool.query(
       "SELECT access_id, capability " +
         " FROM consent.capability " +
-        " WHERE access_id = ANY($1::integer[])",
+        " WHERE access_id = ANY($1::integer[])" +
+        " AND status = 'active'",
       [accessid_arr]
     );
 
@@ -3081,11 +3088,16 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
     err.access_id = id;
 
     try {
+      /* left join on rows without caps will return NULLs
+       * so check if capability status is active or NULL */
       const check = await pool.query(
         "SELECT access.*, capability FROM consent.access" +
           " LEFT JOIN consent.capability ON access_id = " +
           " access.id WHERE access.id = $1::integer" +
-          " AND provider_id = $2::integer",
+          " AND provider_id = $2::integer" +
+          " AND access.status = 'active'" +
+          " AND (capability.status = 'active'" +
+          " OR capability.status IS NULL)",
         [id, provider_uid]
       );
 
@@ -3203,7 +3215,15 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
     if (delete_rule === true) {
       try {
         const result = await pool.query(
-          " DELETE FROM consent.access" + " WHERE id = $1::integer",
+          " UPDATE consent.access SET status = 'deleted'," +
+            " updated_at = NOW() WHERE id = $1::integer",
+          [id]
+        );
+
+        /* in case capabilities are there, then set those also as deleted */
+        const result_caps = await pool.query(
+          " UPDATE consent.capability SET status = 'deleted'," +
+            " updated_at = NOW() WHERE access_id = $1::integer",
           [id]
         );
 
@@ -3214,8 +3234,8 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
     } else {
       try {
         const result = await pool.query(
-          " DELETE FROM consent.capability" +
-            " WHERE access_id = $1::integer" +
+          " UPDATE consent.capability SET status = 'deleted'," +
+            " updated_at = NOW() WHERE access_id = $1::integer" +
             " AND capability = ANY ($2::consent.capability_enum[])",
           [id, capability]
         );
@@ -3224,7 +3244,8 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 
         const check = await pool.query(
           "SELECT capability FROM consent.capability" +
-            " WHERE access_id = $1::integer",
+            " WHERE access_id = $1::integer" +
+            " AND status = 'active'",
           [id]
         );
 
@@ -3235,7 +3256,8 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
         if (existing_caps.length === 0) {
           /* delete rule itself, since no caps are there */
           const result = await pool.query(
-            " DELETE FROM consent.access" + " WHERE id = $1::integer",
+            " UPDATE consent.access SET status = 'deleted'," +
+              " updated_at = NOW() WHERE id = $1::integer",
             [id]
           );
 
@@ -3312,7 +3334,8 @@ app.get("/auth/v[1-2]/delegate/providers", async (req, res) => {
         " organization_id" +
         " FROM consent.access JOIN consent.users" +
         " ON access.provider_id = users.id" +
-        " WHERE role_id = $1::integer",
+        " WHERE role_id = $1::integer" +
+        " AND access.status= 'active'",
       [rid.rows[0].id]
     );
 

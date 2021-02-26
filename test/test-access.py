@@ -265,6 +265,12 @@ r = untrusted.delete_rule([body])
 assert r['success']     == True
 assert r['status_code'] == 200
 
+# delete again
+body = {"id" : onboarder_id}
+r = untrusted.delete_rule([body])
+assert r['success']     == False
+assert r['status_code'] == 403
+
 # onboarder token request should fail
 r = consumer.get_token(token_body)
 assert r['success']     is False
@@ -325,6 +331,12 @@ body = [{"id": consumer_id}]
 r = untrusted.delete_rule(body)
 assert r['success']     == True
 assert r['status_code'] == 200
+
+# delete full rule again
+body = [{"id": consumer_id}]
+r = untrusted.delete_rule(body)
+assert r['success']     == False
+assert r['status_code'] == 403
 
 token_body = {"id" : resource_id + "/someitem", "apis" : apis }
 r = consumer.get_token(token_body)
