@@ -70,7 +70,7 @@ def test_token():
         assert r['success']     == True
         assert r['status_code'] == 200
 
-        req["item_id"] = "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/abc-xyz"
+        req["item_id"] = "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/abc-xyz"
         req["capabilities"] = ['temporal']
         r = provider.provider_access([req])
         assert r['success']     == True
@@ -90,8 +90,8 @@ def test_token():
                         "body"          : {"key":"some-key"}
                 },
                 {
-                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/abc-xyz/item",
-                        "apis"  : ["/ngsi-ld/v1/entities/rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/abc-xyz"],
+                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/abc-xyz/item",
+                        "apis"  : ["/ngsi-ld/v1/entities/rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/abc-xyz"],
                 }
         ]
 
@@ -263,7 +263,7 @@ def test_token_api():
         req = {
                 "user_email" : email, 
                 "user_role":'consumer',
-                "item_id":"rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1",
+                "item_id":"rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/r1",
                 "item_type":"resourcegroup",
                 "capabilities": ['temporal']
                 }
@@ -273,10 +273,10 @@ def test_token_api():
 
         body = [
                 {
-                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1/*",
+                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/r1/*",
                 },
                 {
-                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1/r2"
+                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/r1/r2"
                 }
         ]
 
@@ -291,11 +291,11 @@ def test_token_api():
 
         body = [
                 {
-                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1/*",
+                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/r1/*",
                         "apis"  : ["/ngsi-invalid"]
                 },
                 {
-                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1/r2",
+                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/r1/r2",
                         "apis"  : ["/ngsi-invalid"]
                 }
         ]
@@ -309,11 +309,11 @@ def test_token_api():
 
         body = [
                 {
-                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1/*",
+                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/r1/*",
                         "apis"  : ["/ngsi-ld/v1/temporal/entities"]
                 },
                 {
-                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1/r2",
+                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/r1/r2",
                         "apis"  : ["/ngsi-ld/v1/temporal/entities"]
                 }
         ]
@@ -327,7 +327,7 @@ def test_token_api():
 
         body = [
                 {
-                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1/*",
+                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/r1/*",
                         "apis"  : ["/ngsi-ld/v1/temporal/entities"]
                 },
                 {
@@ -347,11 +347,11 @@ def test_token_api():
 
         body = [
                 {
-                    "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1/item-0",
+                    "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/r1/item-0",
                     "apis"  : ["/ngsi-ld/v1/temporal/entities"]
                     },
                 {
-                    "id" : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1/item-1",
+                    "id" : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/r1/item-1",
                     "apis"  : ["/ngsi-ld/v1/temporal/entities"]
                     }
                 ]
@@ -366,7 +366,7 @@ def test_multiple_provider_audit():
         req = {
                 "user_email" : email, 
                 "user_role":'consumer',
-                "item_id":"rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/r1",
+                "item_id":"rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.org.in/r1",
                 "capabilities": ['complex', 'temporal', 'subscription'],
                 "item_type":"resourcegroup"
                 }
@@ -374,22 +374,22 @@ def test_multiple_provider_audit():
         assert r['success']     == True
         assert r['status_code'] == 200
 
-        req["item_id"] = "iisc.ac.in/2052f450ac2dde345335fb18b82e21da92e3388c/example.com/test-providers"
+        req["item_id"] = "iisc.ac.in/2052f450ac2dde345335fb18b82e21da92e3388c/rs.iudx.io/test-providers"
         r = alt_provider.provider_access([req])
         assert r['success']     == True
         assert r['status_code'] == 200
 
         body = [
                 {
-                        "id"    : "iisc.ac.in/2052f450ac2dde345335fb18b82e21da92e3388c/example.com/test-providers/*",
+                        "id"    : "iisc.ac.in/2052f450ac2dde345335fb18b82e21da92e3388c/rs.iudx.io/test-providers/*",
                         "apis"  : ["/ngsi-ld/v1/temporal/entities"]
                 },
                 {
-                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/r1/ABC123",
+                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.org.in/r1/ABC123",
                         "apis"  : ["/ngsi-ld/v1/temporal/entities"]
                 },
                 {
-                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/r1/abc-xyz",
+                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.org.in/r1/abc-xyz",
                         "apis"  : ["/ngsi-ld/v1/temporal/entities"]
                 }
         ]

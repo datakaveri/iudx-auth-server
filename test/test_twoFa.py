@@ -35,7 +35,7 @@ def init():
 provider_id = 'rbccps.org/f3dad987e514af08a4ac46cf4a41bd1df645c8cc'
 
 resource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
-resource_id = provider_id + '/rs.example.com/' + resource_group
+resource_id = provider_id + '/rs.iudx.io/' + resource_group
 
 def test_apis_missing():
         # session id req should fail since body doesnt contain 'apis'
@@ -180,7 +180,7 @@ def test_sessionId_multiple_sucess():
     assert r['status_code'] == 200
 
     resource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
-    resource_id = provider_id + '/rs.example.com/' + resource_group
+    resource_id = provider_id + '/rs.iudx.io/' + resource_group
     req = {"user_email": email, "user_role":'consumer','capabilities':['temporal'], "item_id":resource_id, "item_type":"resourcegroup"}
     r = untrusted.provider_access([req])
     assert r['success']     is True

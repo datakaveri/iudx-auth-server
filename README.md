@@ -29,7 +29,6 @@ Install [Ubuntu 20.04](https://releases.ubuntu.com/20.04/)
 
 5. IUDX-AAA signs Certificate Signing Requests (CSR) to create certificates. This requires a [root certificate](https://en.wikipedia.org/wiki/Root_certificate) and it's corresponding private key. Rename your root certificate and key files to `cert.pem` and `key.pem` respectively and place them in the directory. **The files will be created automatically if they are not added to the directory**. (For a test instance, it is recommended to use the generated root certificate)
 
-
 6. Update the `AUTH_SERVER` and `CONSENT_URL` variables in [main.js](main.js) to your respective Auth and Consent domains
 
 7. If PostgreSQL is to be installed in a different server:
@@ -45,7 +44,9 @@ Install [Ubuntu 20.04](https://releases.ubuntu.com/20.04/)
 
 9. In order to make sessionIds work in test/development, the header 'tfa' is required. To change the environment in which the instance is running, NODE_ENV must be set to 'development'. This can be changed in [auth-server.service](auth-server.service).  
 
-10. Finally, run `setup`
+10. [capabilities.json](capabilities.json) contains the capabilities-to-APIs mapping for different resource servers based on the role of the user. The values present in the file are the capabilities/APIs used by the IUDX resource servers. You may add your own capabilities and APIs to the file - you will also need to update the `consent.capability_enum` in [consent_schema.sql](consent_schema.sql)
+
+11. Finally, run `setup`
 
 ```
 	./setup
@@ -121,6 +122,8 @@ A collection of tests have been written for _pytest_ (`pip3 install pytest`). In
 ```
 pytest
 ```
+
+4. Another resource server must be specified in [capabilities.json](capabilities.json), `iisc.iudx.org.in` for introspect tests to work. This resource server must have same capabilities as `rs.iudx.io`
 
 ## 6. License
 
