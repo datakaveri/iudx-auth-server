@@ -61,7 +61,7 @@ r = provider.provider_access([req])
 assert r['success']     == True
 assert r['status_code'] == 200
 
-req["item_id"] = "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/abc-xyz"
+req["item_id"] = "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/abc-xyz"
 req["capabilities"] = ['temporal']
 r = provider.provider_access([req])
 assert r['success']     == True
@@ -81,8 +81,8 @@ body = [
                 "body"          : {"key":"some-key"}
         },
         {
-                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/abc-xyz/item",
-                "apis"  : ["/ngsi-ld/v1/entities/rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/abc-xyz"],
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/abc-xyz/item",
+                "apis"  : ["/ngsi-ld/v1/entities/rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/abc-xyz"],
         }
 ]
 
@@ -232,7 +232,7 @@ for a in as_provider:
 req = {
         "user_email" : email, 
         "user_role":'consumer',
-        "item_id":"rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1",
+        "item_id":"rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.org.in/r1",
         "item_type":"resourcegroup",
         "capabilities": ['temporal']
         }
@@ -242,10 +242,10 @@ assert r['status_code'] == 200
 
 body = [
         {
-                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1/*",
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.org.in/r1/*",
         },
         {
-                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1/r2"
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.org.in/r1/r2"
         }
 ]
 
@@ -260,11 +260,11 @@ assert r['status_code'] == 400
 
 body = [
         {
-                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1/*",
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.org.in/r1/*",
                 "apis"  : ["/ngsi-invalid"]
         },
         {
-                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1/r2",
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.org.in/r1/r2",
                 "apis"  : ["/ngsi-invalid"]
         }
 ]
@@ -278,11 +278,11 @@ assert r['status_code'] == 400
 
 body = [
         {
-                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1/*",
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.org.in/r1/*",
                 "apis"  : ["/ngsi-ld/v1/temporal/entities"]
         },
         {
-                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1/r2",
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.org.in/r1/r2",
                 "apis"  : ["/ngsi-ld/v1/temporal/entities"]
         }
 ]
@@ -296,7 +296,7 @@ assert 60*60*24*7       == access_token['expires-in']
 
 body = [
         {
-                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1/*",
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.org.in/r1/*",
                 "apis"  : ["/ngsi-ld/v1/temporal/entities"]
         },
         {
@@ -316,11 +316,11 @@ assert r['status_code'] == 403
 
 body = [
         {
-            "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1/item-0",
+            "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.org.in/r1/item-0",
             "apis"  : ["/ngsi-ld/v1/temporal/entities"]
             },
         {
-            "id" : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs1/r1/item-1",
+            "id" : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.org.in/r1/item-1",
             "apis"  : ["/ngsi-ld/v1/temporal/entities"]
             }
         ]
@@ -334,7 +334,7 @@ assert r['response']['expires-in']      == 60*60*24*7
 req = {
         "user_email" : email, 
         "user_role":'consumer',
-        "item_id":"rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/r1",
+        "item_id":"rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/r1",
         "capabilities": ['complex', 'temporal', 'subscription'],
         "item_type":"resourcegroup"
         }
@@ -342,22 +342,22 @@ r = provider.provider_access([req])
 assert r['success']     == True
 assert r['status_code'] == 200
 
-req["item_id"] = "iisc.ac.in/2052f450ac2dde345335fb18b82e21da92e3388c/example.com/test-providers"
+req["item_id"] = "iisc.ac.in/2052f450ac2dde345335fb18b82e21da92e3388c/rs.iudx.org.in/test-providers"
 r = alt_provider.provider_access([req])
 assert r['success']     == True
 assert r['status_code'] == 200
 
 body = [
         {
-                "id"    : "iisc.ac.in/2052f450ac2dde345335fb18b82e21da92e3388c/example.com/test-providers/*",
+                "id"    : "iisc.ac.in/2052f450ac2dde345335fb18b82e21da92e3388c/rs.iudx.org.in/test-providers/*",
                 "apis"  : ["/ngsi-ld/v1/temporal/entities"]
         },
         {
-                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/r1/ABC123",
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/r1/ABC123",
                 "apis"  : ["/ngsi-ld/v1/temporal/entities"]
         },
         {
-                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/abc.com/r1/abc-xyz",
+                "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/r1/abc-xyz",
                 "apis"  : ["/ngsi-ld/v1/temporal/entities"]
         }
 ]

@@ -37,7 +37,7 @@ assert r['success']     == True
 assert r['status_code'] == 200
 
 resource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
-resource_id = provider_id + '/rs.example.com/' + resource_group
+resource_id = provider_id + '/rs.iudx.io/' + resource_group
 
 # token request should fail
 body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/entities"] }
@@ -127,7 +127,7 @@ assert r['success']     is True
 # delegate may update rule set by provider
 
 pr_resource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
-pr_resource_id = provider_id + '/rs.example.in/' + resource_group
+pr_resource_id = provider_id + '/rs.iudx.org.in/' + resource_group
 
 req = {"user_email": email, "user_role":'consumer', "item_id":pr_resource_id, "item_type":"resourcegroup"}
 req["capabilities"] = ['complex'];
@@ -169,7 +169,7 @@ assert None != r['response']['token']
 # delegate can set ingester rule
 
 diresource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
-diresource_id = provider_id + "/rs.example.com/" + diresource_group
+diresource_id = provider_id + "/rs.iudx.io/" + diresource_group
 
 body        = {"id" : diresource_id + "/someitem", "api" : "/iudx/v1/adapter" }
 
@@ -276,7 +276,7 @@ assert r['success'] is True
 consumer.set_user_session_id(fetch_sessionId(email))
 
 resource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
-resource_id = provider_id + '/rs.example.com/' + resource_group
+resource_id = provider_id + '/rs.iudx.io/' + resource_group
 
 req = {"user_email": email, "user_role":'consumer', "item_id":resource_id, "item_type":"resourcegroup"}
 req["capabilities"] = ['complex'];

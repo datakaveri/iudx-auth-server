@@ -19,13 +19,13 @@ delegate_email = "abc.123@iisc.ac.in"
 provider_id = 'rbccps.org/f3dad987e514af08a4ac46cf4a41bd1df645c8cc'
 
 resource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
-resource_id = provider_id + '/rs.example.com/' + resource_group
+resource_id = provider_id + '/rs.iudx.io/' + resource_group
 
 pr_resource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
-pr_resource_id = provider_id + '/rs.example.in/' + resource_group
+pr_resource_id = provider_id + '/rs.iudx.org.in/' + resource_group
 
 diresource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
-diresource_id = provider_id + "/rs.example.com/" + diresource_group
+diresource_id = provider_id + "/rs.iudx.io/" + diresource_group
 
 consumer_id = -1
 onboarder_id = -1
@@ -304,7 +304,7 @@ def test_multiple_delegates():
         assert r['status_code'] == 200
 
         resource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
-        resource_id = provider_id + '/rs.example.com/' + resource_group
+        resource_id = provider_id + '/rs.iudx.io/' + resource_group
 
         req = {"user_email": email, "user_role":'consumer', "item_id":resource_id, "item_type":"resourcegroup"}
         req["capabilities"] = ['complex'];

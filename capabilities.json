@@ -1,0 +1,52 @@
+{
+  "rs.iudx.io": {
+    "consumer": {
+      "temporal": [
+        "/ngsi-ld/v1/temporal/entities",
+        "/ngsi-ld/v1/entities/{{RESOURCE_GROUP_ID}}"
+      ],
+      "complex": [
+        "/ngsi-ld/v1/entityOperations/query",
+        "/ngsi-ld/v1/entities/{{RESOURCE_GROUP_ID}}",
+        "/ngsi-ld/v1/entities"
+      ],
+      "subscription": ["/ngsi-ld/v1/subscription"]
+    },
+    "data ingester": {
+      "default": ["/iudx/v1/adapter"]
+    }
+  },
+  "rs.iudx.org.in": {
+    "consumer": {
+      "temporal": [
+        "/ngsi-ld/v1/temporal/entities",
+        "/ngsi-ld/v1/entities/{{RESOURCE_GROUP_ID}}"
+      ],
+      "complex": [
+        "/ngsi-ld/v1/entityOperations/query",
+        "/ngsi-ld/v1/entities/{{RESOURCE_GROUP_ID}}",
+        "/ngsi-ld/v1/entities"
+      ],
+      "subscription": ["/ngsi-ld/v1/subscription"]
+    },
+    "data ingester": {
+      "default": ["/iudx/v1/adapter"]
+    }
+  },
+  "file.iudx.io": {
+    "consumer": {
+      "download": ["/iudx/v1/download"]
+    },
+    "data ingester": {
+      "default": ["/iudx/v1/upload", "/iudx/v1/delete"]
+    }
+  },
+  "file.iudx.org.in": {
+    "consumer": {
+      "download": ["/iudx/v1/download"]
+    },
+    "data ingester": {
+      "default": ["/iudx/v1/upload", "/iudx/v1/delete"]
+    }
+  }
+}

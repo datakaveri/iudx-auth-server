@@ -25,7 +25,7 @@ provider_id = 'rbccps.org/f3dad987e514af08a4ac46cf4a41bd1df645c8cc'
 ##### consumer #####
 
 resource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
-resource_id = provider_id + '/rs.example.com/' + resource_group
+resource_id = provider_id + '/rs.iudx.io/' + resource_group
 
 # token request should fail - not registered
 body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/entities"] }
@@ -115,14 +115,14 @@ r = consumer.get_token(body)
 assert r['success']     is True
 
 # try all 3 req["capability"]
-req["item_id"] = provider_id + '/rs.example.co.in/' + resource_group
+req["item_id"] = provider_id + '/rs.iudx.org.in/' + resource_group
 req["capabilities"] = ['complex','subscription', 'temporal']
 r = untrusted.provider_access([req])
 assert r['success']     == True
 assert r['status_code'] == 200
 
-apis = ["/ngsi-ld/v1/entityOperations/query", "/ngsi-ld/v1/entities", "/ngsi-ld/v1/temporal/entities","/ngsi-ld/v1/entities/" + provider_id + '/rs.example.co.in/' + resource_group, "/ngsi-ld/v1/subscription"]
-body = {"id" : provider_id + '/rs.example.co.in/' + resource_group + "/someitem", "apis" : apis }
+apis = ["/ngsi-ld/v1/entityOperations/query", "/ngsi-ld/v1/entities", "/ngsi-ld/v1/temporal/entities","/ngsi-ld/v1/entities/" + provider_id + '/rs.iudx.org.in/' + resource_group, "/ngsi-ld/v1/subscription"]
+body = {"id" : provider_id + '/rs.iudx.org.in/' + resource_group + "/someitem", "apis" : apis }
 r = consumer.get_token(body)
 assert r['success']     is True
 
@@ -130,6 +130,40 @@ assert r['success']     is True
 r = untrusted.provider_access([req])
 assert r['success']     == False
 assert r['status_code'] == 403
+
+# test download capability for file server
+
+fileresource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
+fileresource_id = provider_id + '/file.iudx.io/' + resource_group
+
+body = {"id" : fileresource_id + "/someitem", "apis" : ["/iudx/v1/download"] }
+r = consumer.get_token(body)
+assert r['success']     is False
+assert r['status_code'] == 403
+
+# Invalid capabilities for file server
+req = {"user_email": email, "user_role":'consumer', "item_id":fileresource_id, "item_type":"resourcegroup"}
+req["capabilities"] = ["temporal", "complex"]
+r = untrusted.provider_access([req])
+assert r['success']     == False
+assert r['status_code'] == 400
+
+# Valid capabilities
+req["capabilities"] = ["download"]
+r = untrusted.provider_access([req])
+assert r['success']     == True
+assert r['status_code'] == 200
+
+# token successful
+r = consumer.get_token(body)
+assert r['success']     is True
+assert r['status_code'] == 200
+
+# invalid APIs in token request for file resource ID
+body["apis"] = ["/iudx/v1/download", "/ngsi-ld/v1/entities"]
+r = consumer.get_token(body)
+assert r['success']     is False
+assert r['status_code'] == 400
 
 # user does not exist
 req["user_role"] = "onboarder"
@@ -183,7 +217,7 @@ assert r['status_code'] == 403
 ##### data ingester #####
 
 diresource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
-diresource_id = provider_id + "/rs.example.com/" + diresource_group
+diresource_id = provider_id + "/rs.iudx.io/" + diresource_group
 
 body        = {"id" : diresource_id + "/someitem", "api" : "/iudx/v1/adapter" }
 
@@ -233,6 +267,34 @@ assert r['status_code'] == 400
 req["item_id"]      = '/aaaaa/sssss'
 r = untrusted.provider_access([req])
 assert r['success']     == False
+assert r['status_code'] == 400
+
+# test access to file server APIs
+fileresource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
+fileresource_id = provider_id + "/file.iudx.io/" + fileresource_group
+
+body        = {"id" : fileresource_id + "/someitem", "apis" : ["/iudx/v1/upload", "/iudx/v1/delete"] }
+
+# token request should fail
+r = consumer.get_token(body)
+assert r['success']     is False
+assert r['status_code'] == 403
+
+req["user_role"]    = "data ingester"
+req["item_id"]      = fileresource_id
+req["item_type"]    = "resourcegroup"
+r = untrusted.provider_access([req])
+assert r['success']     is True
+assert r['status_code'] == 200
+
+r = consumer.get_token(body)
+assert r['success']     is True
+assert r['status_code'] == 200
+
+# will not get adapter API
+body["apis"] =  ["/iudx/v1/upload", "/iudx/v1/delete", "/iudx/v1/adapter"]
+r = consumer.get_token(body)
+assert r['success']     is False
 assert r['status_code'] == 400
 
 # get all rules
@@ -422,7 +484,7 @@ assert r['success']     == False
 assert r['status_code'] == 400
 
 resource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
-resource_id = provider_id + "/rs.example.com/" + resource_group
+resource_id = provider_id + "/rs.iudx.io/" + resource_group
 req["item_id"] = resource_id
 
 # set different resources

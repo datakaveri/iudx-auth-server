@@ -50,28 +50,8 @@ const PHONE_PLACEHOLDER = "0000000000";
 const ACCESS_ROLES = ["consumer", "data ingester", "onboarder", "delegate"];
 const RESOURCE_ITEM_TYPES = ["resourcegroup"];
 const CAT_URL = "catalogue.iudx.io";
-const CAT_API_RULE = `${CAT_URL}/catalogue/crud`;
-const INGEST_API_RULE = "/iudx/v1/adapter";
-const LATEST = (rsg) => `/ngsi-ld/v1/entities/${rsg}`;
-const CAPABILITIES = {
-  temporal: ["/ngsi-ld/v1/temporal/entities", LATEST],
-  complex: [
-    "/ngsi-ld/v1/entityOperations/query",
-    LATEST,
-    "/ngsi-ld/v1/entities",
-  ],
-  subscription: ["/ngsi-ld/v1/subscription"],
-};
-
-/* LATEST *must* be index 0 */
-const ALL_APIS = [
-  LATEST,
-  "/ngsi-ld/v1/temporal/entities",
-  "/ngsi-ld/v1/entityOperations/query",
-  "/ngsi-ld/v1/entities",
-  "/ngsi-ld/v1/subscription",
-  INGEST_API_RULE,
-];
+const CAT_RESOURCE = `${CAT_URL}/catalogue/crud`;
+const CAPS = JSON.parse(fs.readFileSync("capabilities.json", "utf-8"));
 
 const MIN_CERT_CLASS_REQUIRED = Object.freeze({
   /* resource server API */
@@ -841,23 +821,32 @@ async function check_valid_delegate(delegate_uid, provider_uid) {
   }
 }
 
-function create_consumer_policy_text(
+/* ---
+  Create aperture policy text based on capabilities.
+  caps_object contains the valid capabilities for
+  the particular resource server (obtained from the
+  CAPS object).
+		--- */
+function create_policy_text(
   accesser_email,
+  role,
   resource,
   resource_name,
-  capability
+  capability,
+  caps_object
 ) {
   let join = "if",
     index;
   let rule = `${accesser_email} can access ${resource_name}/* for 1 week`;
 
-  let apis = capability.reduce((acc, val) => acc.concat(CAPABILITIES[val]), []);
+  let apis = capability.reduce(
+    (acc, val) => acc.concat(caps_object[role][val]),
+    []
+  );
   apis = [...new Set(apis)];
-
-  /* if latest API is there, then add resource group
-   * to the template */
-  if ((index = apis.indexOf(LATEST)) !== -1)
-    apis[index] = apis[index](resource);
+  apis = apis.map(
+    (str) => (str = str.replace("{{RESOURCE_GROUP_ID}}", resource))
+  );
 
   for (const i of apis) {
     rule = rule + ` ${join} api = "${i}"`;
@@ -1519,9 +1508,33 @@ app.post("/auth/v[1-2]/token", async (req, res) => {
       return END_ERROR(res, 400, error_response);
     }
 
-    const all_apis = [...ALL_APIS];
-    /* latest API is index 0 in ALL_APIS */
-    all_apis[0] = all_apis[0](resource_group);
+    let caps_object,
+      all_apis = [];
+
+    if (resource_server !== CAT_URL) {
+      caps_object = CAPS[resource_server];
+      if (caps_object === undefined) {
+        const error_response = {
+          message:
+            "Invalid 'id'; no access" +
+            " control policies have been" +
+            " set for this 'id'" +
+            " by the data provider",
+
+          "invalid-input": xss_safe(resource),
+        };
+        return END_ERROR(res, 403, error_response);
+      }
+
+      for (let key of Object.keys(caps_object)) {
+        for (let cap of Object.keys(caps_object[key]))
+          all_apis = all_apis.concat(caps_object[key][cap]);
+      }
+      all_apis = [...new Set(all_apis)];
+      all_apis = all_apis.map(
+        (str) => (str = str.replace("{{RESOURCE_GROUP_ID}}", resource_group))
+      );
+    }
 
     providers[provider_id_hash] = true;
 
@@ -2518,12 +2531,14 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
     let accesser_uid, access_item_id;
     let req_capability;
 
-    let accesser_email = obj.user_email;
     const accesser_role = obj.user_role;
     const resource = obj.item_id;
+
+    let accesser_email = obj.user_email;
     let capability = obj.capabilities;
     let res_type = obj.item_type;
     let consumer_acc_id = null;
+    let resource_server, caps_object;
 
     let err = {
       message: "",
@@ -2547,26 +2562,6 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
     } catch (error) {
       err.message = "Invalid accesser";
       return END_ERROR(res, 403, err);
-    }
-
-    if (accesser_role === "consumer") {
-      if (
-        !Array.isArray(capability) ||
-        capability.length > Object.keys(CAPABILITIES).length ||
-        capability.length === 0
-      ) {
-        err.message = "Invalid data (capabilities)";
-        return END_ERROR(res, 400, err);
-      }
-
-      req_capability = [...new Set(capability)];
-
-      if (
-        !req_capability.every((val) => Object.keys(CAPABILITIES).includes(val))
-      ) {
-        err.message = "Invalid data (capabilities)";
-        return END_ERROR(res, 400, err);
-      }
     }
 
     if (accesser_role === "consumer" || accesser_role === "data ingester") {
@@ -2595,7 +2590,38 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
         err.message = "Provider does not match resource owner";
         return END_ERROR(res, 403, err);
       }
+      /* get recognised capabilities from config file */
+      resource_server = resource.split("/")[2];
+      caps_object = CAPS[resource_server];
+      if (caps_object === undefined) {
+        err.message = "Invalid data (item-id)";
+        return END_ERROR(res, 400, err);
+      }
+    }
 
+    if (accesser_role === "consumer") {
+      if (
+        !Array.isArray(capability) ||
+        capability.length > Object.keys(caps_object.consumer).length ||
+        capability.length === 0
+      ) {
+        err.message = "Invalid data (capabilities)";
+        return END_ERROR(res, 400, err);
+      }
+
+      req_capability = [...new Set(capability)];
+
+      if (
+        !req_capability.every((val) =>
+          Object.keys(caps_object.consumer).includes(val)
+        )
+      ) {
+        err.message = "Invalid data (capabilities)";
+        return END_ERROR(res, 400, err);
+      }
+    }
+
+    if (accesser_role === "consumer" || accesser_role === "data ingester") {
       // get access item id if it exists
       try {
         const result = await pool.query(
@@ -2730,6 +2756,7 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
       accesser_uid: accesser_uid,
       accesser_email: accesser_email,
       accesser_role: accesser_role,
+      caps_object: caps_object,
     });
   }
 
@@ -2737,7 +2764,7 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 
   for (const obj of to_add) {
     const { resource, res_type, consumer_acc_id } = obj;
-    const { req_capability } = obj;
+    const { req_capability, caps_object } = obj;
     const { accesser_uid, accesser_email, accesser_role } = obj;
     let { access_item_id } = obj;
     let rule, resource_name, policy_json;
@@ -2747,15 +2774,22 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 
     switch (accesser_role) {
       case "onboarder":
-        rule = `${accesser_email} can access ${CAT_API_RULE} for 1 week`;
+        rule = `${accesser_email} can access ${CAT_RESOURCE} for 1 week`;
         break;
 
       case "data ingester":
-        rule = `${accesser_email} can access ${resource_name}/* for 1 week if api = "${INGEST_API_RULE}"`;
+        rule = create_policy_text(
+          accesser_email,
+          "data ingester",
+          resource,
+          resource_name,
+          ["default"],
+          caps_object
+        );
         break;
 
       case "consumer":
-        rule = ``; /* use create_consumer_policy_text function */
+        rule = ``; /* use create_policy_text function */
         break;
 
       case "delegate":
@@ -2789,11 +2823,13 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 
       let capability = existing_caps.concat(req_capability);
 
-      rule = create_consumer_policy_text(
+      rule = create_policy_text(
         accesser_email,
+        "consumer",
         resource,
         resource_name,
-        capability
+        capability,
+        caps_object
       );
     }
 
@@ -3071,6 +3107,7 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
     let delete_rule = false;
     let accesser_email, accesser_role, resource;
     let access_item_id, access_item_type, role_id;
+    let caps_object;
 
     let err = {
       message: "",
@@ -3120,14 +3157,28 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
       /* remove nulls */
       existing_caps = existing_caps.filter((val) => val !== null);
 
+      if (!["provider-caps", "catalogue"].includes(access_item_type)) {
+        const result = await pool.query(
+          "SELECT * FROM consent." +
+            access_item_type +
+            " WHERE id = $1::integer",
+          [access_item_id]
+        );
+
+        resource = result.rows[0].cat_id;
+      }
+
       /* if there are caps, must be a consumer rule
        * if capability field not there, treat as normal
        * rule and delete fully */
 
       if (existing_caps.length > 0 && capability) {
+        let resource_server = resource.split("/")[2];
+        caps_object = CAPS[resource_server];
+
         if (
           !Array.isArray(capability) ||
-          capability.length > Object.keys(CAPABILITIES).length ||
+          capability.length > Object.keys(caps_object.consumer).length ||
           capability.length === 0
         ) {
           err.message = "Invalid data (capabilities)";
@@ -3137,7 +3188,9 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
         capability = [...new Set(capability)];
 
         if (
-          !capability.every((val) => Object.keys(CAPABILITIES).includes(val))
+          !capability.every((val) =>
+            Object.keys(caps_object.consumer).includes(val)
+          )
         ) {
           err.message = "Invalid data (capabilities)";
           return END_ERROR(res, 400, err);
@@ -3164,17 +3217,6 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 
       accesser_email = user_details.rows[0].email;
       accesser_role = user_details.rows[0].role;
-
-      if (!["provider-caps", "catalogue"].includes(access_item_type)) {
-        const result = await pool.query(
-          "SELECT * FROM consent." +
-            access_item_type +
-            " WHERE id = $1::integer",
-          [access_item_id]
-        );
-
-        resource = result.rows[0].cat_id;
-      }
     } catch (error) {
       return END_ERROR(res, 500, "Internal error!", error);
     }
@@ -3202,6 +3244,7 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
       accesser_email: accesser_email,
       accesser_role: accesser_role,
       resource: resource || null,
+      caps_object: caps_object,
     });
   }
 
@@ -3210,7 +3253,7 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
   for (const obj of to_delete) {
     const { id, capability, delete_rule } = obj;
     const { accesser_email, accesser_role } = obj;
-    const { resource } = obj;
+    const { resource, caps_object } = obj;
 
     if (delete_rule === true) {
       try {
@@ -3266,11 +3309,13 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
           /* rewrite policy text */
 
           let resource_name = resource.replace(provider_id_hash + "/", "");
-          let policy_text = create_consumer_policy_text(
+          let policy_text = create_policy_text(
             accesser_email,
+            "consumer",
             resource,
             resource_name,
-            existing_caps
+            existing_caps,
+            caps_object
           );
 
           let policy_json = parser.parse(policy_text);
@@ -3299,9 +3344,8 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
     };
 
     /* if consumer rule, log explicit capabilities deleted or
-     * all capabilities if whole rule deleted */
-    if (accesser_role === "consumer")
-      details.capabilities = capability || Object.keys(CAPABILITIES);
+     * empty array for all capabilities */
+    if (accesser_role === "consumer") details.capabilities = capability || [];
 
     log("info", "DELETED_POLICY", true, details);
   }
