@@ -1,4 +1,4 @@
-/* vim: set ts=8 sw=4 tw=0 noet : */
+/* vim: set ts=1 sw=1 tw=0 noet : */
 
 "use strict";
 
@@ -12,9 +12,11 @@ const assert = require("assert").strict;
 const forge = require("node-forge");
 const crypto = require("crypto");
 const logger = require("node-color-log");
+const bcrypt = require("bcrypt");
 const lodash = require("lodash");
 const cluster = require("cluster");
 const express = require("express");
+const { v4: uuidv4 } = require("uuid");
 const timeout = require("connect-timeout");
 const domain = require("getdomain");
 const aperture = require("./node-aperture");
@@ -38,6 +40,8 @@ const SERVER_NAME = "auth.iudx.org.in";
 const CONSENT_URL = "cons.iudx.org.in";
 
 const MAX_TOKEN_TIME = 31536000; // in seconds (1 year)
+const TOKEN_TIME_SEC = 604800;
+const BCRYPT_SALT_ROUNDS = 11;
 
 const MIN_TOKEN_HASH_LEN = 64;
 const MAX_TOKEN_HASH_LEN = 64;
@@ -59,14 +63,10 @@ const MIN_CERT_CLASS_REQUIRED = Object.freeze({
   "/auth/v1/certificate-info": 1,
 
   /* data consumer's APIs */
-  "/auth/v1/token": 2,
+  "/auth/v1/token": -Infinity,
+  "/auth/v1/consumer/resources": -Infinity,
 
   /* data provider's APIs */
-  "/auth/v1/audit/tokens": 3,
-
-  "/auth/v1/token/revoke": 3,
-  "/auth/v1/token/revoke-all": 3,
-
   "/auth/v1/provider/access": -Infinity,
   "/auth/v1/get-session-id": -Infinity,
 
@@ -250,21 +250,28 @@ function print(msg) {
 }
 
 function is_valid_token(token, user = null) {
-  if (!is_string_safe(token)) return false;
+  if (!is_string_safe(token, "_")) return false;
 
   const split = token.split("/");
-
-  if (split.length !== 3) return false;
+  const hex_regex = new RegExp(/^[a-f0-9]+$/);
+  const uuid_regex = new RegExp(
+    /^[0-9a-f]{8}\b-[0-9a-f]{4}\b-[0-9a-f]{4}\b-[0-9a-f]{4}\b-[0-9a-f]{12}$/
+  );
+  if (split.length !== 4) return false;
 
   const issued_by = split[0];
   const issued_to = split[1];
   const random_hex = split[2];
+  const uuid = split[3];
 
   if (issued_by !== SERVER_NAME) return false;
 
-  if (random_hex.length !== TOKEN_LEN_HEX) return false;
+  if (random_hex.length !== TOKEN_LEN_HEX || !hex_regex.test(random_hex))
+    return false;
 
   if (user && user !== issued_to) return false; // token was not issued to this user
+
+  if (!uuid_regex.test(uuid)) return false;
 
   if (!is_valid_email(issued_to)) return false;
 
@@ -860,6 +867,171 @@ function intersect(array1, array2) {
   return array1.filter((val) => array2.includes(val));
 }
 
+/* process_token_request takes an array of resources, array of
+ * role IDs and optionally a Set for resource server and returns
+ * an object with keys resource_server, processed_request_array.
+ * Else an error is thrown
+ */
+
+async function process_requested_resources(
+  resource_array,
+  role_ids,
+  resource_server_set = new Set()
+) {
+  const processed_request_array = [];
+  let is_onboarder_request = false;
+
+  for (let resource of resource_array) {
+    let provider_id, item_id;
+
+    const split = resource.split("/");
+
+    const email_domain = split[0].toLowerCase();
+    const sha1_of_email = split[1].toLowerCase();
+
+    const provider_id_hash = email_domain + "/" + sha1_of_email;
+
+    const resource_server = split[2].toLowerCase();
+    const resource_name = split.slice(3).join("/");
+    const resource_item = split.slice(4).join("/");
+
+    const resource_group_id =
+      provider_id_hash + "/" + resource_server + "/" + split[3];
+
+    resource_server_set.add(resource_server);
+    if (resource_server_set.size > 1) {
+      const error = new Error(
+        "All resources must belong to same resource server"
+      );
+      error["invalid-input"] = xss_safe(resource);
+      error.status_code = 400;
+      throw error;
+    }
+
+    /* for access to resource group, must add * as the resource item
+     * else, for access to resource item, must put the item after
+     * resource group */
+    if (resource_item !== "*" && resource_item.length === 0) {
+      const error = new Error(
+        "Invalid 'id'; for resource group access" +
+          " append /* to the resource group ID"
+      );
+      error["invalid-input"] = xss_safe(resource);
+      error.status_code = 400;
+      throw error;
+    }
+
+    if (resource_server === CAT_URL && resource_name === "catalogue/crud")
+      is_onboarder_request = true;
+
+    if (!is_onboarder_request) {
+      try {
+        const result = await pool.query(
+          "SELECT id, provider_id FROM consent.resourcegroup " +
+            " WHERE cat_id = $1::text",
+          [resource_group_id]
+        );
+
+        if (result.rowCount === 0) {
+          const error = new Error(
+            "Invalid 'id'; no access" +
+              " control policies have been" +
+              " set for this 'id'" +
+              " by the data provider"
+          );
+          error["invalid-input"] = xss_safe(resource);
+          error.status_code = 403;
+          throw error;
+        }
+
+        provider_id = result.rows[0].provider_id;
+        item_id = result.rows[0].id;
+      } catch (error) {
+        throw error;
+      }
+    } else {
+      item_id = -1;
+
+      try {
+        const result = await pool.query(
+          "SELECT users.id, email" +
+            " FROM consent.users, consent.organizations" +
+            " WHERE organization_id = organizations.id" +
+            " AND website = $1::text",
+          [email_domain]
+        );
+
+        if (result.rowCount === 0) {
+          const error = new Error(
+            "Invalid 'id'; no access" +
+              " control policies have been" +
+              " set for this 'id'" +
+              " by the data provider"
+          );
+          error["invalid-input"] = xss_safe(resource);
+          error.status_code = 403;
+          throw error;
+        }
+
+        for (const g of result.rows)
+          if (sha1_of_email === sha1(g.email)) provider_id = g.id;
+
+        if (provider_id === undefined) {
+          const error = new Error(
+            "Invalid 'id'; no access" +
+              " control policies have been" +
+              " set for this 'id'" +
+              " by the data provider"
+          );
+          error["invalid-input"] = xss_safe(resource);
+          error.status_code = 403;
+          throw error;
+        }
+      } catch (error) {
+        throw error;
+      }
+    }
+
+    try {
+      const result = await pool.query(
+        "SELECT id FROM consent.access" +
+          " WHERE provider_id = $1::integer" +
+          " AND access_item_id = $2::integer" +
+          " AND access_item_type = $3::consent.access_item" +
+          " AND role_id = ANY ($4::integer[])" +
+          " AND status = 'active' AND expiry > NOW()",
+        [
+          provider_id,
+          item_id,
+          item_id === -1 ? "catalogue" : "resourcegroup",
+          role_ids,
+        ]
+      );
+
+      if (result.rowCount === 0) {
+        const error = new Error("Unauthorized");
+        error["invalid-input"] = xss_safe(resource);
+        error.status_code = 403;
+        throw error;
+      }
+
+      for (let obj of result.rows) {
+        processed_request_array.push({
+          cat_id: resource,
+          access_id: obj.id,
+        });
+      }
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  return {
+    resource_server: [...resource_server_set][0],
+    processed_request_array: processed_request_array,
+  };
+}
+
 /* ---
 	A variable to indicate if a worker has started serving APIs.
 
@@ -1237,23 +1409,31 @@ function sign_csr(raw_csr, user) {
 /* --- Auth APIs --- */
 
 app.post("/auth/v[1-2]/token", async (req, res) => {
-  const cert = res.locals.cert;
-  const cert_class = res.locals.cert_class;
   const body = res.locals.body;
   const consumer_id = res.locals.email;
 
-  const resource_id_dict = {};
-  const resource_server_token = {};
-  const sha256_of_resource_server_token = {};
+  const request_array = body.request;
+  const existing_token = body.existing_token;
 
-  const request_array = to_array(body.request);
-  const processed_request_array = [];
+  let processed_request_array = [];
+  let resource_server;
 
   let role_ids = [];
+  let consumer_user_id;
+
+  if (existing_token && request_array)
+    return END_ERROR(
+      res,
+      400,
+      "Either 'existing_token' or 'request', not both"
+    );
+
+  if (!existing_token && !request_array)
+    return END_ERROR(res, 400, "Empty body");
 
   try {
     const result = await pool.query(
-      "SELECT role.id FROM consent.role," +
+      "SELECT role.id, role.user_id FROM consent.role," +
         " consent.users WHERE user_id = users.id" +
         " AND email = $1::text AND status = 'approved'" +
         " AND role = ANY ($2::consent.role_enum[])",
@@ -1266,574 +1446,191 @@ app.post("/auth/v[1-2]/token", async (req, res) => {
     if (result.rowCount === 0) return END_ERROR(res, 401, "Not allowed!");
 
     role_ids = result.rows.map((row) => row.id);
+    consumer_user_id = result.rows[0].user_id;
   } catch (error) {
     return END_ERROR(res, 500, "Internal error!", error);
   }
 
-  if (!request_array || request_array.length < 1) {
-    return END_ERROR(
-      res,
-      400,
-      "'request' must be a valid JSON array " + "with at least 1 element"
-    );
-  }
+  let resource_set = new Set();
 
-  let requested_token_time; // as specified by the consumer
-  let token_time = MAX_TOKEN_TIME; // to be sent along with token
-
-  if (body["token-time"]) {
-    requested_token_time = parseInt(body["token-time"], 10);
-
-    if (
-      isNaN(requested_token_time) ||
-      requested_token_time < 1 ||
-      requested_token_time > MAX_TOKEN_TIME
-    ) {
+  if (request_array) {
+    if (!Array.isArray(request_array) || request_array.length < 1) {
       return END_ERROR(
         res,
         400,
-        "'token-time' should be > 0 and < " + MAX_TOKEN_TIME
+        "'request' must be a valid JSON array " + "with at least 1 element"
       );
     }
-  }
 
-  try {
-    const result = await pool.query(
-      "SELECT COUNT(*)/60.0" +
-        " AS rate" +
-        " FROM token" +
-        " WHERE id = $1::text" +
-        " AND issued_at >= (NOW() - interval '60 seconds')",
-      [consumer_id]
-    );
-
-    // in last 1 minute
-    const tokens_rate_per_second = parseFloat(result.rows[0].rate);
-
-    if (tokens_rate_per_second > 1) {
-      // tokens per second
-      log(
-        "err",
-        "HIGH_TOKEN_RATE",
-        true,
-        {},
-        "Too many requests from user : " +
-          consumer_id +
-          ", from ip : " +
-          String(req.ip)
-      );
-
-      return END_ERROR(res, 429, "Too many requests");
-    }
-  } catch (error) {
-    return END_ERROR(res, 500, "Internal error!", error);
-  }
-
-  const ip = req.ip;
-  const issuer = cert.issuer;
-
-  const geoip = geoip_lite.lookup(ip) || { ll: [] };
-
-  // these fields are not necessary
-
-  delete geoip.eu;
-  delete geoip.area;
-  delete geoip.metro;
-  delete geoip.range;
-
-  Object.freeze(geoip);
-
-  const context = {
-    principal: consumer_id,
-    action: "access",
-
-    conditions: {
-      ip: ip,
-      time: new Date(),
-
-      "cert.class": cert_class,
-      "cert.cn": cert.subject.CN || "",
-      "cert.o": cert.subject.O || "",
-      "cert.ou": cert.subject.OU || "",
-      "cert.c": cert.subject.C || "",
-      "cert.st": cert.subject.ST || "",
-      "cert.gn": cert.subject.GN || "",
-      "cert.sn": cert.subject.SN || "",
-      "cert.title": cert.subject.title || "",
-
-      "cert.issuer.cn": issuer.CN || "",
-      "cert.issuer.email": issuer.emailAddress || "",
-      "cert.issuer.o": issuer.O || "",
-      "cert.issuer.ou": issuer.OU || "",
-      "cert.issuer.c": issuer.C || "",
-      "cert.issuer.st": issuer.ST || "",
-
-      country: geoip.country || "",
-      region: geoip.region || "",
-      timezone: geoip.timezone || "",
-      city: geoip.city || "",
-      latitude: geoip.ll[0] || 0,
-      longitude: geoip.ll[1] || 0,
-    },
-  };
-
-  const providers = {};
-
-  let num_rules_passed = 0;
-
-  for (let r of request_array) {
-    let resource;
-
-    if (typeof r === "string") {
-      resource = r;
-
-      // request is a string, make it an object
-
-      r = {
-        id: resource,
-      };
-    } else if (r instanceof Object) {
-      if (!r.id) {
+    for (const resource of request_array) {
+      if (!is_string_safe(resource, "*_") || resource.indexOf("..") >= 0) {
         const error_response = {
-          message: "no resource 'id' found in request",
-          "invalid-input": xss_safe(r),
+          message: "resource ID contains unsafe characters",
+          "invalid-input": xss_safe(resource),
         };
 
         return END_ERROR(res, 400, error_response);
       }
 
-      resource = r.id;
-    } else {
-      const error_response = {
-        message: "Invalid resource 'id' found in request",
-        "invalid-input": xss_safe(String(r)),
-      };
-
-      return END_ERROR(res, 400, error_response);
-    }
-
-    // allow some chars but not ".."
-
-    if (!is_string_safe(resource, "*_") || resource.indexOf("..") >= 0) {
-      const error_response = {
-        message: "'id' contains unsafe characters",
-        "invalid-input": xss_safe(resource),
-      };
-
-      return END_ERROR(res, 400, error_response);
-    }
-
-    if (typeof r.method === "string") r.methods = [r.method];
-
-    if (!r.methods) r.methods = ["*"];
-
-    if (!(r.methods instanceof Array)) {
-      const error_response = {
-        message: "'methods' must be a valid JSON array",
-        "invalid-input": {
-          id: xss_safe(resource),
-          methods: xss_safe(r.methods),
-        },
-      };
-
-      return END_ERROR(res, 400, error_response);
-    }
-
-    if (r.api && typeof r.api === "string") r.apis = [r.api];
-
-    if (!r.apis) r.apis = ["/*"];
-
-    if (!r.body) r.body = null;
-
-    if (!(r.apis instanceof Array)) {
-      const error_response = {
-        message: "'apis' must be a valid JSON array",
-        "invalid-input": {
-          id: xss_safe(resource),
-          apis: xss_safe(r.apis),
-        },
-      };
-
-      return END_ERROR(res, 400, error_response);
-    }
-
-    if ((resource.match(/\//g) || []).length < 3) {
-      const error_response = {
-        message: "'id' must have at least 3 '/' characters.",
-        "invalid-input": xss_safe(resource),
-      };
-
-      return END_ERROR(res, 400, error_response);
-    }
-
-    // if body is given but is not a valid object
-    if (r.body && !(r.body instanceof Object)) {
-      const error_response = {
-        message: "'body' must be a valid JSON object",
-        "invalid-input": {
-          id: xss_safe(resource),
-          body: xss_safe(r.body),
-        },
-      };
-
-      return END_ERROR(res, 400, error_response);
-    }
-
-    const split = resource.split("/");
-
-    const email_domain = split[0].toLowerCase();
-    const sha1_of_email = split[1].toLowerCase();
-
-    const provider_id_hash = email_domain + "/" + sha1_of_email;
-
-    const resource_server = split[2].toLowerCase();
-    const resource_name = split.slice(3).join("/");
-
-    const resource_group =
-      provider_id_hash + "/" + resource_server + "/" + split[3];
-
-    /* only tokens for onboarding may have no APIs in request
-     * If apis only contains "/*" and not onboarder token,
-     * throw error
-     */
-    if (resource_server === CAT_URL) r.apis = ["/*"];
-    else if (r.apis[0] === "/*" && r.apis.length === 1) {
-      const error_response = {
-        message: "'apis' is required for this id",
-        "invalid-input": {
-          id: xss_safe(resource),
-        },
-      };
-
-      return END_ERROR(res, 400, error_response);
-    }
-
-    let caps_object,
-      all_apis = [];
-
-    if (resource_server !== CAT_URL) {
-      caps_object = CAPS[resource_server];
-      if (caps_object === undefined) {
+      if ((resource.match(/\//g) || []).length < 3) {
         const error_response = {
-          message:
-            "Invalid 'id'; no access" +
-            " control policies have been" +
-            " set for this 'id'" +
-            " by the data provider",
-
+          message: "resource must have at least 3 '/' characters.",
           "invalid-input": xss_safe(resource),
         };
-        return END_ERROR(res, 403, error_response);
+
+        return END_ERROR(res, 400, error_response);
       }
 
-      for (let key of Object.keys(caps_object)) {
-        for (let cap of Object.keys(caps_object[key]))
-          all_apis = all_apis.concat(caps_object[key][cap]);
+      if (resource_set.has(resource)) {
+        const error_response = {
+          message: "Duplicate resource",
+          "invalid-input": xss_safe(resource),
+        };
+
+        return END_ERROR(res, 400, error_response);
       }
-      all_apis = [...new Set(all_apis)];
-      all_apis = all_apis.map(
-        (str) => (str = str.replace("{{RESOURCE_GROUP_ID}}", resource_group))
-      );
+
+      resource_set.add(resource);
     }
+  }
 
-    providers[provider_id_hash] = true;
+  if (existing_token) {
+    /* request array will not be processed */
 
-    // to be generated later
-    resource_server_token[resource_server] = true;
-
-    // to be generated later
-    sha256_of_resource_server_token[resource_server] = true;
-
-    let provider_id, policy_in_json, access_id;
-
-    /* since only resource groups are there, we can check */
-    if (resource_server !== CAT_URL) {
-      try {
-        const result = await pool.query(
-          "SELECT id, provider_id FROM consent.resourcegroup " +
-            " WHERE cat_id = $1::text",
-          [resource_group]
-        );
-
-        if (result.rowCount === 0) throw new Error("Invalid ID");
-
-        provider_id = result.rows[0].provider_id;
-        access_id = result.rows[0].id;
-      } catch (error) {
-        if (error.message === "Invalid ID") {
-          const error_response = {
-            message:
-              "Invalid 'id'; no access" +
-              " control policies have been" +
-              " set for this 'id'" +
-              " by the data provider",
-
-            "invalid-input": xss_safe(resource),
-          };
-
-          return END_ERROR(res, 403, error_response);
-        } else return END_ERROR(res, 500, "Internal error!", error);
-      }
-    } else {
-      access_id = -1;
-
-      try {
-        const result = await pool.query(
-          "SELECT users.id, email" +
-            " FROM consent.users, consent.organizations" +
-            " WHERE organization_id = organizations.id" +
-            " AND website = $1::text",
-          [email_domain]
-        );
-
-        if (result.rowCount === 0) throw new Error("Invalid ID");
-
-        for (const g of result.rows)
-          if (sha1_of_email === sha1(g.email)) provider_id = g.id;
-
-        if (provider_id === undefined) throw new Error("Invalid ID");
-      } catch (error) {
-        if (error.message === "Invalid ID") {
-          const error_response = {
-            message:
-              "Invalid 'id'; no access" +
-              " control policies have been" +
-              " set for this 'id'" +
-              " by the data provider",
-
-            "invalid-input": xss_safe(resource),
-          };
-
-          return END_ERROR(res, 403, error_response);
-        } else return END_ERROR(res, 500, "Internal error!", error);
-      }
-    }
+    if (!is_valid_token(existing_token))
+      return END_ERROR(res, 400, "Invalid 'existing_token'");
 
     try {
+      const uuid = existing_token.split("/")[3];
+
       const result = await pool.query(
-        "SELECT policy_json FROM consent.access" +
-          " WHERE provider_id = $1::integer" +
-          " AND access_item_id = $2::integer" +
-          " AND access_item_type = $3::consent.access_item" +
-          " AND status = 'active'" +
-          " AND role_id = ANY ($4::integer[])",
+        "SELECT id, resource_server, token, expiry < NOW() AS expired" +
+          " FROM consent.token" +
+          " WHERE uuid = $1::uuid" +
+          " AND user_id = $2::integer" +
+          " AND status = 'active'",
         [
-          provider_id,
-          access_id,
-          access_id === -1 ? "catalogue" : "resourcegroup",
-          role_ids,
+          uuid, // 1
+          consumer_user_id, //2
         ]
       );
 
-      if (result.rowCount === 0) {
-        const error_response = {
-          message:
-            "Invalid 'id'; no access" +
-            " control policies have been" +
-            " set for this 'id'" +
-            " by the data provider",
+      if (result.rows.length === 0)
+        return END_ERROR(res, 403, "Invalid 'existing_token'");
 
-          "invalid-input": xss_safe(resource),
-        };
+      let token_hash = result.rows[0].token;
+      let is_token = await bcrypt.compare(existing_token, token_hash);
 
-        return END_ERROR(res, 403, error_response);
-      }
+      if (!is_token) return END_ERROR(res, 403, "Invalid 'existing_token'");
 
-      policy_in_json = result.rows.map((row) => row.policy_json);
+      if (result.rows[0].expired === false)
+        return END_ERROR(res, 403, "'existing_token' not expired");
+
+      let existing_token_id = result.rows[0].id;
+
+      const access_items = await pool.query(
+        "SELECT access_id, cat_id FROM consent.token_access" +
+          " JOIN consent.access ON access_id = access.id" +
+          " WHERE token_id = $1::integer AND token_access.status = 'active'" +
+          " AND access.status = 'active' AND access.expiry > NOW()",
+        [existing_token_id]
+      );
+
+      if (access_items.rows.length === 0)
+        return END_ERROR(res, 403, "Token has no access to resources");
+
+      resource_server = result.rows[0].resource_server;
+
+      for (let obj of access_items.rows)
+        processed_request_array.push({
+          cat_id: obj.cat_id,
+          access_id: obj.access_id,
+        });
     } catch (error) {
       return END_ERROR(res, 500, "Internal error!", error);
     }
+  } else {
+    try {
+      /* process the requested resources to get access_id and cat_id */
+      const result = await process_requested_resources(request_array, role_ids);
 
-    // full name of resource eg: bangalore.domain.com/streetlight-1
-    context.resource = resource_server + "/" + resource_name;
-
-    let CTX = context;
-
-    for (const api of r.apis) {
-      if (typeof api !== "string") {
-        const error_response = {
-          message: "'api' must be a string",
-          "invalid-input": {
-            id: xss_safe(resource),
-            api: xss_safe(api),
-          },
+      ({ processed_request_array, resource_server } = result);
+    } catch (error) {
+      /* If status_code key exists, will be normal error
+       * Cannot send error object, it contains other stuff */
+      if (error.status_code) {
+        let err_resp = {
+          message: error.message,
+          "invalid-input": error["invalid-input"],
         };
 
-        return END_ERROR(res, 400, error_response);
-      }
-
-      if (!all_apis.includes(api) && api !== "/*") {
-        const error_response = {
-          message: "Invalid api",
-          "invalid-input": {
-            id: xss_safe(resource),
-            api: xss_safe(api),
-          },
-        };
-
-        return END_ERROR(res, 400, error_response);
-      }
-
-      CTX.conditions.api = api;
-
-      for (const method of r.methods) {
-        if (typeof method !== "string") {
-          const error_response = {
-            message: "'method' must be a string",
-            "invalid-input": {
-              id: xss_safe(resource),
-              method: xss_safe(method),
-            },
-          };
-
-          return END_ERROR(res, 400, error_response);
-        }
-
-        CTX.conditions.method = method;
-
-        try {
-          // token expiry time as specified by
-          // the provider in the policy
-
-          const result = evaluator.evaluate(policy_in_json, CTX);
-
-          const token_time_in_policy = result.expiry || 0;
-
-          if (token_time_in_policy < 1) {
-            const error_response = {
-              message: "Unauthorized",
-              "invalid-input": {
-                id: xss_safe(resource),
-                api: xss_safe(api),
-                method: xss_safe(method),
-              },
-            };
-
-            return END_ERROR(res, 403, error_response);
-          }
-
-          token_time = Math.min(token_time, token_time_in_policy);
-        } catch (x) {
-          const error_response = {
-            message: "Unauthorized",
-            "invalid-input": {
-              id: xss_safe(resource),
-              api: xss_safe(api),
-              method: xss_safe(method),
-            },
-          };
-
-          return END_ERROR(res, 403, error_response);
-        }
-      }
+        return END_ERROR(res, error.status_code, err_resp);
+      } else return END_ERROR(res, 500, "Internal error!", error);
     }
-
-    if (requested_token_time)
-      token_time = Math.min(requested_token_time, token_time);
-
-    if (token_time < 1) {
-      const error_response = {
-        message: "token validity is less than 1 second",
-      };
-
-      return END_ERROR(res, 400, error_response);
-    }
-
-    processed_request_array.push({
-      id: resource,
-      methods: r.methods,
-      apis: r.apis,
-      body: r.body,
-    });
-
-    resource_id_dict[resource] = true;
-
-    ++num_rules_passed;
   }
-
-  if (num_rules_passed < 1 || num_rules_passed < request_array.length)
-    return END_ERROR(res, 403, "Unauthorized!");
 
   let token;
 
   const random_hex = crypto.randomBytes(TOKEN_LEN).toString("hex");
+  const uuid = uuidv4();
 
-  /* Token format = issued-by / issued-to / random-hex-string */
+  /* Token format = issued-by / issued-to / random-hex-string / uuid */
 
-  token = SERVER_NAME + "/" + consumer_id + "/" + random_hex;
-
-  const response = {
-    token: token,
-    "token-type": "IUDX",
-    "expires-in": token_time,
-    is_token_valid: true,
-  };
-
-  const num_resource_servers = Object.keys(resource_server_token).length;
-
-  if (num_resource_servers > 1) {
-    for (const key in resource_server_token) {
-      /* server-token format = issued-to / random-hex-string */
-
-      resource_server_token[key] =
-        key + "/" + crypto.randomBytes(TOKEN_LEN).toString("hex");
-
-      sha256_of_resource_server_token[key] = sha256(resource_server_token[key]);
-    }
-  }
-
-  response["server-token"] = resource_server_token;
-  const sha256_of_token = sha256(token);
-
-  const query =
-    "INSERT INTO token VALUES(" +
-    "$1::text," +
-    "$2::text," +
-    "NOW() + $3::interval," + // expiry
-    "$4::jsonb," +
-    "$5::text," +
-    "$6::text," +
-    "NOW()," + // issued_at
-    "$7::jsonb," +
-    "false," + // introspected
-    "false," + // revoked
-    "$8::int," +
-    "$9::jsonb," +
-    "$10::jsonb," +
-    "$11::jsonb," +
-    "$12::text" + // api_called_from
-    ")";
-
-  const params = [
-    consumer_id, //  1
-    sha256_of_token, //  2
-    token_time + " seconds", //  3
-    JSON.stringify(processed_request_array), //  4
-    cert.serialNumber, //  5
-    cert.fingerprint, //  6
-    JSON.stringify(resource_id_dict), //  7
-    cert_class, //  8
-    JSON.stringify(sha256_of_resource_server_token), //  9
-    JSON.stringify(providers), // 10
-    JSON.stringify(geoip), // 11
-    req.headers.origin, // 12
-  ];
+  token = SERVER_NAME + "/" + consumer_id + "/" + random_hex + "/" + uuid;
+  let token_id, expiry;
 
   try {
-    const result = await pool.query(query, params);
+    let hash = await bcrypt.hash(token, BCRYPT_SALT_ROUNDS);
 
-    if (result.rowCount === 0) throw new Error("Error in insertion");
+    const result = await pool.query(
+      "INSERT INTO consent.token (token, uuid, user_id, " +
+        "resource_server, expiry, status, created_at, updated_at)" +
+        " VALUES ($1::text, $2::uuid, $3::integer, $4::text, " +
+        " NOW() + $5::interval, $6::consent.token_status_enum, NOW(), NOW())" +
+        " RETURNING id, expiry",
+      [
+        hash, //$1
+        uuid, //$2
+        consumer_user_id, //$3
+        resource_server, //$4
+        TOKEN_TIME_SEC + " seconds", //$5
+        "active", //$6
+      ]
+    );
+    token_id = result.rows[0].id;
+    expiry = result.rows[0].expiry;
   } catch (error) {
     return END_ERROR(res, 500, "Internal error!", error);
   }
 
-  const expiry_date = new Date(Date.now() + token_time * 1000);
+  const response = {
+    token: token,
+    expiry: expiry,
+  };
+
+  for (let obj of processed_request_array) {
+    try {
+      const result = await pool.query(
+        "INSERT INTO consent.token_access (token_id, access_id, " +
+          "cat_id, status, created_at, updated_at)" +
+          " VALUES ($1::integer, $2::integer, $3::text," +
+          " $4::consent.token_access_status_enum, NOW(), NOW())",
+        [
+          token_id, //$1
+          obj.access_id, //$2
+          obj.cat_id, //$3
+          "active", //$4
+        ]
+      );
+    } catch (error) {
+      return END_ERROR(res, 500, "Internal error!", error);
+    }
+  }
 
   const details = {
     requester: consumer_id,
-    requesterRole: cert_class,
-    token_expiry: expiry_date,
-    resource_ids: processed_request_array,
+    token_expiry: expiry,
+    resource_ids: request_array,
   };
 
   log("info", "ISSUED_TOKEN", true, details);
@@ -1841,11 +1638,14 @@ app.post("/auth/v[1-2]/token", async (req, res) => {
   return END_SUCCESS(res, response);
 });
 
-app.post("/auth/v[1-2]/token/introspect", (req, res) => {
+app.post("/auth/v[1-2]/token/introspect", async (req, res) => {
   const cert = res.locals.cert;
   const body = res.locals.body;
-
   const hostname_in_certificate = cert.subject.CN.toLowerCase();
+
+  const response = {};
+  const roles = [];
+  let token_id;
 
   if (!body.token) return END_ERROR(res, 400, "No 'token' found in the body");
 
@@ -1853,588 +1653,788 @@ app.post("/auth/v[1-2]/token/introspect", (req, res) => {
     return END_ERROR(res, 400, "Invalid 'token'");
 
   const token = body.token.toLowerCase();
-  let server_token = body["server-token"] || true;
-
-  if (server_token === true || server_token === "" || server_token === "true") {
-    server_token = true;
-  } else {
-    server_token = server_token.toLowerCase();
-
-    if (!is_valid_servertoken(server_token, hostname_in_certificate))
-      return END_ERROR(res, 400, "Invalid 'server-token'");
-  }
-
-  const consumer_request = body.request;
-
-  if (consumer_request) {
-    if (!(consumer_request instanceof Array)) {
-      return END_ERROR(res, 400, "'request' must be an valid JSON array");
-    }
-
-    Object.freeze(consumer_request);
-  }
 
   const split = token.split("/");
-  const issued_to = split[1];
+  const uuid = split[3];
 
-  const sha256_of_token = sha256(token);
-
-  pool.query(
-    "SELECT expiry,request,cert_class," +
-      " server_token,providers" +
-      " FROM token" +
-      " WHERE id = $1::text" +
-      " AND token = $2::text" +
-      " AND revoked = false" +
-      " AND expiry > NOW()" +
-      " LIMIT 1",
-    [
-      issued_to, // 1
-      sha256_of_token, // 2
-    ],
-
-    (error, results) => {
-      if (error) {
-        return END_ERROR(res, 500, "Internal error!", error);
-      }
-
-      if (results.rows.length === 0)
-        return END_ERROR(res, 403, "Invalid 'token'");
-
-      const expected_server_token =
-        results.rows[0].server_token[hostname_in_certificate];
-
-      // if token doesn't belong to this server
-      if (!expected_server_token) return END_ERROR(res, 403, "Invalid 'token'");
-
-      const num_resource_servers = Object.keys(results.rows[0].server_token)
-        .length;
-
-      if (num_resource_servers > 1) {
-        if (server_token === true) {
-          // should be a real token
-          return END_ERROR(res, 403, "Invalid 'server-token'");
-        }
-
-        const sha256_of_server_token = sha256(server_token);
-
-        if (sha256_of_server_token !== expected_server_token) {
-          return END_ERROR(res, 403, "Invalid 'server-token'");
-        }
-      } else {
-        // token belongs to only 1 server
-
-        if (server_token === true && expected_server_token === true) {
-          // ok
-        } else if (typeof expected_server_token === "string") {
-          const sha256_of_server_token = sha256(server_token);
-
-          if (sha256_of_server_token !== expected_server_token) {
-            return END_ERROR(res, 403, "Invalid 'server-token'");
-          }
-        } else {
-          return END_ERROR(res, 500, "Invalid 'expected_server_token' in DB");
-        }
-      }
-
-      const request = results.rows[0].request;
-      const providers = results.rows[0].providers;
-
-      const request_for_resource_server = [];
-
-      for (const r of request) {
-        const split = r.id.split("/");
-
-        const email_domain = split[0].toLowerCase();
-        const sha1_of_email = split[1].toLowerCase();
-
-        const provider_id_hash = email_domain + "/" + sha1_of_email;
-
-        const resource_server = split[2].toLowerCase();
-
-        // if provider exists
-        if (providers[provider_id_hash]) {
-          if (resource_server === hostname_in_certificate)
-            request_for_resource_server.push(r);
-        }
-      }
-
-      Object.freeze(request_for_resource_server);
-
-      if (request_for_resource_server.length === 0)
-        return END_ERROR(res, 403, "Invalid 'token'");
-
-      if (consumer_request) {
-        const l1 = Object.keys(consumer_request).length;
-
-        const l2 = Object.keys(request_for_resource_server).length;
-
-        // more number of requests than what is allowed
-
-        if (l1 > l2) {
-          return END_ERROR(res, 403, "Unauthorized !");
-        }
-
-        for (const r1 of consumer_request) {
-          if (!(r1 instanceof Object)) {
-            const error_response = {
-              message: "'request' must be a valid JSON object",
-              "invalid-input": xss_safe(r1),
-            };
-
-            return END_ERROR(res, 400, error_response);
-          }
-
-          // default values
-
-          if (!r1.methods) r1.methods = ["*"];
-
-          if (!r1.apis) r1.apis = ["/*"];
-
-          if (!r1.body) r1.body = null;
-
-          Object.freeze(r1);
-
-          let resource_found = false;
-
-          for (const r2 of request_for_resource_server) {
-            Object.freeze(r2);
-
-            if (r1.id === r2.id) {
-              if (!lodash.isEqual(r1, r2)) {
-                const error_response = {
-                  message: "Unauthorized",
-                  "invalid-input": xss_safe(r1.id),
-                };
-
-                return END_ERROR(res, 403, error_response);
-              }
-
-              resource_found = true;
-              break;
-            }
-          }
-
-          if (!resource_found) {
-            const error_response = {
-              message: "Unauthorized",
-              "invalid-input": xss_safe(r1.id),
-            };
-
-            return END_ERROR(res, 403, error_response);
-          }
-        }
-      }
-
-      const response = {
-        consumer: issued_to,
-        expiry: results.rows[0].expiry,
-        request: request_for_resource_server,
-        "consumer-certificate-class": results.rows[0].cert_class,
-      };
-
-      pool.query(
-        "UPDATE token SET introspected = true" +
-          " WHERE token = $1::text" +
-          " AND introspected = false" +
-          " AND revoked = false" +
-          " AND expiry > NOW()",
-        [
-          sha256_of_token, // 1
-        ],
-
-        (update_error) => {
-          if (update_error) {
-            return END_ERROR(res, 500, "Internal error!", update_error);
-          }
-
-          const details = {
-            resource_server: hostname_in_certificate,
-            token_hash: sha256_of_token,
-            issued_to: issued_to,
-          };
-
-          log("info", "INTROSPECTED_TOKEN", true, details);
-
-          return END_SUCCESS(res, response);
-        }
-      );
-    }
-  );
-});
-
-app.post("/auth/v[1-2]/token/revoke", (req, res) => {
-  const id = res.locals.email;
-  const body = res.locals.body;
-
-  const tokens = body.tokens;
-  const token_hashes = body["token-hashes"];
-
-  if (tokens && token_hashes) {
-    return END_ERROR(
-      res,
-      400,
-      "Provide either 'tokens' or 'token-hashes'; but not both"
+  try {
+    const result = await pool.query(
+      "SELECT id, token ,user_id, resource_server, expiry" +
+        " FROM consent.token" +
+        " WHERE uuid = $1::uuid" +
+        " AND resource_server = $2::text" +
+        " AND expiry > NOW()" +
+        " AND status = 'active'",
+      [
+        uuid, // 1
+        hostname_in_certificate, //2
+      ]
     );
+
+    if (result.rows.length === 0) return END_ERROR(res, 403, "Invalid 'token'");
+
+    let token_hash = result.rows[0].token;
+
+    let is_token = await bcrypt.compare(token, token_hash);
+
+    if (!is_token) return END_ERROR(res, 403, "Invalid 'token'");
+
+    token_id = result.rows[0].id;
+    let { user_id } = result.rows[0];
+
+    response.consumer = split[1];
+    response.expiry = result.rows[0].expiry;
+
+    const result2 = await pool.query(
+      "SELECT id, role FROM consent.role" +
+        " WHERE user_id = $1::integer" +
+        " AND status = 'approved'" +
+        " AND role = ANY ($2::consent.role_enum[])",
+      [
+        user_id, // 1
+        ["consumer", "onboarder", "data ingester"], // 2
+      ]
+    );
+
+    /* this should not happen */
+    if (result2.rowCount === 0) return END_ERROR(res, 403, "Invalid 'token'");
+
+    result2.rows.map((row) => {
+      roles[row.role] = row.id;
+    });
+  } catch (error) {
+    return END_ERROR(res, 500, "Internal error!", error);
   }
 
-  if (!tokens && !token_hashes) {
-    return END_ERROR(res, 400, "No 'tokens' or 'token-hashes' found");
-  }
+  let access = {},
+    access_query,
+    token_access_items;
 
-  let num_tokens_revoked = 0;
+  try {
+    const result = await pool.query(
+      "SELECT access_id, cat_id FROM consent.token_access" +
+        " WHERE token_id = $1::integer AND status = 'active'",
+      [token_id]
+    );
 
-  if (tokens) {
-    // user is a consumer
+    if (result.rows.length === 0)
+      return END_ERROR(res, 403, "Token has no access to resources");
 
-    if (!(tokens instanceof Array))
-      return END_ERROR(res, 400, "'tokens' must be a valid JSON array");
+    token_access_items = result.rows;
+    response.request = [];
 
-    for (const token of tokens) {
-      if (!is_valid_token(token, id)) {
-        const error_response = {
-          message: "Invalid 'token'",
-          "invalid-input": xss_safe(token),
-          "num-tokens-revoked": num_tokens_revoked,
-        };
+    /* create access object with key as access ID */
+    for (let obj of token_access_items) {
+      if (!access[obj.access_id]) access[obj.access_id] = {};
 
-        return END_ERROR(res, 400, error_response);
-      }
+      access[obj.access_id].resource_group = obj.cat_id
+        .split("/")
+        .slice(0, 4)
+        .join("/");
+      access[obj.access_id].apis = new Set();
 
-      const sha256_of_token = sha256(token);
-
-      const rows = pg.querySync(
-        "SELECT 1 FROM token" +
-          " WHERE id = $1::text " +
-          " AND token = $2::text " +
-          " AND expiry > NOW()" +
-          " LIMIT 1",
-        [
-          id, // 1
-          sha256_of_token, // 2
-        ]
-      );
-
-      if (rows.length === 0) {
-        const error_response = {
-          message: "Invalid 'token'",
-          "invalid-input": xss_safe(token),
-          "num-tokens-revoked": num_tokens_revoked,
-        };
-
-        return END_ERROR(res, 400, error_response);
-      }
-
-      const update_rows = pg.querySync(
-        "UPDATE token SET revoked = true" +
-          " WHERE id = $1::text" +
-          " AND token = $2::text" +
-          " AND revoked = false" +
-          " AND expiry > NOW()",
-        [
-          id, // 1
-          sha256_of_token, // 2
-        ]
-      );
-
-      // querySync returns empty object for UPDATE
-      num_tokens_revoked += 1;
+      access[obj.access_id].expired = true;
     }
-  } else {
-    // user is a provider
 
-    if (!(token_hashes instanceof Array))
-      return END_ERROR(res, 400, "'token-hashes' must be a valid JSON array");
+    /* capability will be null for onboarder/data ingester */
+    access_query = await pool.query(
+      "SELECT access.id, role_id," +
+        " capability FROM consent.access LEFT JOIN consent.capability" +
+        " ON access_id =access.id WHERE access.id = ANY ($1::integer[])" +
+        " AND access.status = 'active' AND expiry > NOW()" +
+        " AND (capability.status = 'active' OR capability.status IS NULL)",
+      [Object.keys(access)]
+    );
 
-    const email_domain = id.split("@")[1];
-    const sha1_of_email = sha1(id);
-
-    const provider_id_hash = email_domain + "/" + sha1_of_email;
-
-    for (const token_hash of token_hashes) {
-      if (!is_valid_tokenhash(token_hash)) {
-        const error_response = {
-          message: "Invalid 'token-hash'",
-          "invalid-input": xss_safe(token_hash),
-          "num-tokens-revoked": num_tokens_revoked,
-        };
-
-        return END_ERROR(res, 400, error_response);
-      }
-
-      const rows = pg.querySync(
-        "SELECT 1 FROM token" +
-          " WHERE token = $1::text" +
-          " AND providers-> $2::text = 'true'" +
-          " AND expiry > NOW()" +
-          " LIMIT 1",
-        [
-          token_hash, // 1
-          provider_id_hash, // 2
-        ]
-      );
-
-      if (rows.length === 0) {
-        const error_response = {
-          message: "Invalid 'token-hash'",
-          "invalid-input": xss_safe(token_hash),
-          "num-tokens-revoked": num_tokens_revoked,
-        };
-
-        return END_ERROR(res, 400, error_response);
-      }
-
-      const provider_false = {};
-      provider_false[provider_id_hash] = false;
-
-      const update_rows = pg.querySync(
-        "UPDATE token SET" +
-          " providers = providers || $1::jsonb" +
-          " WHERE token = $2::text" +
-          " AND providers-> $3::text = 'true'" +
-          " AND expiry > NOW()",
-        [
-          JSON.stringify(provider_false), // 1
-          token_hash, // 2
-          provider_id_hash, // 3
-        ]
-      );
-
-      // querySync returns empty object for UPDATE
-      num_tokens_revoked += 1;
-    }
+    if (access_query.rows.length === 0)
+      return END_ERROR(res, 403, "Token has no access to resources");
+  } catch (error) {
+    return END_ERROR(res, 500, "Internal error!", error);
   }
 
-  const response = {
-    "num-tokens-revoked": num_tokens_revoked,
+  /* add function to access object to add APIs to
+   * apis set for nested objects */
+  let add_apis = function (id, arr) {
+    arr.forEach((val) => {
+      access[id].apis.add(
+        val.replace("{{RESOURCE_GROUP_ID}}", access[id].resource_group)
+      );
+    });
   };
 
+  for (let obj of access_query.rows) {
+    /* if item is in access_query, not expired */
+    access[obj.id].expired = false;
+
+    /* get APIs depending on role/capability */
+    if (obj.role_id === roles.onboarder) continue;
+    else {
+      const resource_server = access[obj.id].resource_group.split("/")[2];
+      let caps_object = CAPS[resource_server];
+
+      if (obj.role_id === roles["data ingester"])
+        add_apis(obj.id, caps_object["data ingester"].default);
+      else if (obj.role_id === roles.consumer)
+        add_apis(obj.id, caps_object.consumer[obj.capability]);
+    }
+  }
+
+  for (let obj of token_access_items) {
+    /* Skip if item is expired */
+    if (access[obj.access_id].expired === true) continue;
+
+    obj.id = obj.cat_id;
+    obj.apis = [...access[obj.access_id].apis];
+
+    delete obj.access_id;
+    delete obj.cat_id;
+    response.request.push(obj);
+  }
   const details = {
-    requester: id,
-    requesterRole: tokens ? "consumer" : "provider",
-    revoked: response["num-tokens-revoked"],
+    resource_server: hostname_in_certificate,
+    issued_to: token.split("/")[1],
   };
 
-  log("info", "REVOKED_TOKENS", false, details);
+  log("info", "INTROSPECTED_TOKEN", true, details);
 
   return END_SUCCESS(res, response);
 });
 
-app.post("/auth/v[1-2]/token/revoke-all", (req, res) => {
-  const id = res.locals.email;
+app.get("/auth/v[1-2]/token", async (req, res) => {
   const body = res.locals.body;
-  const serial_regex = new RegExp(/^-?[a-fA-F0-9]{40}$/);
-  const fingerprint_regex = new RegExp(/^([a-fA-F0-9]{2}:){19}[a-fA-F0-9]{2}$/);
+  const consumer_id = res.locals.email;
+  const response = [];
 
-  if (!body.serial) return END_ERROR(res, 400, "No 'serial' found in the body");
+  let token_list = [],
+    roles = {},
+    consumer_user_id;
 
-  if (!serial_regex.test(body.serial))
-    return END_ERROR(res, 400, "Invalid 'serial'");
+  try {
+    const result = await pool.query(
+      "SELECT role.id, role, role.user_id FROM consent.role," +
+        " consent.users WHERE user_id = users.id" +
+        " AND email = $1::text AND status = 'approved'" +
+        " AND role = ANY ($2::consent.role_enum[])",
+      [
+        consumer_id, // 1
+        ["consumer", "onboarder", "data ingester"], // 2
+      ]
+    );
 
-  const serial = body.serial.toLowerCase();
+    if (result.rowCount === 0) return END_ERROR(res, 401, "Not allowed!");
+    consumer_user_id = result.rows[0].user_id;
 
-  if (!body.fingerprint) {
-    return END_ERROR(res, 400, "No 'fingerprint' found in the body");
+    result.rows.map((row) => {
+      roles[row.role] = row.id;
+    });
+  } catch (error) {
+    return END_ERROR(res, 500, "Internal error!", error);
   }
 
-  if (!fingerprint_regex.test(body.fingerprint))
-    // fingerprint contains ':'
-    return END_ERROR(res, 400, "Invalid 'fingerprint'");
+  try {
+    const result = await pool.query(
+      "SELECT id, uuid, expiry, expiry < NOW() AS expired, " +
+        " status, created_at, updated_at" +
+        " FROM consent.token WHERE user_id = $1::integer",
+      [consumer_user_id]
+    );
 
-  const fingerprint = body.fingerprint.toLowerCase();
+    token_list = result.rows;
+  } catch (error) {
+    return END_ERROR(res, 500, "Internal error!", error);
+  }
 
-  const email_domain = id.split("@")[1];
-  const sha1_of_email = sha1(id);
+  for (let token of token_list) {
+    let details = {
+      uuid: token.uuid,
+      status:
+        token.status === "active" && token.expired ? "expired" : token.status,
+      expiry: token.expiry,
+      created_at: token.created_at,
+      updated_at: token.updated_at,
+      request: [],
+    };
 
-  const provider_id_hash = email_domain + "/" + sha1_of_email;
+    let access = {},
+      access_query,
+      token_access_items;
 
-  pool.query(
-    "UPDATE token" +
-      " SET revoked = true" +
-      " WHERE id = $1::text" +
-      " AND cert_serial = $2::text" +
-      " AND cert_fingerprint = $3::text" +
-      " AND expiry > NOW()" +
-      " AND revoked = false",
-    [
-      id, // 1
-      serial, // 2
-      fingerprint, // 3
-    ],
+    try {
+      const result = await pool.query(
+        "SELECT access_id, status, cat_id, created_at," +
+          " updated_at FROM consent.token_access WHERE token_id = $1::integer",
+        [token.id]
+      );
 
-    (error, results) => {
-      if (error) {
-        return END_ERROR(res, 500, "Internal error!", error);
+      token_access_items = result.rows;
+
+      /* create access object with key as access ID */
+      for (let obj of token_access_items) {
+        if (!access[obj.access_id]) access[obj.access_id] = {};
+        access[obj.access_id].resource_group = obj.cat_id
+          .split("/")
+          .slice(0, 4)
+          .join("/");
+        access[obj.access_id].apis = new Set();
       }
 
-      const response = {
-        "num-tokens-revoked": results.rowCount,
-      };
-
-      const provider_false = {};
-      provider_false[provider_id_hash] = false;
-
-      pool.query(
-        "UPDATE token SET" +
-          " providers = providers || $1::jsonb" +
-          " WHERE cert_serial = $2::text" +
-          " AND cert_fingerprint = $3::text" +
-          " AND expiry > NOW()" +
-          " AND revoked = false" +
-          " AND providers-> $4::text = 'true'",
-        [
-          JSON.stringify(provider_false), // 1
-          serial, // 2
-          fingerprint, // 3
-          provider_id_hash, // 4
-        ],
-
-        (update_error, update_results) => {
-          if (update_error) {
-            return END_ERROR(res, 500, "Internal error!", update_error);
-          }
-
-          response["num-tokens-revoked"] += update_results.rowCount;
-
-          const details = {
-            requester: id,
-            requesterRole:
-              update_results.rowCount == 0 ? "consumer" : "provider",
-            serial: serial,
-            fingerprint: fingerprint,
-            revoked: response["num-tokens-revoked"],
-          };
-
-          log("info", "REVOKED_ALL_TOKENS", true, details);
-
-          return END_SUCCESS(res, response);
-        }
+      /* capability will be null for onboarder/data ingester */
+      access_query = await pool.query(
+        "SELECT access.id, role_id, access.status, expiry < NOW() AS expired," +
+          " capability FROM consent.access LEFT JOIN consent.capability" +
+          " ON access_id = access.id WHERE access.id = ANY ($1::integer[])" +
+          " AND (capability.status = 'active' OR capability.status IS NULL)",
+        [Object.keys(access)]
       );
+    } catch (error) {
+      return END_ERROR(res, 500, "Internal error!", error);
     }
-  );
+    /* add function to access object to add APIs to
+     * apis set for nested objects */
+
+    let add_apis = function (id, arr) {
+      arr.forEach((val) => {
+        access[id].apis.add(
+          val.replace("{{RESOURCE_GROUP_ID}}", access[id].resource_group)
+        );
+      });
+    };
+
+    for (let obj of access_query.rows) {
+      access[obj.id].expired = obj.expired;
+
+      /* get APIs depending on role/capability */
+      if (obj.role_id === roles.onboarder) continue;
+      else {
+        const resource_server = access[obj.id].resource_group.split("/")[2];
+        let caps_object = CAPS[resource_server];
+
+        if (obj.role_id === roles["data ingester"])
+          add_apis(obj.id, caps_object["data ingester"].default);
+        else if (obj.role_id === roles.consumer)
+          add_apis(obj.id, caps_object.consumer[obj.capability]);
+      }
+    }
+
+    for (let obj of token_access_items) {
+      if (obj.status === "active" && access[obj.access_id].expired === true)
+        obj.status = "expired";
+
+      obj.apis = [...access[obj.access_id].apis];
+
+      delete obj.access_id;
+      details.request.push(obj);
+    }
+
+    response.push(details);
+  }
+
+  return END_SUCCESS(res, response);
 });
 
-app.post("/auth/v[1-2]/audit/tokens", (req, res) => {
-  const id = res.locals.email;
-  const body = res.locals.body;
+app.delete("/auth/v[1-2]/token", async (req, res) => {
+  let token_uuids = res.locals.body.tokens;
+  const consumer_id = res.locals.email;
+  const uuid_regex = new RegExp(
+    /^[0-9a-f]{8}\b-[0-9a-f]{4}\b-[0-9a-f]{4}\b-[0-9a-f]{4}\b-[0-9a-f]{12}$/
+  );
 
-  if (!body.hours) return END_ERROR(res, 400, "No 'hours' found in the body");
+  let consumer_user_id, token_ids;
 
-  const hours = parseInt(body.hours, 10);
+  try {
+    const result = await pool.query(
+      "SELECT role.user_id FROM consent.role," +
+        " consent.users WHERE user_id = users.id" +
+        " AND email = $1::text AND status = 'approved'" +
+        " AND role = ANY ($2::consent.role_enum[])",
+      [
+        consumer_id, // 1
+        ["consumer", "onboarder", "data ingester"], // 2
+      ]
+    );
 
-  // 5 yrs max
-  if (isNaN(hours) || hours < 1 || hours > 43800) {
-    return END_ERROR(res, 400, "'hours' must be a positive number");
+    if (result.rowCount === 0) return END_ERROR(res, 401, "Not allowed!");
+    consumer_user_id = result.rows[0].user_id;
+  } catch (error) {
+    return END_ERROR(res, 500, "Internal error!", error);
+  }
+  if (!token_uuids || !Array.isArray(token_uuids) || token_uuids.length < 1)
+    return END_ERROR(
+      res,
+      400,
+      "'tokens' must be a valid JSON array " + "with at least 1 element"
+    );
+
+  token_uuids = [...new Set(token_uuids)];
+
+  for (let uuid of token_uuids) {
+    if (!uuid_regex.test(uuid)) {
+      const error_response = {
+        message: "Invalid data (uuid)",
+        "invalid-input": [xss_safe(uuid)],
+      };
+      return END_ERROR(res, 400, error_response);
+    }
   }
 
-  const as_consumer = [];
-  const as_provider = [];
+  try {
+    const result = await pool.query(
+      "SELECT id, uuid FROM consent.token" +
+        " WHERE user_id = $1::integer AND" +
+        " uuid = ANY($2::uuid[])" +
+        " AND status != 'deleted'" +
+        " AND expiry > NOW()",
+      [consumer_user_id, token_uuids]
+    );
 
-  pool.query(
-    "SELECT issued_at,expiry,request,cert_serial," +
-      " cert_fingerprint,introspected,revoked," +
-      " expiry < NOW() as expired,geoip," +
-      " api_called_from" +
-      " FROM token" +
-      " WHERE id = $1::text" +
-      " AND issued_at >= (NOW() - $2::interval)" +
-      " ORDER BY issued_at DESC",
-    [
-      id, // 1
-      hours + " hours", // 2
-    ],
+    if (result.rows.length === 0) {
+      const error_response = {
+        message: "Invalid uuids",
+        "invalid-input": token_uuids,
+      };
 
-    (error, results) => {
-      if (error) return END_ERROR(res, 500, "Internal error!", error);
+      return END_ERROR(res, 400, error_response);
+    }
 
-      for (const row of results.rows) {
-        as_consumer.push({
-          "token-issued-at": row.issued_at,
-          introspected: row.introspected,
-          revoked: row.revoked,
-          expiry: row.expiry,
-          expired: row.expired,
-          "certificate-serial-number": row.cert_serial,
-          "certificate-fingerprint": row.cert_fingerprint,
-          request: row.request,
-          geoip: row.geoip,
-          "api-called-from": row.api_called_from,
-        });
+    if (result.rows.length !== token_uuids.length) {
+      /* valid_uuids should always be subset of token_uuids */
+      let valid_uuids = result.rows.map((obj) => obj.uuid);
+
+      let invalid_uuids = token_uuids.filter(
+        (uuid) => !valid_uuids.includes(uuid)
+      );
+
+      const error_response = {
+        message: "Invalid uuids",
+        "invalid-input": invalid_uuids,
+      };
+      return END_ERROR(res, 400, error_response);
+    }
+
+    token_ids = result.rows.map((obj) => obj.id);
+  } catch (error) {
+    return END_ERROR(res, 500, "Internal error!", error);
+  }
+
+  try {
+    const result = await pool.query(
+      "UPDATE consent.token SET status = 'deleted'" +
+        " WHERE id = ANY($1::integer[])",
+      [token_ids]
+    );
+
+    if (result.rowCount === 0) throw new Error("Error in deletion");
+
+    const result2 = await pool.query(
+      "UPDATE consent.token_access SET status = 'deleted'" +
+        " WHERE token_id = ANY($1::integer[])",
+      [token_ids]
+    );
+
+    if (result2.rowCount === 0) throw new Error("Error in deletion");
+  } catch (error) {
+    return END_ERROR(res, 500, "Internal error!", error);
+  }
+
+  const details = {
+    requester: consumer_id,
+  };
+
+  log("info", "DELETED_TOKENS", true, details);
+
+  return END_SUCCESS(res);
+});
+
+app.get("/auth/v[1-2]/consumer/resources", async (req, res) => {
+  const consumer_id = res.locals.email;
+
+  let roles = {};
+  let item_details = {};
+  let access_item_ids = {};
+  let access_query;
+
+  try {
+    const result = await pool.query(
+      "SELECT role.id, role FROM consent.role," +
+        " consent.users WHERE user_id = users.id" +
+        " AND email = $1::text AND status = 'approved'" +
+        " AND role = ANY ($2::consent.role_enum[])",
+      [
+        consumer_id, // 1
+        ["consumer", "onboarder", "data ingester"], // 2
+      ]
+    );
+
+    if (result.rowCount === 0) return END_ERROR(res, 401, "Not allowed!");
+
+    result.rows.map((row) => {
+      roles[row.role] = row.id;
+    });
+
+    access_query = await pool.query(
+      "SELECT access.id, role_id, access_item_id, access_item_type," +
+        " capability FROM consent.access LEFT JOIN consent.capability" +
+        " ON access_id = access.id WHERE role_id = ANY ($1::integer[])" +
+        " AND access.status = 'active' AND expiry > NOW()" +
+        " AND (capability.status = 'active' OR capability.status IS NULL)",
+      [Object.values(roles)]
+    );
+
+    if (access_query.rows.length === 0) return END_ERROR(res, 200, []);
+
+    for (let obj of access_query.rows) {
+      if (!access_item_ids[obj.access_item_type])
+        access_item_ids[obj.access_item_type] = [];
+
+      access_item_ids[obj.access_item_type].push(obj.access_item_id);
+    }
+  } catch (error) {
+    return END_ERROR(res, 500, "Internal error!", error);
+  }
+
+  /* get resource ID of each resourcegroup item */
+  for (const item of Object.keys(access_item_ids)) {
+    if (item === "catalogue" || item === "provider-caps") continue;
+
+    item_details[item] = {};
+
+    try {
+      const result = await pool.query(
+        "SELECT id, cat_id FROM consent." +
+          item +
+          " WHERE id = ANY($1::integer[])",
+        [access_item_ids[item]]
+      );
+
+      for (let val of result.rows) {
+        item_details[item][val.id] = val.cat_id;
+      }
+    } catch (error) {
+      return END_ERROR(res, 500, "Internal error!", error);
+    }
+  }
+
+  let add_apis = function (id, arr) {
+    const resource_group = response[id].cat_id.split("/").slice(0, 4).join("/");
+    arr.forEach((val) => {
+      response[id].apis.add(
+        val.replace("{{RESOURCE_GROUP_ID}}", resource_group)
+      );
+    });
+  };
+
+  const response = {};
+
+  for (let obj of access_query.rows) {
+    if (["catalogue", "provider-caps"].includes(obj.access_item_type)) continue;
+
+    if (!response[obj.id]) {
+      response[obj.id] = {
+        cat_id: item_details[obj.access_item_type][obj.access_item_id],
+        apis: new Set(),
+        type: obj.access_item_type,
+      };
+    }
+
+    const resource_server = response[obj.id].cat_id.split("/")[2];
+    let caps_object = CAPS[resource_server];
+
+    if (obj.role_id === roles["data ingester"])
+      add_apis(obj.id, caps_object["data ingester"].default);
+    else if (obj.role_id === roles.consumer)
+      add_apis(obj.id, caps_object.consumer[obj.capability]);
+  }
+
+  for (let key of Object.keys(response))
+    response[key].apis = [...response[key].apis];
+
+  return END_SUCCESS(res, Object.values(response));
+});
+
+app.put("/auth/v[1-2]/token", async (req, res) => {
+  const consumer_id = res.locals.email;
+  let roles = {},
+    consumer_user_id;
+
+  const request = res.locals.body.request;
+  const uuid_regex = new RegExp(
+    /^[0-9a-f]{8}\b-[0-9a-f]{4}\b-[0-9a-f]{4}\b-[0-9a-f]{4}\b-[0-9a-f]{12}$/
+  );
+
+  try {
+    const result = await pool.query(
+      "SELECT role.id, user_id, role FROM consent.role," +
+        " consent.users WHERE user_id = users.id" +
+        " AND email = $1::text AND status = 'approved'" +
+        " AND role = ANY ($2::consent.role_enum[])",
+      [
+        consumer_id, // 1
+        ["consumer", "onboarder", "data ingester"], // 2
+      ]
+    );
+
+    if (result.rowCount === 0) return END_ERROR(res, 401, "Not allowed!");
+
+    result.rows.map((row) => {
+      roles[row.role] = row.id;
+    });
+    consumer_user_id = result.rows[0].user_id;
+  } catch (error) {
+    return END_ERROR(res, 500, "Internal error!", error);
+  }
+
+  if (!request || !Array.isArray(request) || request.length < 1)
+    return END_ERROR(res, 400, "Invalid data (request)");
+
+  let req_object = {};
+  let uuid_set = new Set();
+  for (const obj of request) {
+    if (typeof obj !== "object" || obj === null)
+      return END_ERROR(res, 400, "Invalid data (request)");
+
+    let uuid = obj.token;
+    if (!uuid || !uuid_regex.test(uuid)) {
+      const error_response = {
+        message: "Invalid uuid",
+        "invalid-input": xss_safe(uuid),
+      };
+
+      return END_ERROR(res, 400, error_response);
+    }
+    if (uuid_set.has(uuid)) {
+      const error_response = {
+        message: "Duplicate uuid",
+        "invalid-input": xss_safe(uuid),
+      };
+
+      return END_ERROR(res, 400, error_response);
+    }
+    uuid_set.add(uuid);
+
+    let resource_arr = obj.resources;
+    if (
+      !resource_arr ||
+      !Array.isArray(resource_arr) ||
+      resource_arr.length < 1
+    )
+      return END_ERROR(res, 400, "Invalid data (resources)");
+
+    req_object[uuid] = {};
+    let resource_set = new Set();
+
+    for (const resource of resource_arr) {
+      if (!is_string_safe(resource, "*_") || resource.indexOf("..") >= 0) {
+        const error_response = {
+          message: "resource ID contains unsafe characters",
+          "invalid-input": xss_safe(resource),
+        };
+
+        return END_ERROR(res, 400, error_response);
       }
 
-      const email_domain = id.split("@")[1];
-      const sha1_of_email = sha1(id);
+      if ((resource.match(/\//g) || []).length < 3) {
+        const error_response = {
+          message: "resource must have at least 3 '/' characters.",
+          "invalid-input": xss_safe(resource),
+        };
 
-      const provider_id_hash = email_domain + "/" + sha1_of_email;
+        return END_ERROR(res, 400, error_response);
+      }
 
-      pool.query(
-        "SELECT id,token,issued_at,expiry,request," +
-          " cert_serial,cert_fingerprint," +
-          " revoked,introspected," +
-          " providers-> $1::text" +
-          " AS is_valid_token_for_provider," +
-          " expiry < NOW() as expired,geoip," +
-          " api_called_from" +
-          " FROM token" +
-          " WHERE providers-> $1::text" +
-          " IS NOT NULL" +
-          " AND issued_at >= (NOW() - $2::interval)" +
-          " ORDER BY issued_at DESC",
-        [
-          provider_id_hash, // 1
-          hours + " hours", // 2
-        ],
+      if (resource_set.has(resource)) {
+        const error_response = {
+          message: "Duplicate resource",
+          "invalid-input": xss_safe(resource),
+        };
 
-        (error, results) => {
-          if (error) {
-            return END_ERROR(res, 500, "Internal error!", error);
-          }
+        return END_ERROR(res, 400, error_response);
+      }
 
-          for (const row of results.rows) {
-            const revoked = row.revoked || !row.is_valid_token_for_provider;
-
-            /* return only resource IDs belonging to provider
-				   who requested audit */
-
-            let filtered_request = [];
-
-            for (const r of row.request) {
-              const split = r.id.split("/");
-
-              const email_domain = split[0].toLowerCase();
-              const sha1_of_email = split[1].toLowerCase();
-
-              const provider = email_domain + "/" + sha1_of_email;
-
-              if (provider === provider_id_hash) filtered_request.push(r);
-            }
-
-            as_provider.push({
-              consumer: row.id,
-              "token-hash": row.token,
-              "token-issued-at": row.issued_at,
-              introspected: row.introspected,
-              revoked: revoked,
-              expiry: row.expiry,
-              expired: row.expired,
-              "certificate-serial-number": row.cert_serial,
-              "certificate-fingerprint": row.cert_fingerprint,
-              request: filtered_request,
-              geoip: row.geoip,
-              "api-called-from": row.api_called_from,
-            });
-          }
-
-          const response = {
-            "as-consumer": as_consumer,
-            "as-provider": as_provider,
-          };
-
-          return END_SUCCESS(res, response);
-        }
-      );
+      resource_set.add(resource);
     }
-  );
+
+    req_object[uuid].resources = resource_arr;
+  }
+
+  /* get all token IDs from UUIDs */
+  try {
+    const result = await pool.query(
+      "SELECT id, resource_server, uuid FROM consent.token WHERE" +
+        " user_id = $1::integer AND" +
+        " uuid = ANY($2::uuid[])" +
+        " AND status = 'active' AND expiry > NOW()",
+      [consumer_user_id, Object.keys(req_object)]
+    );
+
+    let valid_uuids = result.rows.map((obj) => obj.uuid);
+
+    if (valid_uuids.length !== Object.keys(req_object).length) {
+      let invalid_uuids = Object.keys(req_object).filter(
+        (uuid) => !valid_uuids.includes(uuid)
+      );
+
+      const error_response = {
+        message: "Invalid uuids",
+        "invalid-input": invalid_uuids,
+      };
+
+      return END_ERROR(res, 400, error_response);
+    }
+
+    for (const obj of result.rows) {
+      req_object[obj.uuid].id = obj.id;
+      req_object[obj.uuid].resource_server = obj.resource_server;
+    }
+  } catch (error) {
+    return END_ERROR(res, 500, "Internal error!", error);
+  }
+
+  /* begin processing request */
+
+  const updated_tokens = [];
+
+  for (const uuid of Object.keys(req_object)) {
+    let deleted = new Map(),
+      active = new Map(),
+      to_activate = [],
+      to_delete = [];
+    let to_add;
+    let processed_request_array;
+
+    try {
+      const result = await pool.query(
+        "SELECT access_id, cat_id, token_access.id, " +
+          " token_access.status FROM consent.token_access" +
+          " JOIN consent.access ON access_id = access.id" +
+          " WHERE access.status != 'deleted' AND access.expiry > NOW()" +
+          " AND token_id = $1::integer",
+        [req_object[uuid].id]
+      );
+
+      for (let obj of result.rows) {
+        /* map accessID#cat_id to token_access ID */
+
+        if (obj.status === "active")
+          active.set(`${obj.access_id}#${obj.cat_id}`, obj.id);
+        else if (obj.status === "deleted")
+          deleted.set(`${obj.access_id}#${obj.cat_id}`, obj.id);
+
+        /* call process_requested_resources with resource server
+         * of token */
+        ({ processed_request_array } = await process_requested_resources(
+          req_object[uuid].resources,
+          Object.values(roles),
+          new Set().add(req_object[uuid].resource_server)
+        ));
+      }
+    } catch (error) {
+      /* If status_code key exists, will be normal error
+       * Cannot send error object, it contains other stuff */
+      if (error.status_code) {
+        let err_resp = {
+          message: error.message,
+          "invalid-input": error["invalid-input"],
+        };
+
+        return END_ERROR(res, error.status_code, err_resp);
+      } else return END_ERROR(res, 500, "Internal error!", error);
+    }
+
+    /* to_add has resources that are neither active nor deleted */
+    to_add = processed_request_array.filter(
+      (obj) =>
+        !(
+          active.has(`${obj.access_id}#${obj.cat_id}`) ||
+          deleted.has(`${obj.access_id}#${obj.cat_id}`)
+        )
+    );
+
+    /* to_activate has currently deleted
+     * token_access IDs corresponding to access IDs
+     * present in the request array */
+    for (let obj of processed_request_array)
+      if (deleted.has(`${obj.access_id}#${obj.cat_id}`))
+        to_activate.push(deleted.get(`${obj.access_id}#${obj.cat_id}`));
+
+    /* we delete all ids present in active that are present in
+     * the request */
+    for (let obj of processed_request_array) {
+      if (active.has(`${obj.access_id}#${obj.cat_id}`))
+        active.delete(`${obj.access_id}#${obj.cat_id}`);
+    }
+
+    /* to_delete must have all currently active
+     * token_access IDs corresponding to
+     * access IDs NOT present in the request array */
+    to_delete = [...active.values()];
+
+    /* get cat IDs of resources going to be deleted */
+    let deleted_resources = [...active.keys()].map((val) => val.split("#")[1]);
+
+    req_object[uuid].to_add = to_add;
+    req_object[uuid].to_activate = to_activate;
+    req_object[uuid].to_delete = to_delete;
+    req_object[uuid].deleted_resources = deleted_resources;
+  }
+
+  const response = [];
+
+  for (const uuid of Object.keys(req_object)) {
+    try {
+      if (req_object[uuid].to_activate.length !== 0) {
+        let result = await pool.query(
+          "UPDATE consent.token_access SET status = 'active', " +
+            " updated_at = NOW() WHERE id = ANY($1::integer[])",
+          [req_object[uuid].to_activate]
+        );
+      }
+
+      if (req_object[uuid].to_delete.length !== 0) {
+        let result = await pool.query(
+          "UPDATE consent.token_access SET status = 'deleted', " +
+            " updated_at = NOW() WHERE id = ANY($1::integer[])",
+          [req_object[uuid].to_delete]
+        );
+      }
+
+      for (let obj of req_object[uuid].to_add) {
+        let result = await pool.query(
+          "INSERT INTO consent.token_access (token_id, access_id, " +
+            "cat_id, status, created_at, updated_at)" +
+            " VALUES ($1::integer, $2::integer, $3::text," +
+            " $4::consent.token_access_status_enum, NOW(), NOW())",
+          [
+            req_object[uuid].id, //$1
+            obj.access_id, //$2
+            obj.cat_id, //$3
+            "active", //$4
+          ]
+        );
+      }
+
+      let result = await pool.query(
+        "UPDATE consent.token SET updated_at = NOW()" +
+          " WHERE id = $1::integer",
+        [req_object[uuid].id]
+      );
+
+      response.push({
+        token: uuid,
+        active_resources: req_object[uuid].resources,
+        deleted_resources: req_object[uuid].deleted_resources,
+      });
+    } catch (error) {
+      return END_ERROR(res, 500, "Internal error!", error);
+    }
+  }
+
+  const details = {
+    requester: consumer_id,
+  };
+
+  log("info", "UPDATED_TOKENS", true, details);
+
+  return END_SUCCESS(res, response);
 });
 
 app.post("/auth/v[1-2]/certificate-info", async (req, res) => {

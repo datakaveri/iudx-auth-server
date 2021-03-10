@@ -22,6 +22,10 @@ CREATE TYPE consent.role_enum 	AS ENUM ('consumer', 'data ingester', 'onboarder'
 CREATE TYPE consent.access_item AS ENUM ('resourcegroup', 'catalogue', 'provider-caps');
 CREATE TYPE consent.capability_enum AS ENUM ('temporal', 'complex', 'subscription', 'download');
 CREATE TYPE consent.access_status_enum AS ENUM ('active', 'deleted');
+CREATE TYPE consent.token_status_enum AS ENUM ('active', 'deleted');
+-- If policy deleted by provider, then token_access status is set to revoked
+-- If consumer removes resource from token, then token_access status is deleted
+CREATE TYPE consent.token_access_status_enum AS ENUM ('active', 'deleted','revoked');
 
 CREATE TABLE consent.organizations (
 
@@ -129,6 +133,36 @@ CREATE TABLE consent.session (
 	updated_at		timestamp without time zone				NOT NULL
 );
 
+CREATE TABLE consent.token (
+
+	id			integer GENERATED ALWAYS AS IDENTITY		PRIMARY KEY,
+	token		    	character varying                   		NOT NULL,
+  	uuid			uuid 						NOT NULL,
+	user_id			integer REFERENCES consent.users(id)		NOT NULL,
+	resource_server 	character varying                   		NOT NULL,
+	expiry          	timestamp without time zone         		NOT NULL,
+	status          	consent.token_status_enum           		NOT NULL,
+	created_at		timestamp without time zone			NOT NULL,
+	updated_at		timestamp without time zone			NOT NULL
+);
+
+CREATE INDEX idx_token_user_id ON consent.token(user_id);
+CREATE INDEX idx_token ON consent.token(uuid);
+
+CREATE TABLE consent.token_access (
+
+	id			integer GENERATED ALWAYS AS IDENTITY	PRIMARY KEY,
+	token_id		integer NOT NULL REFERENCES consent.token(id),
+	access_id		integer NOT NULL REFERENCES consent.access(id),
+	cat_id			character varying				NOT NULL,
+    	status          	consent.token_access_status_enum    		NOT NULL,
+	created_at		timestamp without time zone			NOT NULL,
+	updated_at		timestamp without time zone			NOT NULL
+);
+
+CREATE INDEX idx_token_access_token_id ON consent.token_access(token_id);
+CREATE INDEX idx_token_access_access_id ON consent.token_access(access_id);
+
 ALTER TABLE consent.organizations	OWNER TO postgres;
 ALTER TABLE consent.users		OWNER TO postgres;
 ALTER TABLE consent.role		OWNER TO postgres;
@@ -137,7 +171,8 @@ ALTER TABLE consent.access		OWNER TO postgres;
 ALTER TABLE consent.resourcegroup	OWNER TO postgres;
 ALTER TABLE consent.capability		OWNER TO postgres;
 ALTER TABLE consent.session		OWNER TO postgres;
-
+ALTER TABLE consent.token		OWNER TO postgres;
+ALTER TABLE consent.token_access	OWNER TO postgres;
 
 GRANT SELECT,INSERT,UPDATE 		ON TABLE consent.organizations	 TO auth;
 GRANT SELECT,INSERT,UPDATE,DELETE 	ON TABLE consent.users		 TO auth;
@@ -149,3 +184,5 @@ GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE consent.resourcegroup TO auth;
 GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE consent.access	 TO auth;
 GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE consent.capability	 TO auth;
 GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE consent.session	 TO auth;
+GRANT SELECT,INSERT,UPDATE ON TABLE consent.token	 	 TO auth;
+GRANT SELECT,INSERT,UPDATE ON TABLE consent.token_access	 TO auth;
