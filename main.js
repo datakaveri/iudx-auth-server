@@ -893,7 +893,6 @@ async function process_requested_resources(
 
     const resource_server = split[2].toLowerCase();
     const resource_name = split.slice(3).join("/");
-    const resource_item = split.slice(4).join("/");
 
     const resource_group_id =
       provider_id_hash + "/" + resource_server + "/" + split[3];
@@ -902,19 +901,6 @@ async function process_requested_resources(
     if (resource_server_set.size > 1) {
       const error = new Error(
         "All resources must belong to same resource server"
-      );
-      error["invalid-input"] = xss_safe(resource);
-      error.status_code = 400;
-      throw error;
-    }
-
-    /* for access to resource group, must add * as the resource item
-     * else, for access to resource item, must put the item after
-     * resource group */
-    if (resource_item !== "*" && resource_item.length === 0) {
-      const error = new Error(
-        "Invalid 'id'; for resource group access" +
-          " append /* to the resource group ID"
       );
       error["invalid-input"] = xss_safe(resource);
       error.status_code = 400;
@@ -1463,7 +1449,7 @@ app.post("/auth/v[1-2]/token", async (req, res) => {
     }
 
     for (const resource of request_array) {
-      if (!is_string_safe(resource, "*_") || resource.indexOf("..") >= 0) {
+      if (!is_string_safe(resource, "_") || resource.indexOf("..") >= 0) {
         const error_response = {
           message: "resource ID contains unsafe characters",
           "invalid-input": xss_safe(resource),
@@ -1784,6 +1770,10 @@ app.post("/auth/v[1-2]/token/introspect", async (req, res) => {
     if (access[obj.access_id].expired === true) continue;
 
     obj.id = obj.cat_id;
+    if (obj.id.split("/").length === 4)
+      //is resource group
+      obj.id = obj.id + "/*";
+
     obj.apis = [...access[obj.access_id].apis];
 
     delete obj.access_id;
@@ -1835,7 +1825,8 @@ app.get("/auth/v[1-2]/token", async (req, res) => {
     const result = await pool.query(
       "SELECT id, uuid, expiry, expiry < NOW() AS expired, " +
         " status, created_at, updated_at" +
-        " FROM consent.token WHERE user_id = $1::integer",
+        " FROM consent.token WHERE user_id = $1::integer" +
+        " AND status = 'active'",
       [consumer_user_id]
     );
 
@@ -1861,68 +1852,23 @@ app.get("/auth/v[1-2]/token", async (req, res) => {
 
     try {
       const result = await pool.query(
-        "SELECT access_id, status, cat_id, created_at," +
-          " updated_at FROM consent.token_access WHERE token_id = $1::integer",
+        "SELECT t.status, t.cat_id, t.created_at," +
+          " t.updated_at, access.expiry < NOW() AS expired" +
+          " FROM consent.token_access AS t JOIN consent.access ON" +
+          " t.access_id = access.id WHERE token_id = $1::integer",
         [token.id]
       );
 
       token_access_items = result.rows;
-
-      /* create access object with key as access ID */
-      for (let obj of token_access_items) {
-        if (!access[obj.access_id]) access[obj.access_id] = {};
-        access[obj.access_id].resource_group = obj.cat_id
-          .split("/")
-          .slice(0, 4)
-          .join("/");
-        access[obj.access_id].apis = new Set();
-      }
-
-      /* capability will be null for onboarder/data ingester */
-      access_query = await pool.query(
-        "SELECT access.id, role_id, access.status, expiry < NOW() AS expired," +
-          " capability FROM consent.access LEFT JOIN consent.capability" +
-          " ON access_id = access.id WHERE access.id = ANY ($1::integer[])" +
-          " AND (capability.status = 'active' OR capability.status IS NULL)",
-        [Object.keys(access)]
-      );
     } catch (error) {
       return END_ERROR(res, 500, "Internal error!", error);
     }
-    /* add function to access object to add APIs to
-     * apis set for nested objects */
-
-    let add_apis = function (id, arr) {
-      arr.forEach((val) => {
-        access[id].apis.add(
-          val.replace("{{RESOURCE_GROUP_ID}}", access[id].resource_group)
-        );
-      });
-    };
-
-    for (let obj of access_query.rows) {
-      access[obj.id].expired = obj.expired;
-
-      /* get APIs depending on role/capability */
-      if (obj.role_id === roles.onboarder) continue;
-      else {
-        const resource_server = access[obj.id].resource_group.split("/")[2];
-        let caps_object = CAPS[resource_server];
-
-        if (obj.role_id === roles["data ingester"])
-          add_apis(obj.id, caps_object["data ingester"].default);
-        else if (obj.role_id === roles.consumer)
-          add_apis(obj.id, caps_object.consumer[obj.capability]);
-      }
-    }
 
     for (let obj of token_access_items) {
-      if (obj.status === "active" && access[obj.access_id].expired === true)
+      if (obj.status === "active" && obj.expired === true)
         obj.status = "expired";
 
-      obj.apis = [...access[obj.access_id].apis];
-
-      delete obj.access_id;
+      delete obj.expired;
       details.request.push(obj);
     }
 
@@ -2046,38 +1992,35 @@ app.delete("/auth/v[1-2]/token", async (req, res) => {
 });
 
 app.get("/auth/v[1-2]/consumer/resources", async (req, res) => {
-  const consumer_id = res.locals.email;
+  const consumer_email = res.locals.email;
 
-  let roles = {};
   let item_details = {};
   let access_item_ids = {};
   let access_query;
+  let consumer_id;
 
   try {
     const result = await pool.query(
       "SELECT role.id, role FROM consent.role," +
         " consent.users WHERE user_id = users.id" +
         " AND email = $1::text AND status = 'approved'" +
-        " AND role = ANY ($2::consent.role_enum[])",
+        " AND role = 'consumer'",
       [
-        consumer_id, // 1
-        ["consumer", "onboarder", "data ingester"], // 2
+        consumer_email, // 1
       ]
     );
 
     if (result.rowCount === 0) return END_ERROR(res, 401, "Not allowed!");
 
-    result.rows.map((row) => {
-      roles[row.role] = row.id;
-    });
+    consumer_id = result.rows[0].id;
 
     access_query = await pool.query(
-      "SELECT access.id, role_id, access_item_id, access_item_type," +
+      "SELECT access.id, access_item_id, access_item_type," +
         " capability FROM consent.access LEFT JOIN consent.capability" +
-        " ON access_id = access.id WHERE role_id = ANY ($1::integer[])" +
+        " ON access_id = access.id WHERE role_id = $1::integer" +
         " AND access.status = 'active' AND expiry > NOW()" +
-        " AND (capability.status = 'active' OR capability.status IS NULL)",
-      [Object.values(roles)]
+        " AND capability.status = 'active'",
+      [consumer_id]
     );
 
     if (access_query.rows.length === 0) return END_ERROR(res, 200, []);
@@ -2094,8 +2037,6 @@ app.get("/auth/v[1-2]/consumer/resources", async (req, res) => {
 
   /* get resource ID of each resourcegroup item */
   for (const item of Object.keys(access_item_ids)) {
-    if (item === "catalogue" || item === "provider-caps") continue;
-
     item_details[item] = {};
 
     try {
@@ -2114,39 +2055,18 @@ app.get("/auth/v[1-2]/consumer/resources", async (req, res) => {
     }
   }
 
-  let add_apis = function (id, arr) {
-    const resource_group = response[id].cat_id.split("/").slice(0, 4).join("/");
-    arr.forEach((val) => {
-      response[id].apis.add(
-        val.replace("{{RESOURCE_GROUP_ID}}", resource_group)
-      );
-    });
-  };
-
   const response = {};
 
   for (let obj of access_query.rows) {
-    if (["catalogue", "provider-caps"].includes(obj.access_item_type)) continue;
-
     if (!response[obj.id]) {
       response[obj.id] = {
         cat_id: item_details[obj.access_item_type][obj.access_item_id],
-        apis: new Set(),
+        capabilities: [],
         type: obj.access_item_type,
       };
     }
-
-    const resource_server = response[obj.id].cat_id.split("/")[2];
-    let caps_object = CAPS[resource_server];
-
-    if (obj.role_id === roles["data ingester"])
-      add_apis(obj.id, caps_object["data ingester"].default);
-    else if (obj.role_id === roles.consumer)
-      add_apis(obj.id, caps_object.consumer[obj.capability]);
+    response[obj.id].capabilities.push(obj.capability);
   }
-
-  for (let key of Object.keys(response))
-    response[key].apis = [...response[key].apis];
 
   return END_SUCCESS(res, Object.values(response));
 });
@@ -2223,7 +2143,7 @@ app.put("/auth/v[1-2]/token", async (req, res) => {
     let resource_set = new Set();
 
     for (const resource of resource_arr) {
-      if (!is_string_safe(resource, "*_") || resource.indexOf("..") >= 0) {
+      if (!is_string_safe(resource, "_") || resource.indexOf("..") >= 0) {
         const error_response = {
           message: "resource ID contains unsafe characters",
           "invalid-input": xss_safe(resource),
