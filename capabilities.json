@@ -6,6 +6,7 @@
         "/ngsi-ld/v1/entities/{{RESOURCE_GROUP_ID}}"
       ],
       "complex": [
+        "/ngsi-ld/v1/temporal/entities",
         "/ngsi-ld/v1/entityOperations/query",
         "/ngsi-ld/v1/entities/{{RESOURCE_GROUP_ID}}",
         "/ngsi-ld/v1/entities"
@@ -23,6 +24,7 @@
         "/ngsi-ld/v1/entities/{{RESOURCE_GROUP_ID}}"
       ],
       "complex": [
+        "/ngsi-ld/v1/temporal/entities",
         "/ngsi-ld/v1/entityOperations/query",
         "/ngsi-ld/v1/entities/{{RESOURCE_GROUP_ID}}",
         "/ngsi-ld/v1/entities"
