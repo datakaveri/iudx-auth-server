@@ -26,6 +26,9 @@ const geoip_lite = require("geoip-lite");
 const bodyParser = require("body-parser");
 const http_request = require("request");
 const pgNativeClient = require("pg-native");
+const { DateTime, Settings } = require("luxon");
+
+Settings.defaultZoneName = "utc";
 
 const pg = new pgNativeClient();
 
@@ -86,7 +89,7 @@ const MIN_CERT_CLASS_REQUIRED = Object.freeze({
 
 /* --- environment variables--- */
 
-// process.env.TZ = "Asia/Kolkata";
+//process.env.TZ = "Asia/Kolkata";
 
 /* --- telegram --- */
 
@@ -143,7 +146,6 @@ const SECURED_ENDPOINTS = sessionidConfig.secured_endpoints;
 const SESSIONID_EXP_TIME = twoFA_config.expiryTime;
 
 /* --- postgres --- */
-
 const DB_SERVER = "127.0.0.1";
 const password = {
   DB: fs.readFileSync("passwords/auth.db.password", "ascii").trim(),
@@ -244,7 +246,6 @@ const parser = aperture.createParser(apertureOpts);
 const evaluator = aperture.createEvaluator(apertureOpts);
 
 /* --- functions --- */
-
 function print(msg) {
   logger.color("white").log(msg);
 }
@@ -2396,12 +2397,15 @@ app.post("/auth/v[1-2]/certificate-info", async (req, res) => {
 
 app.post("/auth/v[1-2]/provider/access", async (req, res) => {
   const email = res.locals.email;
-
+  const dateTimeNow = DateTime.now();
   let provider_uid, provider_email;
   let provider_rid, delegate_rid;
   let is_delegate = false;
   let rules_array = [];
   let to_add = [];
+  let expiryTime;
+  let isDefaultExpiry = false;
+  let newExpiryTime;
 
   try {
     provider_uid = await check_privilege(email, "provider");
@@ -2510,6 +2514,34 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
         err.message = "Provider does not match resource owner";
         return END_ERROR(res, 403, err);
       }
+
+      if (obj.expiryTime !== undefined) {
+        isDefaultExpiry = false;
+        newExpiryTime = obj.expiryTime;
+      } else {
+        isDefaultExpiry = true;
+      }
+
+      if (!isDefaultExpiry) {
+        let reqDateTime = DateTime.fromFormat(
+          newExpiryTime,
+          "yyyy-dd-MM hh:mm:ss"
+        );
+
+        if (!reqDateTime.isValid) {
+          err.message = "Invalid data (expiry)";
+          return END_ERROR(res, 400, err);
+        }
+
+        if (reqDateTime < dateTimeNow) {
+          err.message = "Invalid data (expiry)";
+          return END_ERROR(res, 400, err);
+        }
+      } else
+        newExpiryTime = DateTime.now()
+          .plus({ years: 1 })
+          .toFormat("yyyy-MM-dd hh:mm:ss");
+
       /* get recognised capabilities from config file */
       resource_server = resource.split("/")[2];
       caps_object = CAPS[resource_server];
@@ -2571,10 +2603,11 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 
     /* if rule exists for particular provider+accesser+role+
 		   resource/catalogue */
+
     if (access_item_id) {
       try {
         const result = await pool.query(
-          "SELECT a.id " +
+          "SELECT a.id, a.expiry " +
             " FROM consent.role, consent.access as a" +
             " WHERE consent.role.id = a.role_id" +
             " AND a.provider_id = $1::integer" +
@@ -2590,7 +2623,11 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
           ]
         );
 
-        if (result.rows.length !== 0 && accesser_role !== "consumer") {
+        if (
+          result.rows.length !== 0 &&
+          accesser_role !== "consumer" &&
+          result.rows[0].expiry > dateTimeNow
+        ) {
           err.message = "Rule exists";
           return END_ERROR(res, 403, err);
         }
@@ -2797,10 +2834,10 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
         access = await pool.query(
           "INSERT into consent.access (provider_id, " +
             " role_id, policy_text, policy_json, access_item_id, " +
-            " access_item_type, status, created_at, updated_at)" +
+            " access_item_type, status, expiry, created_at, updated_at)" +
             " VALUES ($1::integer, $2::integer, $3::text," +
             " $4::jsonb, $5::integer, $6::consent.access_item," +
-            " $7::consent.access_status_enum, NOW(), NOW()) RETURNING id",
+            " $7::consent.access_status_enum, $8::timestamp, NOW(), NOW()) RETURNING id",
           [
             provider_uid, //$1
             role_id.rows[0].id, //$2
@@ -2809,6 +2846,7 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
             access_item_id, //$5
             res_type, //$6
             "active", //$7
+            newExpiryTime.toString(),
           ]
         );
       } else {
@@ -2888,11 +2926,11 @@ app.get("/auth/v[1-2]/provider/access", async (req, res) => {
   try {
     let result = await pool.query(
       "SELECT a.id, a.created_at, a.updated_at," +
-        " a.access_item_type, a.access_item_id," +
+        " a.access_item_type, a.access_item_id, a.expiry," +
         " email, role, title, first_name, last_name" +
         " FROM consent.access as a, consent.users, consent.role " +
         " WHERE a.role_id = role.id AND role.user_id = users.id " +
-        " AND a.provider_id = $1::integer AND a.status = 'active'",
+        " AND a.provider_id = $1::integer AND a.status = 'active' ",
       [provider_uid]
     );
 
@@ -2962,6 +3000,9 @@ app.get("/auth/v[1-2]/provider/access", async (req, res) => {
         first_name: rule.first_name,
         last_name: rule.last_name,
       },
+      expiry: rule.expiry,
+      status:
+        DateTime.fromISO(rule.expiry) < DateTime.now() ? "expired" : "active",
       item_type: rule.access_item_type,
       item: null,
       created: rule.created_at,
@@ -2977,6 +3018,159 @@ app.get("/auth/v[1-2]/provider/access", async (req, res) => {
   }
 
   return END_SUCCESS(res, result);
+});
+
+app.put("/auth/v[1-2]/provider/access", async (req, res) => {
+  const email = res.locals.email;
+  let provider_uid;
+  let provider_email;
+  let delegate_rid;
+  let is_delegate = false;
+  let isDefaultExpiry = false;
+  const dateTimeNow = DateTime.now();
+
+  try {
+    provider_uid = await check_privilege(email, "provider");
+  } catch (error) {
+    is_delegate = true;
+  }
+
+  if (is_delegate) {
+    provider_email = req.headers["provider-email"];
+    if (!provider_email || !is_valid_email(provider_email))
+      return END_ERROR(res, 400, "Invalid data (provider_email)");
+
+    try {
+      provider_uid = await check_privilege(provider_email, "provider");
+      let delegate_uid = await check_privilege(email, "delegate");
+      delegate_rid = await check_valid_delegate(delegate_uid, provider_uid);
+    } catch (error) {
+      return END_ERROR(res, 401, "Not allowed");
+    }
+  } else {
+    provider_email = email;
+  }
+  const request = res.locals.body;
+
+  if (!Array.isArray(request) || !request.length)
+    return END_ERROR(res, 400, "Invalid data (body)");
+
+  for (const obj of request) {
+    if (typeof obj !== "object" || obj === null)
+      return END_ERROR(res, 400, "Invalid data (body)");
+
+    let err = {
+      message: "",
+      access_id: undefined,
+    };
+
+    let id = obj.id;
+
+    if (id === undefined) {
+      err.message = "Invalid data (id)";
+      err.access_id = id;
+      return END_ERROR(res, 400, err);
+    }
+
+    id = parseInt(id, 10);
+
+    if (isNaN(id) || id < 1 || id > PG_MAX_INT) {
+      err.message = "Invalid data (id)";
+      err.access_id = id;
+      return END_ERROR(res, 400, err);
+    }
+
+    let newExpiryTime;
+    if (obj.expiryTime !== undefined) {
+      isDefaultExpiry = false;
+      newExpiryTime = obj.expiryTime;
+    } else {
+      isDefaultExpiry = true;
+    }
+
+    //luxon validations only needed when expiry time is included in the request
+    if (!isDefaultExpiry) {
+      let reqDateTime = DateTime.fromFormat(
+        newExpiryTime,
+        "yyyy-dd-MM hh:mm:ss"
+      );
+
+      if (!reqDateTime.isValid) {
+        err.message = "Invalid data (expiry)";
+        err.access_id = id;
+        return END_ERROR(res, 400, err);
+      }
+
+      if (reqDateTime < dateTimeNow) {
+        err.message = "Invalid data (expiry)";
+        err.access_id = id;
+        return END_ERROR(res, 400, err);
+      }
+
+      newExpiryTime = DateTime.fromSQL(newExpiryTime);
+    } else
+      newExpiryTime = DateTime.now()
+        .plus({ years: 1 })
+        .toFormat("yyyy-MM-dd hh:mm:ss");
+
+    try {
+      /* left join on rows without caps will return NULLs
+       * so check if capability status is active or NULL */
+      const check = await pool.query(
+        "SELECT access_item_type, expiry FROM consent.access" +
+          " WHERE access.id = $1::integer" +
+          " AND provider_id = $2::integer" +
+          " AND access.status = 'active'",
+        [id, provider_uid]
+      );
+
+      if (check.rows.length === 0) {
+        err.message = "Invalid id";
+        err.access_id = id;
+        return END_ERROR(res, 403, err);
+      }
+
+      if (is_delegate && check.rows[0].access_item_type === "provider-caps") {
+        err.message = "Delegate cannot update delegate rules";
+        return END_ERROR(res, 403, err);
+      }
+      let oldExpiryTime = check.rows[0].expiry;
+      //check if  expirytime from database < now and new expiry time > now
+      if (DateTime.fromISO(oldExpiryTime) <= dateTimeNow)
+        return END_ERROR(res, 400, "Cannot renew policy (not expired)");
+    } catch (error) {
+      return END_ERROR(res, 500, "Internal error!", error);
+    }
+  }
+  //update expiryTime and updated at in databse for the access id
+  for (const obj of request) {
+    let newExpiryTime;
+    if (obj.expiryTime !== undefined) {
+      newExpiryTime = obj.expiryTime;
+    } else {
+      newExpiryTime = DateTime.now().plus({ years: 1 });
+    }
+
+    try {
+      const result = await pool.query(
+        " UPDATE consent.access SET expiry = $1::timestamp," +
+          " updated_at = NOW() WHERE id = $2::integer",
+        [newExpiryTime.toString(), obj.id]
+      );
+    } catch (error) {
+      return END_ERROR(res, 500, "Internal error!", error);
+    }
+
+    const details = {
+      provider: provider_email,
+      delegated: is_delegate,
+      performed_by: email,
+    };
+
+    log("info", "UPDATED_POLICY", true, details);
+  }
+
+  return END_SUCCESS(res);
 });
 
 app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
@@ -3015,7 +3209,7 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
 
   const request = res.locals.body;
 
-  if (!Array.isArray(request))
+  if (!Array.isArray(request) || !request.length)
     return END_ERROR(res, 400, "Invalid data (body)");
 
   for (const obj of request) {
@@ -3345,6 +3539,40 @@ app.get("/auth/v[1-2]/delegate/providers", async (req, res) => {
   });
 
   return END_SUCCESS(res, result);
+});
+
+app.put("/auth/v[1-2]/delegate/providers", async (req, res) => {
+  const email = res.locals.email;
+
+  let newExpiryTime;
+  let capabilities;
+  let access_id;
+  let provider_uid;
+  let is_delegate;
+  let provider_email;
+  let delegate_rid;
+
+  try {
+    provider_uid = await check_privilege(email, "provider");
+  } catch (error) {
+    is_delegate = true;
+  }
+
+  if (is_delegate) {
+    provider_email = req.headers["provider-email"];
+    if (!provider_email || !is_valid_email(provider_email))
+      return END_ERROR(res, 400, "Invalid data (provider_email)");
+
+    try {
+      provider_uid = await check_privilege(provider_email, "provider");
+      let delegate_uid = await check_privilege(email, "delegate");
+      delegate_rid = await check_valid_delegate(delegate_uid, provider_uid);
+    } catch (error) {
+      return END_ERROR(res, 401, "Not allowed");
+    }
+  } else {
+    provider_email = email;
+  }
 });
 
 /* --- Auth Admin APIs --- */
