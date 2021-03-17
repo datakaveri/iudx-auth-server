@@ -89,7 +89,7 @@ const MIN_CERT_CLASS_REQUIRED = Object.freeze({
 
 /* --- environment variables--- */
 
-process.env.TZ = "UTC";
+//process.env.TZ = "Asia/kolkata";
 
 /* --- telegram --- */
 
@@ -146,8 +146,7 @@ const SECURED_ENDPOINTS = sessionidConfig.secured_endpoints;
 const SESSIONID_EXP_TIME = twoFA_config.expiryTime;
 
 /* --- postgres --- */
-//const DB_SERVER = "127.0.0.1";
-const DB_SERVER = "159.89.164.71";
+const DB_SERVER = "127.0.0.1";
 const password = {
   DB: fs.readFileSync("passwords/auth.db.password", "ascii").trim(),
 };
