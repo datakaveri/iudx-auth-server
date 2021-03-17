@@ -138,7 +138,7 @@ CREATE TABLE consent.token (
 	id			integer GENERATED ALWAYS AS IDENTITY		PRIMARY KEY,
 	token		    	character varying                   		NOT NULL,
   	uuid			uuid 						NOT NULL,
-	user_id			integer REFERENCES consent.users(id)		NOT NULL,
+	user_id			integer NOT NULL REFERENCES consent.users(id) ON DELETE CASCADE	,
 	resource_server 	character varying                   		NOT NULL,
 	expiry          	timestamp without time zone         		NOT NULL,
 	status          	consent.token_status_enum           		NOT NULL,
@@ -152,8 +152,8 @@ CREATE INDEX idx_token ON consent.token(uuid);
 CREATE TABLE consent.token_access (
 
 	id			integer GENERATED ALWAYS AS IDENTITY	PRIMARY KEY,
-	token_id		integer NOT NULL REFERENCES consent.token(id),
-	access_id		integer NOT NULL REFERENCES consent.access(id),
+	token_id		integer NOT NULL REFERENCES consent.token(id) ON DELETE CASCADE,
+	access_id		integer NOT NULL REFERENCES consent.access(id) ON DELETE CASCADE,
 	cat_id			character varying				NOT NULL,
     	status          	consent.token_access_status_enum    		NOT NULL,
 	created_at		timestamp without time zone			NOT NULL,

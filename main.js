@@ -868,17 +868,72 @@ function intersect(array1, array2) {
   return array1.filter((val) => array2.includes(val));
 }
 
+/* validates array of resource IDs, takes optional
+ * Set for resource server. Returns object with 'success'
+ * boolean and either resource server or error object
+ * in 'result' key.*/
+function validate_resource_array(arr, resource_server_set = new Set()) {
+  let response = { success: true };
+  let resource_set = new Set();
+
+  for (const resource of arr) {
+    if (!is_string_safe(resource, "_") || resource.indexOf("..") >= 0) {
+      response.result = {
+        message: "resource ID contains unsafe characters",
+        "invalid-input": xss_safe(resource),
+      };
+      response.success = false;
+      return response;
+    }
+
+    if ((resource.match(/\//g) || []).length < 3) {
+      response.result = {
+        message: "resource must have at least 3 '/' characters.",
+        "invalid-input": xss_safe(resource),
+      };
+
+      response.success = false;
+      return response;
+    }
+
+    if (resource_set.has(resource)) {
+      response.result = {
+        message: "Duplicate resource",
+        "invalid-input": xss_safe(resource),
+      };
+
+      response.success = false;
+      return response;
+    }
+
+    const resource_server = resource.split("/")[2].toLowerCase();
+
+    resource_server_set.add(resource_server);
+    if (resource_server_set.size > 1) {
+      response.result = {
+        message: "All resources must belong to same resource server",
+        "invalid-input": xss_safe(resource),
+      };
+
+      response.success = false;
+      return response;
+    }
+
+    resource_set.add(resource);
+  }
+
+  response.success = true;
+  response.result = [...resource_server_set][0];
+  return response;
+}
+
 /* process_token_request takes an array of resources, array of
- * role IDs and optionally a Set for resource server and returns
+ * role IDs and returns
  * an object with keys resource_server, processed_request_array.
  * Else an error is thrown
  */
 
-async function process_requested_resources(
-  resource_array,
-  role_ids,
-  resource_server_set = new Set()
-) {
+async function process_requested_resources(resource_array, role_ids) {
   const processed_request_array = [];
   let is_onboarder_request = false;
 
@@ -897,16 +952,6 @@ async function process_requested_resources(
 
     const resource_group_id =
       provider_id_hash + "/" + resource_server + "/" + split[3];
-
-    resource_server_set.add(resource_server);
-    if (resource_server_set.size > 1) {
-      const error = new Error(
-        "All resources must belong to same resource server"
-      );
-      error["invalid-input"] = xss_safe(resource);
-      error.status_code = 400;
-      throw error;
-    }
 
     if (resource_server === CAT_URL && resource_name === "catalogue/crud")
       is_onboarder_request = true;
@@ -1014,7 +1059,6 @@ async function process_requested_resources(
   }
 
   return {
-    resource_server: [...resource_server_set][0],
     processed_request_array: processed_request_array,
   };
 }
@@ -1448,48 +1492,39 @@ app.post("/auth/v[1-2]/token", async (req, res) => {
         "'request' must be a valid JSON array " + "with at least 1 element"
       );
     }
+    let resp = validate_resource_array(request_array);
+    if (!resp.success) return END_ERROR(res, 400, resp.result);
 
-    for (const resource of request_array) {
-      if (!is_string_safe(resource, "_") || resource.indexOf("..") >= 0) {
-        const error_response = {
-          message: "resource ID contains unsafe characters",
-          "invalid-input": xss_safe(resource),
+    resource_server = resp.result;
+
+    try {
+      /* process the requested resources to get access_id and cat_id */
+      const result = await process_requested_resources(request_array, role_ids);
+
+      ({ processed_request_array } = result);
+    } catch (error) {
+      /* If status_code key exists, will be normal error
+       * Cannot send error object, it contains other stuff */
+      if (error.status_code) {
+        let err_resp = {
+          message: error.message,
+          "invalid-input": error["invalid-input"],
         };
 
-        return END_ERROR(res, 400, error_response);
-      }
-
-      if ((resource.match(/\//g) || []).length < 3) {
-        const error_response = {
-          message: "resource must have at least 3 '/' characters.",
-          "invalid-input": xss_safe(resource),
-        };
-
-        return END_ERROR(res, 400, error_response);
-      }
-
-      if (resource_set.has(resource)) {
-        const error_response = {
-          message: "Duplicate resource",
-          "invalid-input": xss_safe(resource),
-        };
-
-        return END_ERROR(res, 400, error_response);
-      }
-
-      resource_set.add(resource);
+        return END_ERROR(res, error.status_code, err_resp);
+      } else return END_ERROR(res, 500, "Internal error!", error);
     }
   }
 
   if (existing_token) {
-    /* request array will not be processed */
+    const uuid_regex = new RegExp(
+      /^[0-9a-f]{8}\b-[0-9a-f]{4}\b-[0-9a-f]{4}\b-[0-9a-f]{4}\b-[0-9a-f]{12}$/
+    );
 
-    if (!is_valid_token(existing_token))
-      return END_ERROR(res, 400, "Invalid 'existing_token'");
+    if (!uuid_regex.test(existing_token))
+      return END_ERROR(res, 400, "Invalid 'existing_token' uuid");
 
     try {
-      const uuid = existing_token.split("/")[3];
-
       const result = await pool.query(
         "SELECT id, resource_server, token, expiry < NOW() AS expired" +
           " FROM consent.token" +
@@ -1497,18 +1532,13 @@ app.post("/auth/v[1-2]/token", async (req, res) => {
           " AND user_id = $2::integer" +
           " AND status = 'active'",
         [
-          uuid, // 1
+          existing_token, // 1
           consumer_user_id, //2
         ]
       );
 
       if (result.rows.length === 0)
         return END_ERROR(res, 403, "Invalid 'existing_token'");
-
-      let token_hash = result.rows[0].token;
-      let is_token = await bcrypt.compare(existing_token, token_hash);
-
-      if (!is_token) return END_ERROR(res, 403, "Invalid 'existing_token'");
 
       if (result.rows[0].expired === false)
         return END_ERROR(res, 403, "'existing_token' not expired");
@@ -1535,24 +1565,6 @@ app.post("/auth/v[1-2]/token", async (req, res) => {
         });
     } catch (error) {
       return END_ERROR(res, 500, "Internal error!", error);
-    }
-  } else {
-    try {
-      /* process the requested resources to get access_id and cat_id */
-      const result = await process_requested_resources(request_array, role_ids);
-
-      ({ processed_request_array, resource_server } = result);
-    } catch (error) {
-      /* If status_code key exists, will be normal error
-       * Cannot send error object, it contains other stuff */
-      if (error.status_code) {
-        let err_resp = {
-          message: error.message,
-          "invalid-input": error["invalid-input"],
-        };
-
-        return END_ERROR(res, error.status_code, err_resp);
-      } else return END_ERROR(res, 500, "Internal error!", error);
     }
   }
 
@@ -2109,6 +2121,7 @@ app.put("/auth/v[1-2]/token", async (req, res) => {
 
   let req_object = {};
   let uuid_set = new Set();
+
   for (const obj of request) {
     if (typeof obj !== "object" || obj === null)
       return END_ERROR(res, 400, "Invalid data (request)");
@@ -2133,6 +2146,7 @@ app.put("/auth/v[1-2]/token", async (req, res) => {
     uuid_set.add(uuid);
 
     let resource_arr = obj.resources;
+
     if (
       !resource_arr ||
       !Array.isArray(resource_arr) ||
@@ -2141,40 +2155,11 @@ app.put("/auth/v[1-2]/token", async (req, res) => {
       return END_ERROR(res, 400, "Invalid data (resources)");
 
     req_object[uuid] = {};
-    let resource_set = new Set();
 
-    for (const resource of resource_arr) {
-      if (!is_string_safe(resource, "_") || resource.indexOf("..") >= 0) {
-        const error_response = {
-          message: "resource ID contains unsafe characters",
-          "invalid-input": xss_safe(resource),
-        };
+    let resp = validate_resource_array(resource_arr);
+    if (!resp.success) return END_ERROR(res, 400, resp.result);
 
-        return END_ERROR(res, 400, error_response);
-      }
-
-      if ((resource.match(/\//g) || []).length < 3) {
-        const error_response = {
-          message: "resource must have at least 3 '/' characters.",
-          "invalid-input": xss_safe(resource),
-        };
-
-        return END_ERROR(res, 400, error_response);
-      }
-
-      if (resource_set.has(resource)) {
-        const error_response = {
-          message: "Duplicate resource",
-          "invalid-input": xss_safe(resource),
-        };
-
-        return END_ERROR(res, 400, error_response);
-      }
-
-      resource_set.add(resource);
-    }
-
-    req_object[uuid].resources = resource_arr;
+    req_object[uuid].requested_resource_server = resp.result;
   }
 
   /* get all token IDs from UUIDs */
@@ -2214,13 +2199,28 @@ app.put("/auth/v[1-2]/token", async (req, res) => {
 
   const updated_tokens = [];
 
-  for (const uuid of Object.keys(req_object)) {
+  for (const i of request) {
+    let uuid = i.token;
+    let resources = i.resources;
+
     let deleted = new Map(),
       active = new Map(),
       to_activate = [],
       to_delete = [];
     let to_add;
     let processed_request_array;
+
+    /* check if requested resource server matches
+     * the token's resource server */
+    if (
+      req_object[uuid].requested_resource_server !==
+      req_object[uuid].resource_server
+    )
+      return END_ERROR(
+        res,
+        400,
+        "New resources must belong" + "to same resource server"
+      );
 
     try {
       const result = await pool.query(
@@ -2234,20 +2234,18 @@ app.put("/auth/v[1-2]/token", async (req, res) => {
 
       for (let obj of result.rows) {
         /* map accessID#cat_id to token_access ID */
+        let key = `${obj.access_id}#${obj.cat_id}`;
 
-        if (obj.status === "active")
-          active.set(`${obj.access_id}#${obj.cat_id}`, obj.id);
-        else if (obj.status === "deleted")
-          deleted.set(`${obj.access_id}#${obj.cat_id}`, obj.id);
-
-        /* call process_requested_resources with resource server
-         * of token */
-        ({ processed_request_array } = await process_requested_resources(
-          req_object[uuid].resources,
-          Object.values(roles),
-          new Set().add(req_object[uuid].resource_server)
-        ));
+        if (obj.status === "active") active.set(key, obj.id);
+        else if (obj.status === "deleted") deleted.set(key, obj.id);
       }
+
+      /* call process_requested_resources with resource server
+       * of token */
+      ({ processed_request_array } = await process_requested_resources(
+        resources,
+        Object.values(roles)
+      ));
     } catch (error) {
       /* If status_code key exists, will be normal error
        * Cannot send error object, it contains other stuff */
@@ -2273,15 +2271,16 @@ app.put("/auth/v[1-2]/token", async (req, res) => {
     /* to_activate has currently deleted
      * token_access IDs corresponding to access IDs
      * present in the request array */
-    for (let obj of processed_request_array)
-      if (deleted.has(`${obj.access_id}#${obj.cat_id}`))
-        to_activate.push(deleted.get(`${obj.access_id}#${obj.cat_id}`));
+    for (let obj of processed_request_array) {
+      let key = `${obj.access_id}#${obj.cat_id}`;
+      if (deleted.has(key)) to_activate.push(deleted.get(key));
+    }
 
     /* we delete all ids present in active that are present in
      * the request */
     for (let obj of processed_request_array) {
-      if (active.has(`${obj.access_id}#${obj.cat_id}`))
-        active.delete(`${obj.access_id}#${obj.cat_id}`);
+      let key = `${obj.access_id}#${obj.cat_id}`;
+      if (active.has(key)) active.delete(key);
     }
 
     /* to_delete must have all currently active
@@ -2300,7 +2299,9 @@ app.put("/auth/v[1-2]/token", async (req, res) => {
 
   const response = [];
 
-  for (const uuid of Object.keys(req_object)) {
+  for (const i of request) {
+    let uuid = i.token;
+
     try {
       if (req_object[uuid].to_activate.length !== 0) {
         let result = await pool.query(
