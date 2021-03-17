@@ -89,7 +89,7 @@ const MIN_CERT_CLASS_REQUIRED = Object.freeze({
 
 /* --- environment variables--- */
 
-//process.env.TZ = "Asia/Kolkata";
+//process.env.TZ = "Asia/kolkata";
 
 /* --- telegram --- */
 
@@ -3135,10 +3135,15 @@ app.put("/auth/v[1-2]/provider/access", async (req, res) => {
         err.message = "Delegate cannot update delegate rules";
         return END_ERROR(res, 403, err);
       }
+
       let oldExpiryTime = check.rows[0].expiry;
       //check if  expirytime from database < now and new expiry time > now
-      if (DateTime.fromISO(oldExpiryTime) <= dateTimeNow)
-        return END_ERROR(res, 400, "Cannot renew policy (not expired)");
+     
+      if (oldExpiryTime > dateTimeNow){
+        err.message = "Cannot renew policy (not expired)";
+        err.access_id = id;
+        return END_ERROR(res, 400, err);
+       }
     } catch (error) {
       return END_ERROR(res, 500, "Internal error!", error);
     }
