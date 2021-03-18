@@ -89,7 +89,7 @@ const MIN_CERT_CLASS_REQUIRED = Object.freeze({
 
 /* --- environment variables--- */
 
-//process.env.TZ = "Asia/kolkata";
+//process.env.TZ = "Asia/Kolkata";
 
 /* --- telegram --- */
 
@@ -2524,10 +2524,7 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
       }
 
       if (!isDefaultExpiry) {
-        let reqDateTime = DateTime.fromFormat(
-          newExpiryTime,
-          "yyyy-dd-MM hh:mm:ss"
-        );
+        let reqDateTime = DateTime.fromISO(newExpiryTime, { zone: "utc" });
 
         if (!reqDateTime.isValid) {
           err.message = "Invalid data (expiry)";
@@ -2538,10 +2535,7 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
           err.message = "Invalid data (expiry)";
           return END_ERROR(res, 400, err);
         }
-      } else
-        newExpiryTime = DateTime.now()
-          .plus({ years: 1 })
-          .toFormat("yyyy-MM-dd hh:mm:ss");
+      } else newExpiryTime = DateTime.now().plus({ years: 1 });
 
       /* get recognised capabilities from config file */
       resource_server = resource.split("/")[2];
@@ -3002,8 +2996,7 @@ app.get("/auth/v[1-2]/provider/access", async (req, res) => {
         last_name: rule.last_name,
       },
       expiry: rule.expiry,
-      status:
-        DateTime.fromISO(rule.expiry) < DateTime.now() ? "expired" : "active",
+      status: rule.expiry < DateTime.now() ? "expired" : "active",
       item_type: rule.access_item_type,
       item: null,
       created: rule.created_at,
@@ -3091,10 +3084,7 @@ app.put("/auth/v[1-2]/provider/access", async (req, res) => {
 
     //luxon validations only needed when expiry time is included in the request
     if (!isDefaultExpiry) {
-      let reqDateTime = DateTime.fromFormat(
-        newExpiryTime,
-        "yyyy-dd-MM hh:mm:ss"
-      );
+      let reqDateTime = DateTime.fromISO(newExpiryTime, { zone: "utc" });
 
       if (!reqDateTime.isValid) {
         err.message = "Invalid data (expiry)";
@@ -3107,12 +3097,7 @@ app.put("/auth/v[1-2]/provider/access", async (req, res) => {
         err.access_id = id;
         return END_ERROR(res, 400, err);
       }
-
-      newExpiryTime = DateTime.fromSQL(newExpiryTime);
-    } else
-      newExpiryTime = DateTime.now()
-        .plus({ years: 1 })
-        .toFormat("yyyy-MM-dd hh:mm:ss");
+    } else newExpiryTime = DateTime.now().plus({ years: 1 });
 
     try {
       /* left join on rows without caps will return NULLs
@@ -3138,12 +3123,12 @@ app.put("/auth/v[1-2]/provider/access", async (req, res) => {
 
       let oldExpiryTime = check.rows[0].expiry;
       //check if  expirytime from database < now and new expiry time > now
-     
-      if (oldExpiryTime > dateTimeNow){
+
+      if (oldExpiryTime > dateTimeNow) {
         err.message = "Cannot renew policy (not expired)";
         err.access_id = id;
         return END_ERROR(res, 400, err);
-       }
+      }
     } catch (error) {
       return END_ERROR(res, 500, "Internal error!", error);
     }
