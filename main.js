@@ -1837,8 +1837,7 @@ app.get("/auth/v[1-2]/token", async (req, res) => {
   try {
     const result = await pool.query(
       "SELECT id, uuid, expiry, expiry < NOW() AS expired, " +
-        " status, created_at, updated_at" +
-        " FROM consent.token WHERE user_id = $1::integer" +
+        " status FROM consent.token WHERE user_id = $1::integer" +
         " AND status = 'active'",
       [consumer_user_id]
     );
@@ -1854,8 +1853,6 @@ app.get("/auth/v[1-2]/token", async (req, res) => {
       status:
         token.status === "active" && token.expired ? "expired" : token.status,
       expiry: token.expiry,
-      created_at: token.created_at,
-      updated_at: token.updated_at,
       request: [],
     };
 
@@ -1865,8 +1862,8 @@ app.get("/auth/v[1-2]/token", async (req, res) => {
 
     try {
       const result = await pool.query(
-        "SELECT t.status, t.cat_id, t.created_at," +
-          " t.updated_at, access.expiry < NOW() AS expired" +
+        "SELECT t.status, t.cat_id," +
+          " access.expiry < NOW() AS expired" +
           " FROM consent.token_access AS t JOIN consent.access ON" +
           " t.access_id = access.id WHERE token_id = $1::integer",
         [token.id]
@@ -2516,9 +2513,9 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
         return END_ERROR(res, 403, err);
       }
 
-      if (obj.expiryTime !== undefined) {
+      if (obj.expiry_time !== undefined) {
         isDefaultExpiry = false;
-        newExpiryTime = obj.expiryTime;
+        newExpiryTime = obj.expiry_time;
       } else {
         isDefaultExpiry = true;
       }
@@ -2920,8 +2917,7 @@ app.get("/auth/v[1-2]/provider/access", async (req, res) => {
 
   try {
     let result = await pool.query(
-      "SELECT a.id, a.created_at, a.updated_at," +
-        " a.access_item_type, a.access_item_id, a.expiry," +
+      "SELECT a.id, a.access_item_type, a.access_item_id, a.expiry," +
         " email, role, title, first_name, last_name" +
         " FROM consent.access as a, consent.users, consent.role " +
         " WHERE a.role_id = role.id AND role.user_id = users.id " +
@@ -2999,7 +2995,6 @@ app.get("/auth/v[1-2]/provider/access", async (req, res) => {
       status: rule.expiry < DateTime.now() ? "expired" : "active",
       item_type: rule.access_item_type,
       item: null,
-      created: rule.created_at,
       capabilities: cap_details[rule.id] || null,
     };
 
@@ -3075,9 +3070,9 @@ app.put("/auth/v[1-2]/provider/access", async (req, res) => {
     }
 
     let newExpiryTime;
-    if (obj.expiryTime !== undefined) {
+    if (obj.expiry_time !== undefined) {
       isDefaultExpiry = false;
-      newExpiryTime = obj.expiryTime;
+      newExpiryTime = obj.expiry_time;
     } else {
       isDefaultExpiry = true;
     }
@@ -3136,8 +3131,8 @@ app.put("/auth/v[1-2]/provider/access", async (req, res) => {
   //update expiryTime and updated at in databse for the access id
   for (const obj of request) {
     let newExpiryTime;
-    if (obj.expiryTime !== undefined) {
-      newExpiryTime = obj.expiryTime;
+    if (obj.expiry_time !== undefined) {
+      newExpiryTime = obj.expiry_time;
     } else {
       newExpiryTime = DateTime.now().plus({ years: 1 });
     }
