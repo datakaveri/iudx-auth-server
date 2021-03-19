@@ -1,17 +1,16 @@
 {
 	"info": {
-		"_postman_id": "aeb83552-6f58-4dc5-a761-78dcd8a7647c",
+		"_postman_id": "01016aee-35ac-40c6-8f47-7325789646d3",
 		"name": "Token",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"item": [
 		{
-			"name": "Get token for onboarder (catalogue)",
+			"name": "Update tokens",
 			"event": [
 				{
 					"listen": "test",
 					"script": {
-						"id": "58375e91-3929-4969-ac32-a6cc15f0601d",
 						"exec": [
 							""
 						],
@@ -20,11 +19,11 @@
 				}
 			],
 			"request": {
-				"method": "POST",
+				"method": "PUT",
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "{\r\n    \"request\": [\r\n        {\r\n            \"id\": \"<provider_domain>/<provider email SHA1>/<catalogue URL>/catalogue/crud\"\r\n        }\r\n    ]\r\n}",
+					"raw": "{\r\n    \"request\": [\r\n        {\r\n            \"token\": \"<token UUID>\",\r\n            \"resources\": [\r\n                \"<resource-ids>\"\r\n            ]\r\n        }\r\n    ]\r\n}",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -47,12 +46,11 @@
 			"response": []
 		},
 		{
-			"name": "Get token for multiple IDs, multiple APIs (complex, temporal, subscription)",
+			"name": "View tokens",
 			"event": [
 				{
 					"listen": "test",
 					"script": {
-						"id": "8bde3737-b072-43b7-92b7-520d8d4c8f19",
 						"exec": [
 							""
 						],
@@ -60,12 +58,15 @@
 					}
 				}
 			],
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
 			"request": {
-				"method": "POST",
+				"method": "GET",
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "{\r\n    \"request\": [\r\n        {\r\n            \"id\": \"<resource id>/*\",\r\n            \"apis\": [\r\n                \"/ngsi-ld/v1/entities\",\r\n                \"/ngsi-ld/v1/entities/<resource id>\",\r\n                \"/ngsi-ld/v1/entityOperations/query\"\r\n            ]\r\n        },\r\n         {\r\n            \"id\": \"<resource id>/item-1\",\r\n            \"apis\": [\r\n                \"/ngsi-ld/v1/temporal/entities\",\r\n                \"/ngsi-ld/v1/entities/<resource id>\"\r\n            ]\r\n        },\r\n           {\r\n            \"id\": \"<resource id>/item-2\",\r\n            \"apis\": [\r\n                \"/ngsi-ld/v1/subscription\"\r\n            ]\r\n        }\r\n    ]\r\n}",
+					"raw": "",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -88,12 +89,11 @@
 			"response": []
 		},
 		{
-			"name": "Get token for ingester (resource group)",
+			"name": "Request for a token",
 			"event": [
 				{
 					"listen": "test",
 					"script": {
-						"id": "2209a50b-4b9e-48f3-b10a-f93672788813",
 						"exec": [
 							""
 						],
@@ -106,7 +106,7 @@
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "{\r\n    \"request\": [\r\n        {\r\n            \"id\": \"<resource id>/*\",\r\n            \"apis\": [\r\n                \"/iudx/v1/adapter\"\r\n            ]\r\n        }\r\n    ]\r\n}",
+					"raw": "{\r\n    \"request\": [\r\n        \"<resource ids>\"\r\n    ]\r\n}",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -129,59 +129,11 @@
 			"response": []
 		},
 		{
-			"name": "Get token for ingester (resource item)",
+			"name": "Delete Tokens",
 			"event": [
 				{
 					"listen": "test",
 					"script": {
-						"id": "d654e26a-bc01-4c1d-bbe0-7f80f78a7989",
-						"exec": [
-							"pm.test(\"Get token for ingester rule\", function () {\r",
-							"    pm.response.to.have.status(200);\r",
-							"    pm.response.to.not.be.error;\r",
-							"    pm.response.to.have.jsonBody(\"token\");\r",
-							"    var resp = pm.response.json();\r",
-							"    pm.expect(resp['expires-in']).to.be.eq(604800);\r",
-							"});"
-						],
-						"type": "text/javascript"
-					}
-				}
-			],
-			"request": {
-				"method": "POST",
-				"header": [],
-				"body": {
-					"mode": "raw",
-					"raw": "{\r\n    \"request\": [\r\n        {\r\n            \"id\": \"<resource id>/some-item-in-resource-group\",\r\n            \"apis\": [\r\n                \"/iudx/v1/adapter\"\r\n            ]\r\n        }\r\n    ]\r\n}",
-					"options": {
-						"raw": {
-							"language": "json"
-						}
-					}
-				},
-				"url": {
-					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/token",
-					"protocol": "https",
-					"host": [
-						"{{AUTH_ENDPOINT}}"
-					],
-					"path": [
-						"auth",
-						"v1",
-						"token"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "Get token for temporal",
-			"event": [
-				{
-					"listen": "test",
-					"script": {
-						"id": "b910900c-e945-4ce2-bf5a-dc4a7cd95a0f",
 						"exec": [
 							""
 						],
@@ -190,93 +142,11 @@
 				}
 			],
 			"request": {
-				"method": "POST",
+				"method": "DELETE",
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "{\r\n    \"request\": [\r\n        {\r\n            \"id\": \"<resource id>\",\r\n            \"apis\": [\r\n                \"/ngsi-ld/v1/temporal/entities\",\r\n                \"/ngsi-ld/v1/entities/<resource id>\"\r\n            ]\r\n        }\r\n    ]\r\n}",
-					"options": {
-						"raw": {
-							"language": "json"
-						}
-					}
-				},
-				"url": {
-					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/token",
-					"protocol": "https",
-					"host": [
-						"{{AUTH_ENDPOINT}}"
-					],
-					"path": [
-						"auth",
-						"v1",
-						"token"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "Get token for complex",
-			"event": [
-				{
-					"listen": "test",
-					"script": {
-						"id": "101cf3e9-f240-4bbe-9d8a-dc82e487ef6a",
-						"exec": [
-							""
-						],
-						"type": "text/javascript"
-					}
-				}
-			],
-			"request": {
-				"method": "POST",
-				"header": [],
-				"body": {
-					"mode": "raw",
-					"raw": "{\r\n    \"request\": [\r\n        {\r\n            \"id\": \"<resource id>\",\r\n            \"apis\": [\r\n                \"/ngsi-ld/v1/entities\",\r\n                \"/ngsi-ld/v1/entities/<resource id>\",\r\n                \"/ngsi-ld/v1/entityOperations/query\"\r\n            ]\r\n        }\r\n    ]\r\n}",
-					"options": {
-						"raw": {
-							"language": "json"
-						}
-					}
-				},
-				"url": {
-					"raw": "https://{{AUTH_ENDPOINT}}/auth/v1/token",
-					"protocol": "https",
-					"host": [
-						"{{AUTH_ENDPOINT}}"
-					],
-					"path": [
-						"auth",
-						"v1",
-						"token"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "Get token for subscription",
-			"event": [
-				{
-					"listen": "test",
-					"script": {
-						"id": "51403897-c85f-4c78-83a4-cda9551e9088",
-						"exec": [
-							""
-						],
-						"type": "text/javascript"
-					}
-				}
-			],
-			"request": {
-				"method": "POST",
-				"header": [],
-				"body": {
-					"mode": "raw",
-					"raw": "{\r\n    \"request\": [\r\n        {\r\n            \"id\": \"<resource id>\",\r\n            \"apis\": [\r\n                \"/ngsi-ld/v1/subscription\"\r\n            ]\r\n        }\r\n    ]\r\n}",
+					"raw": "{\r\n    \"tokens\": [\r\n        \"<token UUIDs>\"\r\n    ]\r\n}",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -304,7 +174,6 @@
 				{
 					"listen": "test",
 					"script": {
-						"id": "74fbd602-443f-4d6b-81b0-5063ddec400e",
 						"exec": [
 							""
 						],
@@ -330,6 +199,5 @@
 			},
 			"response": []
 		}
-	],
-	"protocolProfileBehavior": {}
+	]
 }
