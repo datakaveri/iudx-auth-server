@@ -1976,16 +1976,16 @@ app.delete("/auth/v[1-2]/token", async (req, res) => {
 
   try {
     const result = await pool.query(
-      "UPDATE consent.token SET status = 'deleted'" +
-        " WHERE id = ANY($1::integer[])",
+      "UPDATE consent.token SET status = 'deleted'," +
+      " updated_at = NOW() WHERE id = ANY($1::integer[])",
       [token_ids]
     );
 
     if (result.rowCount === 0) throw new Error("Error in deletion");
 
     const result2 = await pool.query(
-      "UPDATE consent.token_access SET status = 'deleted'" +
-        " WHERE token_id = ANY($1::integer[])",
+      "UPDATE consent.token_access SET status = 'deleted'," +
+        " updated_at = NOW() WHERE token_id = ANY($1::integer[])",
       [token_ids]
     );
 
@@ -2300,6 +2300,7 @@ app.put("/auth/v[1-2]/token", async (req, res) => {
 
   for (const i of request) {
     let uuid = i.token;
+	  let resources = i.resources;
 
     try {
       if (req_object[uuid].to_activate.length !== 0) {
@@ -2341,7 +2342,7 @@ app.put("/auth/v[1-2]/token", async (req, res) => {
 
       response.push({
         token: uuid,
-        active_resources: req_object[uuid].resources,
+        active_resources: resources,
         deleted_resources: req_object[uuid].deleted_resources,
       });
     } catch (error) {
@@ -3191,6 +3192,12 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
           [id]
         );
 
+        const result_token_access = await pool.query(
+          " UPDATE consent.token_access SET status = 'revoked'," +
+            " updated_at = NOW() WHERE access_id = $1::integer",
+          [id]
+        );
+
         if (result.rowCount === 0) throw new Error("Error in deletion");
       } catch (error) {
         return END_ERROR(res, 500, "Internal error!", error);
@@ -3224,6 +3231,12 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
               " updated_at = NOW() WHERE id = $1::integer",
             [id]
           );
+
+        const result_token_access = await pool.query(
+          " UPDATE consent.token_access SET status = 'revoked'," +
+            " updated_at = NOW() WHERE access_id = $1::integer",
+          [id]
+        );
 
           if (result.rowCount === 0) throw new Error("Error in deletion");
         } else {
