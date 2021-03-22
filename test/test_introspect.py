@@ -552,7 +552,6 @@ def test_consumer_ingester_same_resource():
                 check_di = False
 
                 consumer_apis = {str.replace('{{RESOURCE_GROUP_ID}}',resource_id) for str in consumer_apis}
-                print(r) 
                 assert len(r['response']['request']) == 2
                 for i in r['response']['request']:
                         assert i['id'] == resource_id + '/*'

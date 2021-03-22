@@ -2394,25 +2394,25 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
     }
 
     if (obj.expiry_time !== undefined) {
-        isDefaultExpiry = false;
-        newExpiryTime = obj.expiry_time;
-      } else {
-        isDefaultExpiry = true;
+      isDefaultExpiry = false;
+      newExpiryTime = obj.expiry_time;
+    } else {
+      isDefaultExpiry = true;
+    }
+
+    if (!isDefaultExpiry) {
+      let reqDateTime = DateTime.fromISO(newExpiryTime, { zone: "utc" });
+
+      if (!reqDateTime.isValid) {
+        err.message = "Invalid data (expiry)";
+        return END_ERROR(res, 400, err);
       }
 
-      if (!isDefaultExpiry) {
-        let reqDateTime = DateTime.fromISO(newExpiryTime, { zone: "utc" });
-
-        if (!reqDateTime.isValid) {
-          err.message = "Invalid data (expiry)";
-          return END_ERROR(res, 400, err);
-        }
-
-        if (reqDateTime < dateTimeNow) {
-          err.message = "Invalid data (expiry)";
-          return END_ERROR(res, 400, err);
-        }
-      } else newExpiryTime = DateTime.now().plus({ years: 1 });
+      if (reqDateTime < dateTimeNow) {
+        err.message = "Invalid data (expiry)";
+        return END_ERROR(res, 400, err);
+      }
+    } else newExpiryTime = DateTime.now().plus({ years: 1 });
 
     if (accesser_role === "consumer" || accesser_role === "data ingester") {
       if (!resource) {
@@ -2549,16 +2549,12 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
             ...new Set(caps.rows.map((row) => row.capability)),
           ];
 
-          let duplicate = intersect(capability, existing_caps);
+          let duplicate = intersect(req_capability, existing_caps);
 
           if (duplicate.length !== 0) {
             err.message = `Rule exists for ${duplicate.toString()}`;
             return END_ERROR(res, 403, err);
           }
-
-          /* merge old and new capabilities,
-           * no duplicates should be there */
-          capability = capability.concat(existing_caps);
         }
       } catch (error) {
         return END_ERROR(res, 500, "Internal error!", error);
@@ -2612,7 +2608,6 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
       accesser_uid: accesser_uid,
       accesser_email: accesser_email,
       accesser_role: accesser_role,
-      caps_object: caps_object,
       newExpiryTime: newExpiryTime,
     });
   }
@@ -2621,27 +2616,37 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 
   for (const obj of to_add) {
     const { resource, res_type, consumer_acc_id } = obj;
-    const { req_capability, caps_object } = obj;
+    const { req_capability } = obj;
     const { accesser_uid, accesser_email, accesser_role } = obj;
-    const {newExpiryTime} = obj;
+    const { newExpiryTime } = obj;
     let { access_item_id } = obj;
     let rule, resource_name, policy_json;
 
     try {
       if (!access_item_id) {
-        const access_item = await pool.query(
-          "INSERT INTO consent." +
-            res_type +
-            " (provider_id, cat_id, created_at, updated_at) " +
-            " VALUES ($1::integer, $2::text, NOW(), NOW())" +
-            "RETURNING id",
-          [
-            provider_uid, //$1
-            resource, //$2
-          ]
+        /* check if inserted by a prev. policy in same request */
+        const result = await pool.query(
+          "SELECT id from consent." + res_type + " WHERE cat_id = $1::text ",
+          [resource]
         );
 
-        access_item_id = access_item.rows[0].id;
+        if (result.rows.length !== 0) {
+          access_item_id = result.rows[0].id;
+        } else {
+          const access_item = await pool.query(
+            "INSERT INTO consent." +
+              res_type +
+              " (provider_id, cat_id, created_at, updated_at) " +
+              " VALUES ($1::integer, $2::text, NOW(), NOW())" +
+              "RETURNING id",
+            [
+              provider_uid, //$1
+              resource, //$2
+            ]
+          );
+
+          access_item_id = access_item.rows[0].id;
+        }
       }
 
       const role_id = await pool.query(
@@ -3172,7 +3177,6 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
       accesser_email: accesser_email,
       accesser_role: accesser_role,
       resource: resource || null,
-      caps_object: caps_object,
     });
   }
 
@@ -3181,7 +3185,7 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
   for (const obj of to_delete) {
     const { id, capability, delete_rule } = obj;
     const { accesser_email, accesser_role } = obj;
-    const { resource, caps_object } = obj;
+    const { resource } = obj;
 
     if (delete_rule === true) {
       try {
@@ -3297,7 +3301,8 @@ app.get("/auth/v[1-2]/delegate/providers", async (req, res) => {
         " FROM consent.access JOIN consent.users" +
         " ON access.provider_id = users.id" +
         " WHERE role_id = $1::integer" +
-        " AND access.status= 'active'",
+        " AND access.status= 'active'" +
+        " AND access.expiry > NOW()",
       [rid.rows[0].id]
     );
 
@@ -3343,40 +3348,6 @@ app.get("/auth/v[1-2]/delegate/providers", async (req, res) => {
   });
 
   return END_SUCCESS(res, result);
-});
-
-app.put("/auth/v[1-2]/delegate/providers", async (req, res) => {
-  const email = res.locals.email;
-
-  let newExpiryTime;
-  let capabilities;
-  let access_id;
-  let provider_uid;
-  let is_delegate;
-  let provider_email;
-  let delegate_rid;
-
-  try {
-    provider_uid = await check_privilege(email, "provider");
-  } catch (error) {
-    is_delegate = true;
-  }
-
-  if (is_delegate) {
-    provider_email = req.headers["provider-email"];
-    if (!provider_email || !is_valid_email(provider_email))
-      return END_ERROR(res, 400, "Invalid data (provider_email)");
-
-    try {
-      provider_uid = await check_privilege(provider_email, "provider");
-      let delegate_uid = await check_privilege(email, "delegate");
-      delegate_rid = await check_valid_delegate(delegate_uid, provider_uid);
-    } catch (error) {
-      return END_ERROR(res, 401, "Not allowed");
-    }
-  } else {
-    provider_email = email;
-  }
 });
 
 /* --- Auth Admin APIs --- */
