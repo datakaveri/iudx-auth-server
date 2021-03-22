@@ -6,12 +6,8 @@ import pytest
 from init import consumer
 from init import provider
 from init import alt_provider
-from init import untrusted
-from init import resource_server
 
 from init import expect_failure
-
-from init import restricted_consumer
 
 # for registration and resetting roles
 from access import *
@@ -20,14 +16,28 @@ from consent import role_reg
 # for setting session ID 
 from session import *
 
+from expire_token import expire_token
+
 import hashlib
 
-body = ""
-RS = "iisc.iudx.org.in"
-TUPLE = type(("x",))
-num_tokens_before = 0
-token_hash = ""
 email = "barun@iisc.ac.in"
+
+def rand_rsg():
+        return ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
+
+def set_policy():
+        resource_id = "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/" + rand_rsg()
+        access_req = {"user_email": email, 
+                    "user_role":'consumer', 
+                    "item_id":resource_id, 
+                    "item_type":"resourcegroup",
+                    "capabilities":["complex","subscription","temporal"]
+                    }
+        r = provider.provider_access([access_req])
+        assert r['success']     == True
+        assert r['status_code'] == 200
+
+        return resource_id
 
 @pytest.fixture(scope="session", autouse=True)
 def init():
@@ -53,387 +63,740 @@ def init():
         assert r['success']     == True
         assert r['status_code'] == 200
 
-def test_token():
-
-        global body
-        global TUPLE
-        global RS
-
-        req = {
-                "user_email" : email, 
-                "user_role":'consumer',
-                "item_id":"rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/" + RS + "/resource-xyz-yzz",
-                "capabilities": ['complex'],
-                "item_type":"resourcegroup"
-                }
-        r = provider.provider_access([req])
-        assert r['success']     == True
-        assert r['status_code'] == 200
-
-        req["item_id"] = "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/abc-xyz"
-        req["capabilities"] = ['temporal']
-        r = provider.provider_access([req])
-        assert r['success']     == True
-        assert r['status_code'] == 200
-
-        r = provider.audit_tokens(5)
-        assert r['success'] is True
-        audit_report        = r['response']
-        as_provider         = audit_report["as-provider"]
-
-        num_tokens_before = len(as_provider)
-        body = [
-                {
-                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/" + RS + "/resource-xyz-yzz/*",
-                        "apis"          : ["/ngsi-ld/v1/entities"],
-                        "method"        : "GET",
-                        "body"          : {"key":"some-key"}
-                },
-                {
-                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/abc-xyz/item",
-                        "apis"  : ["/ngsi-ld/v1/entities/rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/abc-xyz"],
-                }
-        ]
-
-def test_introspect_audit():
-
-        global body
-        global TUPLE
-        global num_tokens_before
-        global token_hash
-
+def test_empty_body():
+        body = {}
         r = consumer.get_token(body)
-        access_token = r['response']
-
-        assert r['success']     is True
-        assert None             != access_token
-        assert 60*60*24*7       == access_token['expires-in']
-
-        token = access_token['token'],
-
-        if type(token) == TUPLE:
-                token = token[0]
-
-        s = token.split("/")
-
-        assert len(s)   == 3
-        assert s[0]     == 'auth.iudx.org.in'
-
-        server_token = access_token['server-token'][RS]
-        if type(server_token) == TUPLE:
-                server_token = server_token[0]
-
-        assert resource_server.introspect_token (token,server_token)['success'] is True
-        # introspect once more
-        assert resource_server.introspect_token (token,server_token)['success'] is True
-
-        # introspect with request
-        request = [
-                    {
-                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/" + RS + "/resource-xyz-yzz/*",
-                        "apis"          : ["/ngsi-ld/v1/entities"],
-                        "methods"       : ["GET"],
-                        "body"          : {"key":"some-key"}
-                    }
-        ]
-
-        bad_request = [
-                    {
-                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/" + RS + "/resource-xyz-yzz",
-                        "apis"          : ["/latest-now"],
-                        "methods"       : ["POST"],
-                        "body"          : {"key":"some-key"}
-                    }
-        ]
-
-        assert resource_server.introspect_token (token,server_token,request)['success']                 is True
-
-        expect_failure(True)
-        assert resource_server.introspect_token (token,server_token,bad_request)['success']             is False
-        assert resource_server.introspect_token (token,'invalid-token-012345678901234567')['success']   is False
-        assert resource_server.introspect_token (token)['success']                                      is False
-        expect_failure(False)
-
-        r = provider.audit_tokens(5)
-        assert r["success"] is True
-        audit_report = r['response']
-        as_provider = audit_report["as-provider"]
-        num_tokens_after = len(as_provider)
-
-        # number of tokens before and after request by consumer
-        assert num_tokens_after > num_tokens_before
-
-        token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
-
-def test_revoke_with_tokenhash():
-
-        global token_hash
-        
-        token_hash_found = False
-        found = None
-
-        r = provider.audit_tokens(5)
-        assert r["success"] is True
-        audit_report = r['response']
-        as_provider = audit_report["as-provider"]
-
-        for a in as_provider:
-                if a['token-hash'] == token_hash:
-                        token_hash_found = True
-                        found = a
-                        break
-
-        assert token_hash_found is True
-        assert found['revoked'] is False
-
-        r = provider.revoke_token_hashes(token_hash)
-        assert r['success'] is True
-        assert r["response"]["num-tokens-revoked"] >= 1
-
-        # check if token was revoked
-        r = provider.audit_tokens(5)
-        assert r["success"] is True
-        audit_report = r['response']
-        as_provider = audit_report["as-provider"]
-
-        token_hash_found = False
-        found = None
-        for a in as_provider:
-                if a['token-hash'] == token_hash:
-                        token_hash_found = True
-                        found = a
-                        break
-
-        assert token_hash_found is True
-        assert found['revoked'] is True
-
-def test_revoke_all():
-
-        global body
-        global TUPLE
-        global RS
-
-        # test revoke-all (as provider)
-        r = consumer.get_token(body)
-        access_token = r['response']
-
-        assert r['success']     is True
-        assert None             != access_token
-        assert 60*60*24*7       == access_token['expires-in']
-
-        token = access_token['token']
-
-        if type(token) == TUPLE:
-                token = token[0]
-
-        s = token.split("/")
-
-        assert len(s)   == 3
-        assert s[0]     == 'auth.iudx.org.in'
-
-        r = provider.audit_tokens(100)
-        assert r["success"] is True
-        audit_report        = r['response']
-        as_provider         = audit_report["as-provider"]
-        num_tokens          = len(as_provider)
-        assert num_tokens   >= 1
-
-        for a in as_provider:
-                if a["revoked"] is False and a['expired'] is False:
-                        cert_serial         = a["certificate-serial-number"]
-                        cert_fingerprint    = a["certificate-fingerprint"]
-                        break
-
-        r = provider.revoke_all(cert_serial, cert_fingerprint)
-        assert r["success"] is True
-        assert r["response"]["num-tokens-revoked"] >= 1
-
-        r = provider.audit_tokens(100)
-        assert r["success"] is True
-        audit_report        = r['response']
-        as_provider         = audit_report["as-provider"]
-
-        for a in as_provider:
-                if a['certificate-serial-number'] == cert_serial and a['certificate-fingerprint'] == cert_fingerprint:
-                        if a['expired'] is False:
-                                assert a['revoked'] is True
-
-def test_token_api():
-        
-        req = {
-                "user_email" : email, 
-                "user_role":'consumer',
-                "item_id":"rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/r1",
-                "item_type":"resourcegroup",
-                "capabilities": ['temporal']
-                }
-        r = provider.provider_access([req])
-        assert r['success']     == True
-        assert r['status_code'] == 200
-
-        body = [
-                {
-                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/r1/*",
-                },
-                {
-                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/r1/r2"
-                }
-        ]
-
-        expect_failure(True)
-        r = restricted_consumer.get_token(body)
-        expect_failure(False)
-
-        assert r['success']     is False
+        assert r['success'] is False
         assert r['status_code'] == 400
 
-        # test token request with invalid API
-
-        body = [
-                {
-                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/r1/*",
-                        "apis"  : ["/ngsi-invalid"]
-                },
-                {
-                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/r1/r2",
-                        "apis"  : ["/ngsi-invalid"]
-                }
-        ]
-
-        expect_failure(True)
-        r = restricted_consumer.get_token(body)
-        expect_failure(False)
-
-        assert r['success']     is False
+def test_invalid_request():
+        body = {'request':'rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/rg1'}
+        r = consumer.get_token(body)
+        assert r['success'] is False
         assert r['status_code'] == 400
 
-        body = [
-                {
-                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/r1/*",
-                        "apis"  : ["/ngsi-ld/v1/temporal/entities"]
-                },
-                {
-                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/r1/r2",
-                        "apis"  : ["/ngsi-ld/v1/temporal/entities"]
-                }
-        ]
+        body = {'request':['rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/rg1',
+                            ['rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/rg7']
+            ]}
+        r = consumer.get_token(body)
+        assert r['success'] is False
+        assert r['status_code'] == 400
 
-        r = restricted_consumer.get_token(body)
-        access_token = r['response']
+        body = {'request':['rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/rg1/item',
+                            'rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/rg7/*'
+            ]}
+        r = consumer.get_token(body)
+        assert r['success'] is False
+        assert r['status_code'] == 400
 
-        assert r['success']     is True
-        assert None             != access_token
-        assert 60*60*24*7       == access_token['expires-in']
+def test_invalid_resource():
+        body = {}
+        body['request'] = ["rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/(hello)"]
+        r = consumer.get_token(body)
+        assert r['success'] is False
+        assert r['status_code'] == 400
 
-        body = [
-                {
-                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/r1/*",
-                        "apis"  : ["/ngsi-ld/v1/temporal/entities"]
-                },
-                {
-                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs331/r2",
-                        "apis"  : ["/ngsi-ld/v1/temporal/entities"]
-                }
-        ]
+def test_duplicate_resources():
+        body = {}
+        body['request'] = ["rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/rg1",
+                            "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/rg1"]
+        r = consumer.get_token(body)
+        assert r['success'] is False
+        assert r['status_code'] == 400
 
-        expect_failure(True)
-        r = restricted_consumer.get_token(body)
-        expect_failure(False)
+def test_different_resource_servers():
+        body = {}
+        body['request'] = ["rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/rg1",
+                            "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.org.in/rg2"]
+        r = consumer.get_token(body)
+        assert r['success'] is False
+        assert r['status_code'] == 400
 
-        assert r['success']     is False
+def test_unauthorized():
+        body = {}
+        body['request'] = ["rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/" + rand_rsg()]
+        r = consumer.get_token(body)
+        assert r['success'] is False
         assert r['status_code'] == 403
 
-        # new api tests
-
-        body = [
-                {
-                    "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/r1/item-0",
-                    "apis"  : ["/ngsi-ld/v1/temporal/entities"]
-                    },
-                {
-                    "id" : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/r1/item-1",
-                    "apis"  : ["/ngsi-ld/v1/temporal/entities"]
-                    }
-                ]
-
+def test_get_valid_token():
+        resource_id = set_policy()
+        body = {}
+        body['request'] = [resource_id]
         r = consumer.get_token(body)
-        assert r['success']                     is True
-        assert r['response']['expires-in']      == 60*60*24*7
+        assert r['success'] is True
+        assert r['status_code'] == 200
+        
+        token = r['response']['token']
+        s = token.split("/")
+        assert len(s)   == 4
+        assert s[0]     == 'auth.iudx.org.in'
+        uuid = s[3]
 
-def test_multiple_provider_audit():
+        check = False
+        r = consumer.view_tokens()
 
-        # test audit for multiple providers
-        req = {
-                "user_email" : email, 
-                "user_role":'consumer',
-                "item_id":"rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.org.in/r1",
-                "capabilities": ['complex', 'temporal', 'subscription'],
-                "item_type":"resourcegroup"
-                }
-        r = provider.provider_access([req])
+        for tokens in r['response']:
+                if tokens['uuid'] == uuid:
+                        check = True
+
+        assert check is True
+
+def test_get_valid_token_multiple_resources():
+        # test resource groups and resource items
+        resource_id_1 = set_policy()
+        resource_id_2 = set_policy() + '/item-1'
+        resource_id_3 = set_policy()
+        resource_id_4 = set_policy() + '/item-2'
+        resource_id_5 = set_policy() + '/item-5'
+
+        body = {}
+        body['request'] = [resource_id_1, resource_id_2, resource_id_3, 
+                resource_id_4,resource_id_5]
+        r = consumer.get_token(body)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+        
+        token = r['response']['token']
+        s = token.split("/")
+        uuid = s[3]
+
+        resources = []
+        r = consumer.view_tokens()
+        
+        for tokens in r['response']:
+                if tokens['uuid'] == uuid:
+                        resources = tokens['request']
+                    
+        for resource in resources:
+                assert resource['cat_id'] in body['request']
+
+def test_deleted_policy():
+        resource_id = set_policy()
+
+        body = {}
+        body['request'] = [resource_id]
+        r = consumer.get_token(body)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+
+        access_id = -1
+
+        # find access ID and delete it
+        r = provider.get_provider_access()
+        assert r['success']     == True
+        assert r['status_code'] == 200
+        rules = r['response']
+        for r in rules:
+                if resource_id == r['item']['cat_id']:
+                        access_id = r['id']
+                        break
+
+        assert  access_id != -1
+        r = provider.delete_rule([{'id':access_id}])
         assert r['success']     == True
         assert r['status_code'] == 200
 
-        req["item_id"] = "iisc.ac.in/2052f450ac2dde345335fb18b82e21da92e3388c/rs.iudx.io/test-providers"
-        r = alt_provider.provider_access([req])
+        body['request'] = [resource_id]
+        r = consumer.get_token(body)
+        assert r['success'] is False
+        assert r['status_code'] == 403
+
+def test_expired_policy():
+        resource_id = set_policy()
+
+        body = {}
+        body['request'] = [resource_id]
+        r = consumer.get_token(body)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+
+        access_id = -1
+
+        # find access ID and delete it
+        r = provider.get_provider_access()
+        assert r['success']     == True
+        assert r['status_code'] == 200
+        rules = r['response']
+        for r in rules:
+                if resource_id == r['item']['cat_id']:
+                        access_id = r['id']
+                        break
+
+        assert  access_id != -1
+        assert expire_rule(access_id) is True
+
+        body['request'] = [resource_id]
+        r = consumer.get_token(body)
+        assert r['success'] is False
+        assert r['status_code'] == 403
+
+def test_existing_token_and_request():
+        body = {'existing_token':'something', 'request':['something']}
+        r = consumer.get_token(body)
+        assert r['success'] is False
+        assert r['status_code'] == 400
+        
+def test_existing_token_invalid_uuid():
+        body = {'existing_token':'1234'}
+        r = consumer.get_token(body)
+        assert r['success'] is False
+        assert r['status_code'] == 400
+
+def test_existing_token_not_expired():
+        resource_id = set_policy()
+        body = {}
+        body['request'] = [resource_id]
+        r = consumer.get_token(body)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+
+        token = r['response']['token']
+        s = token.split("/")
+        uuid = s[3]
+
+        body = {'existing_token':uuid}
+        r = consumer.get_token(body)
+        assert r['success'] is False
+        assert r['status_code'] == 403
+
+def test_existing_token_success():
+        resource_id = set_policy()
+        body = {}
+        body['request'] = [resource_id]
+        r = consumer.get_token(body)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+
+        token = r['response']['token']
+        s = token.split("/")
+        uuid = s[3]
+
+        assert expire_token(uuid) is True
+
+        body = {'existing_token':uuid}
+        r = consumer.get_token(body)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+
+def test_existing_token_deleted_resource():
+        resource_id = set_policy()
+        body = {}
+        body['request'] = [resource_id]
+        r = consumer.get_token(body)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+
+        token = r['response']['token']
+        s = token.split("/")
+        uuid = s[3]
+
+        access_id = -1
+
+        # find access ID and delete it
+        r = provider.get_provider_access()
+        assert r['success']     == True
+        assert r['status_code'] == 200
+        rules = r['response']
+        for r in rules:
+                if resource_id == r['item']['cat_id']:
+                        access_id = r['id']
+                        break
+
+        # expire the token to allow existing_token flow
+        assert expire_token(uuid) is True
+
+        assert  access_id != -1
+        r = provider.delete_rule([{'id':access_id}])
         assert r['success']     == True
         assert r['status_code'] == 200
 
-        body = [
-                {
-                        "id"    : "iisc.ac.in/2052f450ac2dde345335fb18b82e21da92e3388c/rs.iudx.io/test-providers/*",
-                        "apis"  : ["/ngsi-ld/v1/temporal/entities"]
-                },
-                {
-                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.org.in/r1/ABC123",
-                        "apis"  : ["/ngsi-ld/v1/temporal/entities"]
-                },
-                {
-                        "id"    : "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.org.in/r1/abc-xyz",
-                        "apis"  : ["/ngsi-ld/v1/temporal/entities"]
-                }
-        ]
-
+        body = {'existing_token':uuid}
         r = consumer.get_token(body)
-        access_token = r['response']
+        assert r['success'] is False
+        assert r['status_code'] == 403
 
-        r = alt_provider.audit_tokens(5)
-        assert r["success"] is True
-        audit_report = r['response']
-        as_provider = audit_report["as-provider"]
+def test_update_token_empty_body():
+        body = {}
+        r = consumer.update_token(body)
+        assert r['success'] is False
+        assert r['status_code'] == 400
 
-        token_hash = hashlib.sha256(access_token['token'].encode('utf-8')).hexdigest()
+def test_update_token_invalid_request():
+        body = {'request':[]}
+        r = consumer.update_token(body)
+        assert r['success'] is False
+        assert r['status_code'] == 400
 
-        token_hash_found = False
-        found = None
+        body = {'request':'token'}
+        r = consumer.update_token(body)
+        assert r['success'] is False
+        assert r['status_code'] == 400
 
-        for a in as_provider:
-                if a['token-hash'] == token_hash:
-                        token_hash_found = True
-                        found = a
+        body = {'request':['token']}
+        r = consumer.update_token(body)
+        assert r['success'] is False
+        assert r['status_code'] == 400
+
+        body = {'request':[{'token':'1234'}]}
+        r = consumer.update_token(body)
+        assert r['success'] is False
+        assert r['status_code'] == 400
+
+        body = {'request':[{'token':'ba2efb08-896a-4f0a-abe9-486fe40651dc ', 'resources':['hello']}]}
+        r = consumer.update_token(body)
+        assert r['success'] is False
+        assert r['status_code'] == 400
+
+        body = {'request':[{'token':'ba2efb08-896a-4f0a-abe9-486fe40651dc ', 'resources':[]}]}
+        r = consumer.update_token(body)
+        assert r['success'] is False
+        assert r['status_code'] == 400
+        
+        body = {'request':[{'token':'ba2efb08-896a-4f0a-abe9-486fe40651dc ', 'resources':'hello'}]}
+        r = consumer.update_token(body)
+        assert r['success'] is False
+        assert r['status_code'] == 400
+
+def test_update_token_unauthorized_resource():
+        resource_id = set_policy()
+
+        body = {}
+        body['request'] = [resource_id]
+        r = consumer.get_token(body)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+
+        token = r['response']['token']
+        s = token.split("/")
+        uuid = s[3]
+        
+        unauth_resource_id = "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/" + rand_rsg()
+
+        body['request'] = [{'token':uuid,'resources':[unauth_resource_id, resource_id]}]
+
+        r = consumer.update_token(body)
+        assert r['success'] is False
+        assert r['status_code'] == 403
+
+def test_update_token_different_resource_server():
+        resource_id = set_policy()
+
+        body = {}
+        body['request'] = [resource_id]
+        r = consumer.get_token(body)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+
+        token = r['response']['token']
+        s = token.split("/")
+        uuid = s[3]
+        
+        bad_resource_id = "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.org.in/" + rand_rsg()
+
+        body['request'] = [{'token':uuid,'resources':[bad_resource_id, resource_id]}]
+
+        r = consumer.update_token(body)
+        assert r['success'] is False
+        assert r['status_code'] == 400
+
+def test_update_token_add_resource():
+        resource_id_1 = set_policy()
+        resource_id_2 = set_policy()
+
+        body = {}
+        body['request'] = [resource_id_1]
+        r = consumer.get_token(body)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+
+        token = r['response']['token']
+        s = token.split("/")
+        uuid = s[3]
+
+        resources = []
+
+        r = consumer.view_tokens()
+        for tokens in r['response']:
+                if tokens['uuid'] == uuid:
+                    resources = tokens['request']
+
+        for resource in resources:
+                assert resource_id_1 == resource['cat_id']
+                assert resource['status'] == 'active'
+
+        assert len(resources) == 1
+
+        body['request'] = [{'token':uuid,'resources':[resource_id_1, resource_id_2]}]
+
+        r = consumer.update_token(body)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+
+        resources = []
+
+        r = consumer.view_tokens()
+        for tokens in r['response']:
+                if tokens['uuid'] == uuid:
+                    resources = tokens['request']
+        check = 0
+        for i in resources:
+                if i['cat_id'] == resource_id_1 and i['status'] == 'active':
+                    check = check + 1
+                if i['cat_id'] == resource_id_2 and i['status'] == 'active':
+                    check = check + 1
+
+        assert check == 2
+
+def test_update_token_delete_and_undelete_resource():
+        resource_id_1 = set_policy()
+        resource_id_2 = set_policy()
+
+        body = {}
+        body['request'] = [resource_id_1, resource_id_2]
+        r = consumer.get_token(body)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+
+        token = r['response']['token']
+        s = token.split("/")
+        uuid = s[3]
+
+        resources = []
+
+        r = consumer.view_tokens()
+        for tokens in r['response']:
+                if tokens['uuid'] == uuid:
+                    resources = tokens['request']
+
+        assert len(resources) == 2
+        for i in resources:
+                assert i['status'] == 'active'
+
+        body['request'] = [{'token':uuid,'resources':[resource_id_2]}]
+
+        r = consumer.update_token(body)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+        assert resource_id_1 in r['response'][0]['deleted_resources']
+        assert resource_id_2 in r['response'][0]['active_resources']
+
+        resources = []
+
+        r = consumer.view_tokens()
+        for tokens in r['response']:
+                if tokens['uuid'] == uuid:
+                    resources = tokens['request']
+        check = 0
+        for i in resources:
+                if i['cat_id'] == resource_id_1:
+                        assert i['status'] == 'deleted'
+                        check = check + 1
+                if i['cat_id'] == resource_id_2:
+                        assert i['status'] == 'active'
+                        check = check + 1
+
+        assert check == 2
+        
+        # undelete the resource/add it again
+        body['request'] = [{'token':uuid,'resources':[resource_id_1, resource_id_2]}]
+
+        r = consumer.update_token(body)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+        assert len(r['response'][0]['deleted_resources']) == 0
+
+        resources = []
+
+        r = consumer.view_tokens()
+        for tokens in r['response']:
+                if tokens['uuid'] == uuid:
+                    resources = tokens['request']
+        check = 0
+        for i in resources:
+                assert i['status'] == 'active'
+
+def test_update_token_revoked_resource():
+        resource_id_1 = set_policy()
+
+        body = {}
+        body['request'] = [resource_id_1]
+        r = consumer.get_token(body)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+
+        token = r['response']['token']
+        s = token.split("/")
+        uuid = s[3]
+
+        access_id = -1
+        # find access ID and delete it
+        r = provider.get_provider_access()
+        assert r['success']     == True
+        assert r['status_code'] == 200
+        rules = r['response']
+        for r in rules:
+                if resource_id_1 == r['item']['cat_id']:
+                        access_id = r['id']
                         break
 
-        assert token_hash_found is True
-        assert found['revoked'] is False
+        assert  access_id != -1
+        r = provider.delete_rule([{'id':access_id}])
+        assert r['success']     == True
+        assert r['status_code'] == 200
 
-        for r in found['request']:
-                assert r['id'].startswith('iisc.ac.in') is True
+        body['request'] = [{'token':uuid,'resources':[resource_id_1]}]
+        r = consumer.update_token(body)
+        assert r['success'] is False
+        assert r['status_code'] == 403
+        
+        # add another resource
+        resource_id_2 = set_policy()
 
-        # same test with rbccps.org provider
-        r = provider.audit_tokens(5)
-        assert r["success"] is True
-        audit_report = r['response']
-        as_provider = audit_report["as-provider"]
+        body['request'] = [{'token':uuid,'resources':[resource_id_2]}]
+        r = consumer.update_token(body)
+        assert r['success'] is True 
+        assert r['status_code'] == 200
+        
+        # resource_id is not deleted, since it was already revoked by provider
+        assert len(r['response'][0]['deleted_resources']) == 0
 
-        found = None
+def test_delete_token_empty_body():
+        body = {}
+        r = consumer.delete_token(body)
+        assert r['success'] is False
+        assert r['status_code'] == 400
 
-        for a in as_provider:
-                if a['token-hash'] == token_hash:
-                        found = a
+def test_delete_token_invalid_request():
+        body = {'tokens':[]}
+        r = consumer.delete_token(body)
+        assert r['success'] is False
+        assert r['status_code'] == 400
+
+        body = {'tokens':['12345']}
+        r = consumer.delete_token(body)
+        assert r['success'] is False
+        assert r['status_code'] == 400
+
+        body = {'tokens':[{'1234':5678}]}
+        r = consumer.delete_token(body)
+        assert r['success'] is False
+        assert r['status_code'] == 400
+
+        body = {'tokens':[['12345']]}
+        r = consumer.delete_token(body)
+        assert r['success'] is False
+        assert r['status_code'] == 400
+
+def test_delete_token_invalid_uuid():
+        body = {'tokens':['df64092c-93a9-4ec4-9e86-3ca23a7d46a7']}
+        r = consumer.delete_token(body)
+        assert r['success'] is False
+        assert r['status_code'] == 400
+        
+def test_delete_token_success():
+        resource_id_1 = set_policy()
+        resource_id_2 = set_policy()
+
+        body = {}
+        # get first token
+        body['request'] = [resource_id_1]
+        r = consumer.get_token(body)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+
+        token = r['response']['token']
+        s = token.split("/")
+        uuid_1 = s[3]
+
+        # get second token
+        body['request'] = [resource_id_2]
+        r = consumer.get_token(body)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+
+        token = r['response']['token']
+        s = token.split("/")
+        uuid_2 = s[3]
+
+        body = {'tokens':[uuid_1, uuid_2]}
+        r = consumer.delete_token(body)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+
+        r = consumer.view_tokens()
+
+        for tokens in r['response']:
+                assert tokens['uuid'] != uuid_1
+                assert tokens['uuid'] != uuid_2
+
+def test_delete_expired_token():
+        resource_id = set_policy()
+
+        body = {}
+        body['request'] = [resource_id]
+        r = consumer.get_token(body)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+
+        token = r['response']['token']
+        s = token.split("/")
+        uuid = s[3]
+
+        assert expire_token(uuid) is True
+
+        body = {'tokens':[uuid]}
+        r = consumer.delete_token(body)
+        assert r['success'] is False
+        assert r['status_code'] == 400
+
+def test_delete_token_again():
+        resource_id = set_policy()
+
+        body = {}
+        body['request'] = [resource_id]
+        r = consumer.get_token(body)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+
+        token = r['response']['token']
+        s = token.split("/")
+        uuid = s[3]
+
+        body = {'tokens':[uuid]}
+        r = consumer.delete_token(body)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+
+        r = consumer.view_tokens()
+
+        for tokens in r['response']:
+                assert tokens['uuid'] != uuid
+
+        body = {'tokens':[uuid]}
+        r = consumer.delete_token(body)
+        assert r['success'] is False
+        assert r['status_code'] == 400
+
+def test_get_tokens_deleted_token():
+        resource_id = set_policy()
+
+        body = {}
+        body['request'] = [resource_id]
+        r = consumer.get_token(body)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+
+        token = r['response']['token']
+        s = token.split("/")
+        uuid = s[3]
+
+        body = {'tokens':[uuid]}
+        r = consumer.delete_token(body)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+
+        r = consumer.view_tokens()
+
+        for tokens in r['response']:
+                assert tokens['uuid'] != uuid
+
+def test_get_tokens_expired_token():
+        resource_id = set_policy()
+
+        body = {}
+        body['request'] = [resource_id]
+        r = consumer.get_token(body)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+
+        token = r['response']['token']
+        s = token.split("/")
+        uuid = s[3]
+
+        assert expire_token(uuid) is True
+
+        r = consumer.view_tokens()
+        
+        check = False
+        for tokens in r['response']:
+                if uuid == tokens['uuid']:
+                        assert tokens['status'] == 'expired'
+                        check =  True
+        
+        assert check is True
+
+def test_get_tokens_revoked_resource():
+        resource_id = set_policy()
+
+        body = {}
+        body['request'] = [resource_id]
+        r = consumer.get_token(body)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+
+        token = r['response']['token']
+        s = token.split("/")
+        uuid = s[3]
+
+        access_id = -1
+
+        # find access ID and delete it
+        r = provider.get_provider_access()
+        assert r['success']     == True
+        assert r['status_code'] == 200
+        rules = r['response']
+        for r in rules:
+                if resource_id == r['item']['cat_id']:
+                        access_id = r['id']
                         break
 
-        assert token_hash_found is True
-        assert found['revoked'] is False
+        assert  access_id != -1
+        r = provider.delete_rule([{'id':access_id}])
+        assert r['success']     == True
+        assert r['status_code'] == 200
 
-        for r in found['request']:
-                assert r['id'].startswith('rbccps.org') is True
+        r = consumer.view_tokens()
+        
+        check = False
+        for tokens in r['response']:
+                if uuid == tokens['uuid']:
+                        print(tokens)
+                        assert tokens['request'][0]['status'] == 'revoked'
+                        check = True
+        
+        assert check is True
+
+def test_get_tokens_deleted_resource():
+        resource_id_1 = set_policy()
+        resource_id_2 = set_policy()
+
+        body = {}
+        body['request'] = [resource_id_1, resource_id_2]
+        r = consumer.get_token(body)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+
+        token = r['response']['token']
+        s = token.split("/")
+        uuid = s[3]
+
+        body['request'] = [{'token':uuid,'resources':[resource_id_2]}]
+        r = consumer.update_token(body)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+
+        r = consumer.view_tokens()
+        resources =[]
+        
+        check = False
+        for tokens in r['response']:
+                if uuid == tokens['uuid']: 
+                        resources = tokens['request']
+        
+        for i in resources:
+                if i['cat_id'] == resource_id_1:
+                        assert i['status'] == 'deleted'
+                        check = True
+
+        assert check is True

@@ -11,6 +11,9 @@ import pytest
 email   = "barun@iisc.ac.in"
 org_id = add_organization("iisc.ac.in")
 
+remail_name  = ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(6)) 
+remail = remail_name + '@iisc.ac.in'
+
 ingester_id = 0 
 consumer_id = 0
 onboarder_id = 0
@@ -30,16 +33,28 @@ def init():
 
         untrusted.set_user_session_id(fetch_sessionId('abc.xyz@rbccps.org'))
 
+        ##### for multiple rule tests #####
+        r = role_reg(remail, '9454234223', name , ["onboarder", "consumer", "data ingester", "delegate"], org_id, csr)
+        assert r['success']     == True
+        assert r['status_code'] == 200
+
+
 ##### consumer #####
 
 resource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
 resource_id = provider_id + '/rs.iudx.io/' + resource_group
 
+fileresource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
+fileresource_id = provider_id + "/file.iudx.io/" + fileresource_group
+
+file_diresource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
+file_diresource_id = provider_id + "/file.iudx.io/" + file_diresource_group
+
 req = {"user_email": email, "user_role":'consumer', "item_id":resource_id, "item_type":"resourcegroup"}
 
-def test_consumer_no_rule_set():
+def test_consumer_unregistered():
         # token request should fail - not registered 
-        body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/entities"] }
+        body = {"request" : [resource_id] }
         r = consumer.get_token(body)
         assert r['success']     is False
         assert r['status_code'] == 401
@@ -50,137 +65,152 @@ def test_consumer_reg():
         assert r['success']     == True
         assert r['status_code'] == 200
 
-def test_no_caps():
+def test_consumer_no_rule_set():
+        # token request should fail - not registered 
+        body = {"request" : [resource_id] }
+        r = consumer.get_token(body)
+        assert r['success']     is False
+        assert r['status_code'] == 403
+
+def test_consumer_rule_no_caps():
         # No capabilities
-        global req
+        req = { "user_email": email, 
+                "user_role":'consumer', 
+                "item_id":resource_id, 
+                "item_type":"resourcegroup"}
+
         r = untrusted.provider_access([req])
         assert r['success']     == False
         assert r['status_code'] == 400
 
 def test_invalid_caps():
         # Invalid capabilities
-        global req
+        req = { "user_email": email, 
+                "user_role":'consumer', 
+                "item_id":resource_id, 
+                "item_type":"resourcegroup"}
         req["capabilities"] = ["hello", "world"]
+
         r = untrusted.provider_access([req])
         assert r['success']     == False
         assert r['status_code'] == 400
 
 def test_get_temporal_cap():
-        global req
+        req = { "user_email": email, 
+                "user_role":'consumer', 
+                "item_id":resource_id, 
+                "item_type":"resourcegroup"}
         req["capabilities"] = ['temporal'];
+
         r = untrusted.provider_access([req])
         assert r['success']     == True
         assert r['status_code'] == 200
 
+        check = False
+        r = consumer.view_consumer_resources()
+        assert r['success']     == True
+        assert r['status_code'] == 200
+
+        for i in r['response']:
+                if resource_id == i['cat_id']:
+                        assert 'temporal' in i['capabilities']
+                        check = True
+
+        assert check is True
+
 def test_get_same_cap():
         # same capabilities
-        global req
+        req = { "user_email": email, 
+                "user_role":'consumer', 
+                "item_id":resource_id, 
+                "item_type":"resourcegroup"}
+        req["capabilities"] = ['temporal'];
+
         r = untrusted.provider_access([req])
         assert r['success']     == False
         assert r['status_code'] == 403
 
-def test_get_token_no_api():
         # token request will not pass without API
-        body    = { "id"    : resource_id + "/someitem"}
+        body = { "id"    : resource_id + "/someitem"}
         r       = consumer.get_token(body)
-        assert r['success']     is False
-
-def test_get_temporal_token():
-        body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/entities/" + resource_id] }
-        r = consumer.get_token(body)
-        assert r['success']     is True
-
-        body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/temporal/entities"] }
-        r = consumer.get_token(body)
-        assert r['success']     is True
-
-def test_get_token_no_access():
-        # temporal does not have /entities
-        body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/entities", "/ngsi-ld/v1/temporal/entities"] }
-        r = consumer.get_token(body)
-        assert r['success']     is False
-
-def test_get_complex_api_token():
-        # will not work for other APIs
-        body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/entityOperations/query"] }
-        r = consumer.get_token(body)
         assert r['success']     is False
 
 def test_get_same_cap_in_set():
         # temporal rule already exists
-        global req
+        req = { "user_email": email, 
+                "user_role":'consumer', 
+                "item_id":resource_id, 
+                "item_type":"resourcegroup"}
         req["capabilities"] = ['subscription', 'temporal'];
+
         r = untrusted.provider_access([req])
         assert r['success']     == False
         assert r['status_code'] == 403
 
 def test_get_subscription_cap():
-        global req
+        req = { "user_email": email, 
+                "user_role":'consumer', 
+                "item_id":resource_id, 
+                "item_type":"resourcegroup"}
         req["capabilities"] = ['subscription'];
+
         r = untrusted.provider_access([req])
         assert r['success']     == True
         assert r['status_code'] == 200
 
-def test_get_subscription_token():
-        body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/subscription"] }
+        body = {"request" : [resource_id + "/someitem"]}
         r = consumer.get_token(body)
         assert r['success']     is True
 
 def test_get_complex_cap():
-        # complex
-        global req
+        req = { "user_email": email, 
+                "user_role":'consumer', 
+                "item_id":resource_id, 
+                "item_type":"resourcegroup"}
         req["capabilities"] = ['complex']
+
         r = untrusted.provider_access([req])
         assert r['success']     == True
         assert r['status_code'] == 200
-
-def test_get_complex_token():
-        body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/entityOperations/query"] }
-        r = consumer.get_token(body)
-        assert r['success']     is True
-
-        body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/entities", "/ngsi-ld/v1/temporal/entities"] }
-        r = consumer.get_token(body)
-        assert r['success']     is True
 
 def test_get_all_caps():
         # try all 3 caps
-        global req
+        req = { "user_email": email, 
+                "user_role":'consumer', 
+                "item_id":resource_id, 
+                "item_type":"resourcegroup"}
         req["item_id"] = provider_id + '/rs.iudx.org.in/' + resource_group
         req["capabilities"] = ['complex','subscription', 'temporal']
+
         r = untrusted.provider_access([req])
         assert r['success']     == True
         assert r['status_code'] == 200
 
-def get_token_all_apis():
-        apis = ["/ngsi-ld/v1/entityOperations/query", "/ngsi-ld/v1/entities", "/ngsi-ld/v1/temporal/entities","/ngsi-ld/v1/entities/" +  provider_id + '/rs.iudx.org.in/' + resource_group, "/ngsi-ld/v1/subscription"]
-        body = {"id" : provider_id + '/rs.iudx.org.in/' + "/someitem", "apis" : apis }
-        r = consumer.get_token(body)
-        assert r['success']     is True
-
 def test_set_existing_rule():
-        # rule exists
-        global req
+        req = { "user_email": email, 
+                "user_role":'consumer', 
+                "item_id":resource_id, 
+                "item_type":"resourcegroup"}
+        req["item_id"] = provider_id + '/rs.iudx.org.in/' + resource_group
+        req["capabilities"] = ['complex','subscription', 'temporal']
+
         r = untrusted.provider_access([req])
         assert r['success']     == False
         assert r['status_code'] == 403
 
 def test_set_rule_for_invalid_user():
-        # user does not exist
-        global req
+        req = { "user_email": email, 
+                "user_role":'consumer', 
+                "item_id":resource_id, 
+                "item_type":"resourcegroup"}
         req["user_role"] = "onboarder"
+
         r = untrusted.provider_access([req])
         assert r['success']     == False
         assert r['status_code'] == 403
 
 def test_file_server_caps():
-        
-        # test download capability for file server
-
-        fileresource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
-        fileresource_id = provider_id + '/file.iudx.io/' + resource_group
-
-        body = {"id" : fileresource_id + "/someitem", "apis" : ["/iudx/v1/download"] }
+        body = {"request" : [fileresource_id + "/someitem"]}
         r = consumer.get_token(body)
         assert r['success']     is False
         assert r['status_code'] == 403
@@ -203,16 +233,10 @@ def test_file_server_caps():
         assert r['success']     is True
         assert r['status_code'] == 200
 
-        # invalid APIs in token request for file resource ID
-        body["apis"] = ["/iudx/v1/download", "/ngsi-ld/v1/entities"]
-        r = consumer.get_token(body)
-        assert r['success']     is False
-        assert r['status_code'] == 400
-
 ##### onboarder #####
 
 def test_get_onboarder_token_fail():
-        body = { "id"    : provider_id + "/catalogue.iudx.io/catalogue/crud" }
+        body = {"request": [provider_id + "/catalogue.iudx.io/catalogue/crud"] }
 
         # onboarder token request should fail
         r = consumer.get_token(body)
@@ -225,22 +249,24 @@ def test_reg_onboarder():
         assert r['status_code'] == 200
 
 def test_set_onboarder_rule():
-        global req
-        req["user_role"] = "onboarder"
+        req = { "user_email": email, 
+                "user_role":'onboarder'}
+
         r = untrusted.provider_access([req])
         assert r['success']     == True
         assert r['status_code'] == 200
 
 def test_get_onboarder_token():
-        body = { "id"    : provider_id + "/catalogue.iudx.io/catalogue/crud" }
+        body = {"request": [provider_id + "/catalogue.iudx.io/catalogue/crud"] }
 
         r = consumer.get_token(body)
         assert r['success']     is True
         assert None != r['response']['token']
 
 def test_set_onboarder_rule_again():
-        global req
-        req["user_role"] = "onboarder"
+        req = { "user_email": email, 
+                "user_role":'onboarder'}
+
         r = untrusted.provider_access([req])
         assert r['success']     == False
         assert r['status_code'] == 403
@@ -253,16 +279,17 @@ def test_reg_delegate():
         assert r['status_code'] == 200
 
 def test_set_delegate_rule():
-        global req
-        req["user_role"] = "delegate"
+        req = { "user_email": email, 
+                "user_role":'delegate'}
+
         r = untrusted.provider_access([req])
-        print(r)
         assert r['success']     == True
         assert r['status_code'] == 200
 
 def test_set_delegate_rule_again():
-        global req
-        req["user_role"] = "delegate"
+        req = { "user_email": email, 
+                "user_role":'delegate'}
+
         r = untrusted.provider_access([req])
         assert r['success']     == False
         assert r['status_code'] == 403
@@ -272,10 +299,8 @@ def test_set_delegate_rule_again():
 diresource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
 diresource_id = provider_id + "/rs.iudx.io/" + diresource_group
 
-body        = {"id" : diresource_id + "/someitem", "api" : "/iudx/v1/adapter" }
-
 def test_get_ingester_token_fail():
-        # data ingester token request should fail
+        body = {"request" : [diresource_id + "/someitem"] }
         r = consumer.get_token(body)
         assert r['success']     is False
         assert r['status_code'] == 403
@@ -287,46 +312,45 @@ def test_reg_ingester():
 
 def test_invalid_resource_type():
         # invalid resource type
-        global req
-        req["user_role"]    = "data ingester"
-        req["item_id"]      = diresource_id
-        req["item_type"]    = "catalogue"
+        req = { "user_email": email, 
+                "user_role":'data ingester', 
+                "item_id":diresource_id, 
+                "item_type":"catalogue"}
+
         r = untrusted.provider_access([req])
         assert r['success']     == False
         assert r['status_code'] == 400
 
 def test_set_ingester_rule():
-        global req
-        req["user_role"]    = "data ingester"
-        req["item_id"]      = diresource_id
-        req["item_type"]    = "resourcegroup"
+        req = { "user_email": email, 
+                "user_role":'data ingester', 
+                "item_id":diresource_id, 
+                "item_type":"resourcegroup"}
+
         r = untrusted.provider_access([req])
         assert r['success']     == True
         assert r['status_code'] == 200
 
-def test_token_without_api():
-        # without adapter API
-        body = {"id"    : diresource_id + "/*" }
-
-        r = consumer.get_token(body)
-        assert r['success']     is False
-
 def test_get_ingester_token():
-        body = {"id"    : diresource_id + "/*" }
+        body = {"request" : [diresource_id] }
         body["api"] = "/iudx/v1/adapter"
         r = consumer.get_token(body)
         assert r['success']     is True
 
-def test_token_for_item():
+def test_get_token_for_item():
         # request for other items in resource group
-        body = {"id" : diresource_id + "/someitem/someotheritem", "api" : "/iudx/v1/adapter" }
+        body = {"request" : [diresource_id + "/someitem"] }
         r = consumer.get_token(body)
         assert r['success']     is True
 
-def test_token_invalid_rid():
+def test_set_access_invalid_rid():
         # invalid resource ID
-        global req
+        req = { "user_email": email, 
+                "user_role":'data ingester', 
+                "item_id":diresource_id, 
+                "item_type":"resourcegroup"}
         req["item_id"]      = '/aaaaa/sssss/sada/'
+
         r = untrusted.provider_access([req])
         assert r['success']     == False
         assert r['status_code'] == 400
@@ -338,20 +362,17 @@ def test_token_invalid_rid():
 
 def test_file_server_set_access():
 
-        # test access to file server APIs
-        fileresource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
-        fileresource_id = provider_id + "/file.iudx.io/" + fileresource_group
-
-        body        = {"id" : fileresource_id + "/someitem", "apis" : ["/iudx/v1/upload", "/iudx/v1/delete"] }
+        body = {"request" : [file_diresource_id + "/someitem"] }
 
         # token request should fail
         r = consumer.get_token(body)
         assert r['success']     is False
         assert r['status_code'] == 403
 
-        req["user_role"]    = "data ingester"
-        req["item_id"]      = fileresource_id
-        req["item_type"]    = "resourcegroup"
+        req = { "user_email": email, 
+                "user_role":'data ingester', 
+                "item_id":file_diresource_id, 
+                "item_type":"resourcegroup"}
         r = untrusted.provider_access([req])
         assert r['success']     is True
         assert r['status_code'] == 200
@@ -359,12 +380,6 @@ def test_file_server_set_access():
         r = consumer.get_token(body)
         assert r['success']     is True
         assert r['status_code'] == 200
-
-        # will not get adapter API
-        body["apis"] =  ["/iudx/v1/upload", "/iudx/v1/delete", "/iudx/v1/adapter"]
-        r = consumer.get_token(body)
-        assert r['success']     is False
-        assert r['status_code'] == 400
 
 def test_get_access_rules():
         global ingester_id, consumer_id, onboarder_id
@@ -377,21 +392,26 @@ def test_get_access_rules():
                         assert set(r['capabilities']).issubset(set(['temporal', 'subscription', 'complex']))
                         assert len(r['capabilities']) <= 3 and len(r['capabilities']) >= 1
                         consumer_id = r['id']
+                if r['email'] == email and r['role'] == 'consumer' and fileresource_id == r['item']['cat_id']:
+                        assert set(r['capabilities']).issubset(set(['download']))
+                        assert len(r['capabilities']) <= 1 and len(r['capabilities']) >= 1
                 if r['email'] == email and r['role'] == 'onboarder':
                         assert r['item_type'] == 'catalogue'
                         onboarder_id = r['id']
                 if r['email'] == email and r['role'] == 'data ingester' and diresource_id == r['item']['cat_id']:
                         assert r['item_type'] == 'resourcegroup'
                         ingester_id = r['id']
+                if r['email'] == email and r['role'] == 'data ingester' and file_diresource_id == r['item']['cat_id']:
+                        assert r['item_type'] == 'resourcegroup'
 
 ### deleting rules ###
 
 def test_delete_onboarder_rule():
         global onboarder_id
 
-        token_body = { "id"    : provider_id + "/catalogue.iudx.io/catalogue/crud" }
+        body = {"request" : [provider_id + "/catalogue.iudx.io/catalogue/crud"] }
 
-        r = consumer.get_token(token_body)
+        r = consumer.get_token(body)
         assert r['success']     is True
         assert None != r['response']['token']
 
@@ -406,20 +426,34 @@ def test_delete_onboarder_rule():
         assert r['status_code'] == 403
 
         # onboarder token request should fail
-        r = consumer.get_token(token_body)
+        body = {"request" : [provider_id + "/catalogue.iudx.io/catalogue/crud"] }
+        r = consumer.get_token(body)
         assert r['success']     is False
         assert r['status_code'] == 403
 
 def test_delete_ingester_temporal():
         global ingester_id, consumer_id
         
-        token_body = {"id" : diresource_id + "/someitem/someotheritem", "api" : "/iudx/v1/adapter" }
-        r = consumer.get_token(token_body)
+        body = {"request" : [diresource_id + "/someitem/someotheritem"]}
+        r = consumer.get_token(body)
         assert r['success']     is True
 
-        token_body = {"id" : resource_id + "/something", "apis" : ["/ngsi-ld/v1/temporal/entities"] }
-        r = consumer.get_token(token_body)
+        body = {"request" : [resource_id + "/something"] }
+        r = consumer.get_token(body)
         assert r['success']     is True
+        
+        # temporal must be there
+        check = False
+        r = consumer.view_consumer_resources()
+        assert r['success']     == True
+        assert r['status_code'] == 200
+
+        for i in r['response']:
+                if resource_id == i['cat_id']:
+                        assert 'temporal' in i['capabilities']
+                        check = True
+
+        assert check is True
 
         # invalid body, some items not objects
         body = [ingester_id, ["complex"], {"id": consumer_id, "capabilities": ["temporal"]}]
@@ -432,15 +466,28 @@ def test_delete_ingester_temporal():
         assert r['success']     == True
         assert r['status_code'] == 200
 
-        token_body = {"id" : diresource_id + "/someitem/someotheritem", "api" : "/iudx/v1/adapter" }
-        r = consumer.get_token(token_body)
+        body = {"request" : [diresource_id + "/someitem/someotheritem"]}
+        r = consumer.get_token(body)
         assert r['success']     is False
         assert r['status_code'] == 403
 
-        token_body = {"id" : resource_id + "/something", "apis" : ["/ngsi-ld/v1/temporal/entities"] }
-        r = consumer.get_token(token_body)
-        assert r['success']     is False
-        assert r['status_code'] == 403
+        check = False
+        r = consumer.view_consumer_resources()
+        assert r['success']     == True
+        assert r['status_code'] == 200
+
+        for i in r['response']:
+                if resource_id == i['cat_id']:
+                        assert 'temporal' not in i['capabilities']
+                        check = True
+
+        assert check is True
+        
+        # will still be able to get token, as other caps are there
+        body = {"request" : [resource_id + "/something"] }
+        r = consumer.get_token(body)
+        assert r['success']     is True
+        assert r['status_code'] == 200
 
         body = [{"id": ingester_id}, {"id": consumer_id, "capabilities": ["temporal"]}]
         r = untrusted.delete_rule(body)
@@ -450,18 +497,30 @@ def test_delete_ingester_temporal():
 def test_delete_consumer_rule():
         global consumer_id
 
-        apis = ["/ngsi-ld/v1/entityOperations/query", "/ngsi-ld/v1/entities","/ngsi-ld/v1/entities/" +  resource_id, "/ngsi-ld/v1/subscription"]
-        token_body = {"id" : resource_id + "/someitem", "apis" : apis }
-        r = consumer.get_token(token_body)
+        body = {"request" : [resource_id + "/something"] }
+        r = consumer.get_token(body)
         assert r['success']     is True
 
+        check = False
+        r = consumer.view_consumer_resources()
+        assert r['success']     == True
+        assert r['status_code'] == 200
+
+        for i in r['response']:
+                if resource_id == i['cat_id']:
+                        assert len(i['capabilities']) > 1
+                        check = True
+
+        assert check is True
+        
+        # temporal already deleted
         body = [{"id": consumer_id, "capabilities": ["temporal", "subscription", "complex"]}]
         r = untrusted.delete_rule(body)
         assert r['success']     == False
         assert r['status_code'] == 403
 
-        token_body = {"id" : resource_id + "/someitem", "apis" : apis }
-        r = consumer.get_token(token_body)
+        body = {"request" : [resource_id + "/something"] }
+        r = consumer.get_token(body)
         assert r['success']     is True
 
         body = [{"id": consumer_id}]
@@ -475,99 +534,156 @@ def test_delete_consumer_rule():
         assert r['success']     == False
         assert r['status_code'] == 403
 
-        token_body = {"id" : resource_id + "/someitem", "apis" : apis }
-        r = consumer.get_token(token_body)
-        assert r['success']     is False
-        assert r['status_code'] == 403
-
-        token_body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/subscription"] }
-        r = consumer.get_token(token_body)
+        body = {"request" : [resource_id + "/something"] }
+        r = consumer.get_token(body)
         assert r['success']     is False
         assert r['status_code'] == 403
 
 ### setting multiple rules ###
-remail_name  = ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(6)) 
-remail = remail_name + '@iisc.ac.in'
-
-r = role_reg(remail, '9454234223', name , ["onboarder", "consumer", "data ingester", "delegate"], org_id, csr)
-assert r['success']     == True
-assert r['status_code'] == 200
-
-_req = {"user_email": remail, "user_role":'consumer', "item_id":resource_id, "item_type":"resourcegroup", "capabilities":["temporal"]}
-_req1 = {"user_email": remail, "user_role":'onboarder'}
-
-_req2 = _req.copy()
-_req2["capabilities"] = ["subscription"]
-
 def test_multiple_duplicate():
-        r = untrusted.provider_access([_req1, _req1, _req])
+        req1 = {"user_email": remail, 
+                "user_role":'consumer', 
+                "item_id":resource_id, 
+                "item_type":"resourcegroup", 
+                "capabilities":["temporal"]}
+        req2 = {"user_email": remail, 
+                "user_role":'onboarder'}
+
+        r = untrusted.provider_access([req1, req1, req2])
         assert r['success']     == False
         assert r['status_code'] == 400
 
 def test_multiple_onb_temporal():
-        r = untrusted.provider_access([_req1, _req, {"user_email": remail, "user_role":'delegate'}])
+        req1 = {"user_email": remail, 
+                "user_role":'consumer', 
+                "item_id":resource_id, 
+                "item_type":"resourcegroup", 
+                "capabilities":["temporal"]}
+        req2 = {"user_email": remail, 
+                "user_role":'onboarder'}
+
+        r = untrusted.provider_access([req2, req1, {"user_email": remail, "user_role":'delegate'}])
         assert r['success']     == True
         assert r['status_code'] == 200
 
 def test_multiple_same_rule():
-        r = untrusted.provider_access([_req, _req, _req])
+        req1 = {"user_email": remail, 
+                "user_role":'consumer', 
+                "item_id":resource_id, 
+                "item_type":"resourcegroup", 
+                "capabilities":["temporal"]}
+
+        r = untrusted.provider_access([req1, req1, req1])
         assert r['success']     == False
         assert r['status_code'] == 403
 
 def test_multiple_duplicate_subs():
-        r = untrusted.provider_access([_req2, _req2])
+        req1 = {"user_email": remail, 
+                "user_role":'consumer', 
+                "item_id":resource_id, 
+                "item_type":"resourcegroup", 
+                "capabilities":["subscription"]}
+        r = untrusted.provider_access([req1, req1])
         assert r['success']     == False
         assert r['status_code'] == 400
 
-        r = untrusted.provider_access([_req2, _req])
+        req2 = req1.copy()
+        req2['capabilities'] = ['temporal']
+        r = untrusted.provider_access([req1, req2])
         assert r['success']     == False
         assert r['status_code'] == 403
 
 def test_multiple_complex_sub_dup():
-        global _req
-        _req["capabilities"] = ["complex"]
-        r = untrusted.provider_access([_req2, _req, _req2])
+        req1 = {"user_email": remail, 
+                "user_role":'consumer', 
+                "item_id":resource_id, 
+                "item_type":"resourcegroup", 
+                "capabilities":["subscription"]}
+
+        req2 = {"user_email": remail, 
+                "user_role":'consumer', 
+                "item_id":resource_id, 
+                "item_type":"resourcegroup", 
+                "capabilities":["complex"]}
+
+        r = untrusted.provider_access([req1, req2, req1])
         assert r['success']     == False
         assert r['status_code'] == 400
 
 def test_multiple_duplicate_in_caps_array():
-        global _req
-        _req["capabilities"] = ["complex", "subscription"]
-        r = untrusted.provider_access([_req2, _req])
+        req1 = {"user_email": remail, 
+                "user_role":'consumer', 
+                "item_id":resource_id, 
+                "item_type":"resourcegroup", 
+                "capabilities":["complex", "subscription"]}
+
+        req2 = {"user_email": remail, 
+                "user_role":'consumer', 
+                "item_id":resource_id, 
+                "item_type":"resourcegroup", 
+                "capabilities":["subscription"]}
+
+        r = untrusted.provider_access([req1, req2])
         assert r['success']     == False
         assert r['status_code'] == 400
 
 def test_multiple_existing_in_caps_array():
-        global _req
-        _req["capabilities"] = ["complex", "temporal"]
-        r = untrusted.provider_access([_req2, _req])
+        req1 = {"user_email": remail, 
+                "user_role":'consumer', 
+                "item_id":resource_id, 
+                "item_type":"resourcegroup", 
+                "capabilities":["subscription"]}
+
+        req2 = {"user_email": remail, 
+                "user_role":'consumer', 
+                "item_id":resource_id, 
+                "item_type":"resourcegroup", 
+                "capabilities":["complex", "temporal"]}
+ 
+        r = untrusted.provider_access([req1, req2])
         assert r['success']     == False
         assert r['status_code'] == 403
 
 def test_multiple_complex_sub_success():
-        global _req
-        # success
-        _req["capabilities"] = ["complex"]
-        r = untrusted.provider_access([_req2, _req])
+        req1 = {"user_email": remail, 
+                "user_role":'consumer', 
+                "item_id":resource_id, 
+                "item_type":"resourcegroup", 
+                "capabilities":["complex"]}
+
+        req2 = {"user_email": remail, 
+                "user_role":'consumer', 
+                "item_id":resource_id, 
+                "item_type":"resourcegroup", 
+                "capabilities":["subscription"]}
+
+        r = untrusted.provider_access([req1, req2])
         assert r['success']     == True
         assert r['status_code'] == 200
 
 def test_multiple_ingester_consumer():
-        global _req2, _req
-        _req2["user_role"] = "data ingester"
-        r = untrusted.provider_access([_req2, _req])
+        req1 = {"user_email": remail, 
+                "user_role":'data ingester', 
+                "item_id":resource_id, 
+                "item_type":"resourcegroup"}
+        req2 = {"user_email": remail, 
+                "user_role":'consumer', 
+                "item_id":resource_id, 
+                "item_type":"resourcegroup", 
+                "capabilities":["complex"]}
+        r = untrusted.provider_access([req1, req2])
         assert r['success']     == False
         assert r['status_code'] == 403
 
-        r = untrusted.provider_access([_req2, _req2])
+        r = untrusted.provider_access([req1, req1])
         assert r['success']     == False
         assert r['status_code'] == 400
 
-        resource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
-        resource_id = provider_id + "/rs.iudx.io/" + resource_group
-        _req["item_id"] = resource_id
+        newresource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
+        newresource_id = provider_id + "/rs.iudx.io/" + newresource_group
+        req2["item_id"] = newresource_id
 
-        r = untrusted.provider_access([_req2, _req])
+        r = untrusted.provider_access([req2, req1])
         assert r['success']     == True
         assert r['status_code'] == 200
 

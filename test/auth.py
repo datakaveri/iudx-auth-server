@@ -88,59 +88,37 @@ class Auth():
         def certificate_info(self):
                 return self.call("certificate-info")
 
-        def get_token(self, request, token_time=None):
+        def get_token(self, body):
         #
-                body = {'request': request}
-
-                if token_time:
-                        body['token-time'] = token_time
-
                 return self.call("token", body)
         #
 
-        def introspect_token(self, token, server_token=None, request=None):
+        def view_tokens(self):
+        #
+                return self.call("token", None, "GET")
+        #
+
+        def update_token(self, body):
+        #
+                return self.call("token", body, "PUT")
+        #
+
+        def delete_token(self, body):
+        #
+                return self.call("token", body, "DELETE")
+        #
+
+        def view_consumer_resources(self):
+        #
+                return self.call("consumer/resources", None, "GET")
+        #
+
+        def introspect_token(self, token):
         #
                 body = {'token': token}
 
-                if server_token:
-                        body['server-token'] = server_token
-
-                if request:
-                        if type(request) is type([]):
-                                body['request'] = request
-                        else:
-                                body['request'] = [request]
-
                 return self.call("token/introspect", body)
         #
-
-        def revoke_tokens(self, tokens):
-        #
-                if type(tokens) is type([]):
-                        body = {'tokens': tokens}
-                else:
-                        body = {'tokens': [tokens]}
-
-                return self.call("token/revoke", body)
-        #
-
-        def revoke_token_hashes(self, token_hashes):
-        #
-                if type(token_hashes) is type([]):
-                        body = {'token-hashes': token_hashes}
-                else:
-                        body = {'token-hashes': [token_hashes]}
-
-                return self.call("token/revoke", body)
-        #
-
-        def revoke_all(self, cert_serial, cert_fingerprint):
-                body = {'serial' : cert_serial, 'fingerprint' : cert_fingerprint}
-                return self.call("token/revoke-all", body)
-
-        def audit_tokens(self, hours):
-                body = {'hours': hours}
-                return self.call("audit/tokens", body)
 
         def provider_access(self, request, provider_email=None):
         #

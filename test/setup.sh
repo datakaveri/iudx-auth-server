@@ -14,10 +14,10 @@ openssl req -new -newkey rsa:2048 -nodes -out delegated.csr -keyout delegated.ke
 
 openssl req -new -newkey rsa:2048 -nodes -out untrusted.csr -keyout untrusted.key.pem -subj "/CN=employee/emailAddress=abc.xyz@rbccps.org/id-qt-unotice=class:3;untrusted:true"
 
-openssl req -new -newkey rsa:2048 -nodes -out r-server.csr -keyout r-server.key.pem -subj "/CN=iisc.iudx.org.in/id-qt-unotice=class:1/emailAddress=example@example.com"
-openssl req -new -newkey rsa:2048 -nodes -out f-server.csr -keyout f-server.key.pem -subj "/CN=google.com/id-qt-unotice=class:1/emailAddress=arun.babu@rbccps.org"
+openssl req -new -newkey rsa:2048 -nodes -out r-server.csr -keyout r-server.key.pem -subj "/CN=rs.iudx.io/id-qt-unotice=class:1/emailAddress=example@rs.iudx.io"
+openssl req -new -newkey rsa:2048 -nodes -out f-server.csr -keyout f-server.key.pem -subj "/CN=file.iudx.io/id-qt-unotice=class:1/emailAddress=example@file.iudx.io"
 
-openssl req -new -newkey rsa:2048 -nodes -out e-server.csr -keyout e-server.key.pem -subj "/CN=example.com/id-qt-unotice=class:1/emailAddress=arun.babu@rbccps.org"
+openssl req -new -newkey rsa:2048 -nodes -out c-server.csr -keyout c-server.key.pem -subj "/CN=catalogue.iudx.io/id-qt-unotice=class:1/emailAddress=example@catalogue.iudx.io"
 
 openssl x509 -CA cert.pem -CAkey key.pem -CAcreateserial -in consumer.csr -req -days 365 -sha256 -out consumer.pem 
 
@@ -32,7 +32,7 @@ openssl x509 -CA cert.pem -CAkey key.pem -CAcreateserial -in untrusted.csr -req 
 openssl x509 -CA cert.pem -CAkey key.pem -CAcreateserial -in r-server.csr -req -days 365 -sha256 -out r-server.pem 
 
 openssl x509 -CA cert.pem -CAkey key.pem -CAcreateserial -in f-server.csr -req -days 365 -sha256 -out f-server.pem 
-openssl x509 -CA cert.pem -CAkey key.pem -CAcreateserial -in e-server.csr -req -days 365 -sha256 -out e-server.pem 
+openssl x509 -CA cert.pem -CAkey key.pem -CAcreateserial -in c-server.csr -req -days 365 -sha256 -out c-server.pem 
 
 rm *.csr
 cp *.pem /root
