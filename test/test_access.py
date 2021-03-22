@@ -100,7 +100,7 @@ def test_get_temporal_cap():
                 "user_role":'consumer', 
                 "item_id":resource_id, 
                 "item_type":"resourcegroup"}
-        req["capabilities"] = ['temporal'];
+        req["capabilities"] = ['temporal']
 
         r = untrusted.provider_access([req])
         assert r['success']     == True
@@ -717,3 +717,90 @@ def test_multiple_get_all_rules():
         assert check_onb == True
         assert check_dti == True
         assert check_del == True
+
+
+#Time-based policy tests
+
+def test_expiry_time_not_valid():
+        resource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
+        resource_id = provider_id + '/rs.iudx.io/' + resource_group
+        req = { "user_email": email, 
+                "user_role":'consumer', 
+                "item_id":resource_id, 
+                "item_type":"resourcegroup",
+                "capabilities": ['temporal'],
+                "expiry_time": "2020-01-01 12:00:00"
+               }        
+        r = untrusted.provider_access([req])
+        assert r['success']     == False
+        assert r['status_code'] == 400
+
+def test_expiry_time_in_past():
+        resource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
+        resource_id = provider_id + '/rs.iudx.io/' + resource_group
+        req = { "user_email": email, 
+                "user_role":'consumer', 
+                "item_id":resource_id, 
+                "item_type":"resourcegroup",
+                "capabilities": ['temporal'],
+                "expiry_time": "2020-01-01T12:00:00Z"
+               }        
+        r = untrusted.provider_access([req])
+        assert r['success']     == False
+        assert r['status_code'] == 400
+
+def test_set_policy_with_expiry():
+        resource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
+        resource_id = provider_id + '/rs.iudx.io/' + resource_group
+        req = { "user_email": email, 
+                "user_role":'consumer', 
+                "item_id":resource_id, 
+                "item_type":"resourcegroup",
+                "capabilities": ['temporal'],
+                "expiry_time": "2027-01-01T12:00:00Z"
+               }        
+        r = untrusted.provider_access([req])
+        assert r['success']     == True
+        assert r['status_code'] == 200
+
+def test_update_policy_expiry():
+        resource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
+        resource_id = provider_id + '/rs.iudx.io/' + resource_group
+        #create policy
+        req = { "user_email": email, 
+                "user_role":'consumer', 
+                "item_id":resource_id, 
+                "item_type":"resourcegroup",
+                "capabilities": ['temporal'],
+                "expiry_time": "2027-01-01T12:00:00Z"
+               }        
+        r = untrusted.provider_access([req])
+        assert r['success']     == True
+        assert r['status_code'] == 200
+        r = untrusted.get_provider_access()
+        assert r['success']     == True
+        assert r['status_code'] == 200
+        rules = r['response']
+        #get access_id for set policy
+        for r in rules:
+                if r['email'] == email and r['role'] == 'consumer' and resource_id == r['item']['cat_id']:
+                        consumer_id = r['id']
+                        break
+        #try to update non-expired policy
+        req = { "expiry_time":"2025-01-01T12:00:00Z",
+                "id": consumer_id
+              
+              }
+        r = untrusted.update_rule([req])
+        assert r['success']     == False
+        assert r['status_code'] == 400
+        #change expiry to now
+        assert expire_rule(consumer_id) is True
+        #update expired policy
+        req = { "expiry_time":"2025-01-01T12:00:00Z",
+                "id": consumer_id
+              
+              }
+        r = untrusted.update_rule([req])
+        assert r['success']     == True
+        assert r['status_code'] == 200
