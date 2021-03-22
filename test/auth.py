@@ -130,6 +130,16 @@ class Auth():
                 return self.call("provider/access", request, "POST", {}, header)
         #
 
+        def update_rule(self, request, provider_email=None):
+        #
+                header = {}
+
+                if provider_email:
+                        header['provider-email'] = provider_email
+
+                return self.call("provider/access", request, "PUT", {}, header)
+        #
+
         def delete_rule(self, request, provider_email=None):
         #
                 header = {}

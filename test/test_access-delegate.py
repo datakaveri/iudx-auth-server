@@ -100,7 +100,6 @@ def test_assign_delegate_register_consumer():
         r = alt_provider.get_delegate_providers()
         assert r['success']     == False
         assert r['status_code'] == 404
-
         req = {"user_email": delegate_email, "user_role":'delegate'}
         r = untrusted.provider_access([req])
         assert r['success']     == True
@@ -257,6 +256,41 @@ def test_delegate_get_all_rules():
         assert check_dti == True
         assert check_del == True
 
+def test_delegate_updating_other_policy():
+        resource_group = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
+        resource_id = provider_id + '/rs.iudx.io/' + resource_group
+        #create policy
+        req = { "user_email": email, 
+                "user_role":'consumer', 
+                "item_id":resource_id, 
+                "item_type":"resourcegroup",
+                "capabilities": ['temporal'],
+                "expiry_time": "2027-01-01T12:00:00Z"
+               }        
+        r = untrusted.provider_access([req])
+        assert r['success']     == True
+        assert r['status_code'] == 200
+        #get access_id
+        r = untrusted.get_provider_access()
+        assert r['success']     == True
+        assert r['status_code'] == 200
+        rules = r['response']
+        #get access_id for set policy
+        for r in rules:
+                if r['email'] == email and r['role'] == 'consumer' and resource_id == r['item']['cat_id']:
+                        consumer_id = r['id']
+                        break
+        #set expiry to now
+        assert expire_rule(consumer_id) is True
+        #delegate update expired policy
+        req = { "expiry_time":"2025-01-01T12:00:00Z",
+                "id": consumer_id
+              
+              }
+        r = alt_provider.update_rule([req],"abc.xyz@rbccps.org")
+        assert r['success']     == True
+        assert r['status_code'] == 200
+
 # deleting rules
 
 def test_delegate_delete_rules_set_by_self():
@@ -339,6 +373,39 @@ def test_multiple_delegates():
         assert r['success']     == False
         assert r['status_code'] == 403
 
+
+def test_expire_delegate_policy():
+        #get all rules
+        r = alt_provider.get_provider_access('abc.xyz@rbccps.org')
+        assert r['success']     == True
+        assert r['status_code'] == 200
+        #try to update expiry of policy that has not expired
+        req = {
+                "id": delegate_id,
+                "expiry_time":"2023-01-01T12:00:00Z"
+                }
+        r = untrusted.update_rule([req])
+        assert r['success']     == False
+        assert r['status_code'] == 400
+
+        #expire rule
+        assert expire_rule(delegate_id) is True
+        r = alt_provider.get_provider_access('abc.xyz@rbccps.org')
+        assert r['success']     == False
+        assert r['status_code'] == 401
+
+        #updating policy using other delegate
+        r = consumer.update_rule([req],'abc.xyz@rbccps.org')
+        assert r['success']     == False 
+        assert r['status_code'] == 403
+
+        #update expiry for rule
+        r = untrusted.update_rule([req])
+        assert r['success']     == True 
+        assert r['status_code'] == 200
+
+
+
 def test_deleted_delegate():
         # provider deletes delegate
 
@@ -368,3 +435,6 @@ def test_deleted_delegate():
         r = alt_provider.get_delegate_providers()
         assert r['success']     == False
         assert r['status_code'] == 404
+
+
+
