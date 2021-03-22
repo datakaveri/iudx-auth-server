@@ -89,7 +89,7 @@ const MIN_CERT_CLASS_REQUIRED = Object.freeze({
 
 /* --- environment variables--- */
 
-//process.env.TZ = "Asia/Kolkata";
+process.env.TZ = "Asia/Kolkata";
 
 /* --- telegram --- */
 
@@ -812,7 +812,8 @@ async function check_valid_delegate(delegate_uid, provider_uid) {
         " consent.access.role_id = consent.role.id " +
         " WHERE provider_id = $1::integer AND " +
         " role.user_id = $2::integer AND " +
-        " access_item_type = $3::consent.access_item" +
+        " access_item_type = $3::consent.access_item AND" +
+        " access.expiry > NOW()" +
         " AND access.status = 'active'",
       [
         provider_uid, //$1
@@ -2487,6 +2488,28 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
       return END_ERROR(res, 403, err);
     }
 
+    if (obj.expiry_time !== undefined) {
+        isDefaultExpiry = false;
+        newExpiryTime = obj.expiry_time;
+      } else {
+        isDefaultExpiry = true;
+      }
+
+      if (!isDefaultExpiry) {
+        let reqDateTime = DateTime.fromISO(newExpiryTime, { zone: "utc" });
+
+        if (!reqDateTime.isValid) {
+          err.message = "Invalid data (expiry)";
+          return END_ERROR(res, 400, err);
+        }
+
+        if (reqDateTime < dateTimeNow) {
+          err.message = "Invalid data (expiry)";
+          return END_ERROR(res, 400, err);
+        }
+      } else newExpiryTime = DateTime.now().plus({ years: 1 });
+
+
     if (accesser_role === "consumer" || accesser_role === "data ingester") {
       if (!resource) {
         err.message = "Invalid data (item-id)";
@@ -2514,27 +2537,7 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
         return END_ERROR(res, 403, err);
       }
 
-      if (obj.expiry_time !== undefined) {
-        isDefaultExpiry = false;
-        newExpiryTime = obj.expiry_time;
-      } else {
-        isDefaultExpiry = true;
-      }
-
-      if (!isDefaultExpiry) {
-        let reqDateTime = DateTime.fromISO(newExpiryTime, { zone: "utc" });
-
-        if (!reqDateTime.isValid) {
-          err.message = "Invalid data (expiry)";
-          return END_ERROR(res, 400, err);
-        }
-
-        if (reqDateTime < dateTimeNow) {
-          err.message = "Invalid data (expiry)";
-          return END_ERROR(res, 400, err);
-        }
-      } else newExpiryTime = DateTime.now().plus({ years: 1 });
-
+      
       /* get recognised capabilities from config file */
       resource_server = resource.split("/")[2];
       caps_object = CAPS[resource_server];
@@ -2707,6 +2710,7 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
       accesser_email: accesser_email,
       accesser_role: accesser_role,
       caps_object: caps_object,
+      newExpiryTime: newExpiryTime,
     });
   }
 
@@ -2716,6 +2720,7 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
     const { resource, res_type, consumer_acc_id } = obj;
     const { req_capability, caps_object } = obj;
     const { accesser_uid, accesser_email, accesser_role } = obj;
+    const {newExpiryTime} = obj;
     let { access_item_id } = obj;
     let rule, resource_name, policy_json;
 
