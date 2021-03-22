@@ -69,7 +69,7 @@ def init():
 def test_set_rule_unassigned_delegate():
 
         # token request should fail
-        body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/entities"] }
+        body = {"request" : [resource_id + "/someitem"]}
         r = consumer.get_token(body)
         assert r['success']     is False
 
@@ -138,7 +138,7 @@ def test_delegate_set_consumer_rule():
         assert r['success']     == True
         assert r['status_code'] == 200
 
-        body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/entities/" + resource_id] }
+        body = {"request" : [resource_id + "/someitem"]}
         r = consumer.get_token(body)
         assert r['success']     is True
 
@@ -151,7 +151,7 @@ def test_provider_update_rule_set_by_delegate():
         assert r['success']     == True
         assert r['status_code'] == 200
 
-        body = {"id" : resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/entities"] }
+        body = {"request" : [resource_id + "/someitem"]}
         r = consumer.get_token(body)
         assert r['success']     is True
 
@@ -170,18 +170,14 @@ def test_delegate_update_provider_rule():
         assert r['success']     == True
         assert r['status_code'] == 200
 
-        body = {"id" : pr_resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/entities"] }
-        r = consumer.get_token(body)
-        assert r['success']     is True
-
-        body = {"id" : pr_resource_id + "/someitem", "apis" : ["/ngsi-ld/v1/temporal/entities"] }
+        body = {"request" : [pr_resource_id + "/someitem"]}
         r = consumer.get_token(body)
         assert r['success']     is True
 
 def test_delegate_set_onboarder_rule():
         # delegate can set onboarder rule
 
-        body = { "id"    : provider_id + "/catalogue.iudx.io/catalogue/crud" }
+        body = { "request"    : [provider_id + "/catalogue.iudx.io/catalogue/crud"] }
 
         # onboarder token request should fail
         r = consumer.get_token(body)
@@ -198,7 +194,7 @@ def test_delegate_set_onboarder_rule():
 
 def test_delegate_set_ingester_rule():
         # delegate can set ingester rule
-        body        = {"id" : diresource_id + "/someitem", "api" : "/iudx/v1/adapter" }
+        body        = {"request" : [diresource_id + "/someitem"]}
 
         # data ingester token request should fail
         r = consumer.get_token(body)
@@ -210,7 +206,6 @@ def test_delegate_set_ingester_rule():
         assert r['status_code'] == 200
 
         # without adapter API
-        body        = {"id" : diresource_id + "/someitem", "api" : "/iudx/v1/adapter" }
         r = consumer.get_token(body)
         assert r['success']     is True
 

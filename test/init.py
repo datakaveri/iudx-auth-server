@@ -11,9 +11,9 @@ provider		= Auth(home + "provider.pem",	 home + "provider.key.pem",	auth_server)
 alt_provider		= Auth(home + "alt-provider.pem",home + "alt-provider.key.pem",	auth_server)
 delegate		= Auth(home + "delegated.pem",	 home + "delegated.key.pem",	auth_server)
 untrusted		= Auth(home + "untrusted.pem",	 home + "untrusted.key.pem",	auth_server)
-example_dot_com		= Auth(home + "e-server.pem",	 home + "e-server.key.pem",	auth_server)
+catalogue_server	= Auth(home + "c-server.pem",	 home + "c-server.key.pem",	auth_server)
 restricted_consumer	= Auth(home + "restricted.pem",	 home + "restricted.key.pem",	auth_server)
-fake_resource_server	= Auth(home + "f-server.pem",	 home + "f-server.key.pem",	auth_server)
+file_server	        = Auth(home + "f-server.pem",	 home + "f-server.key.pem",	auth_server)
 
 ##### Since we are testing on localhost, disable SSL warnings #####
 import urllib3

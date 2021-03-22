@@ -59,3 +59,14 @@ def reset_role(email):
             return False
         
         return True 
+
+def expire_rule(access_id):
+        try:
+                cursor.execute("update consent.access set expiry = NOW() where id = " + str(access_id))
+                conn.commit()
+
+        except psycopg2.DatabaseError as error:
+            print(error)
+            return False
+        
+        return True 
