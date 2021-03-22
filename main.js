@@ -11,18 +11,13 @@ const http = require("http");
 const assert = require("assert").strict;
 const forge = require("node-forge");
 const crypto = require("crypto");
-const logger = require("node-color-log");
 const bcrypt = require("bcrypt");
-const lodash = require("lodash");
 const cluster = require("cluster");
 const express = require("express");
 const { v4: uuidv4 } = require("uuid");
 const timeout = require("connect-timeout");
 const domain = require("getdomain");
-const aperture = require("./node-aperture");
-const safe_regex = require("safe-regex");
 const nodemailer = require("nodemailer");
-const geoip_lite = require("geoip-lite");
 const bodyParser = require("body-parser");
 const http_request = require("request");
 const pgNativeClient = require("pg-native");
@@ -201,55 +196,7 @@ app.use(basic_security_check);
 app.use(log_conn);
 app.use(sessionIdCheck);
 
-/* --- aperture --- */
-
-const apertureOpts = {
-  types: aperture.types,
-  typeTable: {
-    ip: "ip",
-    time: "time",
-
-    tokens_per_day: "number", // tokens issued today
-
-    api: "string", // the API to be called
-    method: "string", // the method for API
-
-    "cert.class": "number", // the certificate class
-    "cert.cn": "string",
-    "cert.o": "string",
-    "cert.ou": "string",
-    "cert.c": "string",
-    "cert.st": "string",
-    "cert.gn": "string",
-    "cert.sn": "string",
-    "cert.title": "string",
-
-    "cert.issuer.cn": "string",
-    "cert.issuer.email": "string",
-    "cert.issuer.o": "string",
-    "cert.issuer.ou": "string",
-    "cert.issuer.c": "string",
-    "cert.issuer.st": "string",
-
-    groups: "string", // CSV actually
-
-    country: "string",
-    region: "string",
-    timezone: "string",
-    city: "string",
-    latitude: "number",
-    longitude: "number",
-  },
-};
-
-const parser = aperture.createParser(apertureOpts);
-const evaluator = aperture.createEvaluator(apertureOpts);
-
 /* --- functions --- */
-function print(msg) {
-  logger.color("white").log(msg);
-}
-
 function is_valid_token(token, user = null) {
   if (!is_string_safe(token, "_")) return false;
 
@@ -314,14 +261,6 @@ function sha1(string) {
   return crypto.createHash("sha1").update(string).digest("hex");
 }
 
-function sha256(string) {
-  return crypto.createHash("sha256").update(string).digest("hex");
-}
-
-function base64(string) {
-  return Buffer.from(string).toString("base64");
-}
-
 function send_telegram(message) {
   http_request(
     telegram_url + "[ AUTH ] : " + message,
@@ -380,6 +319,7 @@ function END_ERROR(res, http_status, error, exception = null) {
   res.setHeader("Connection", "close");
 
   const response = {};
+  console.log(exception);
 
   if (typeof error === "string") response.error = { message: error };
   else {
@@ -828,41 +768,6 @@ async function check_valid_delegate(delegate_uid, provider_uid) {
   } catch (error) {
     throw error;
   }
-}
-
-/* ---
-  Create aperture policy text based on capabilities.
-  caps_object contains the valid capabilities for
-  the particular resource server (obtained from the
-  CAPS object).
-		--- */
-function create_policy_text(
-  accesser_email,
-  role,
-  resource,
-  resource_name,
-  capability,
-  caps_object
-) {
-  let join = "if",
-    index;
-  let rule = `${accesser_email} can access ${resource_name}/* for 1 week`;
-
-  let apis = capability.reduce(
-    (acc, val) => acc.concat(caps_object[role][val]),
-    []
-  );
-  apis = [...new Set(apis)];
-  apis = apis.map(
-    (str) => (str = str.replace("{{RESOURCE_GROUP_ID}}", resource))
-  );
-
-  for (const i of apis) {
-    rule = rule + ` ${join} api = "${i}"`;
-    join = "or";
-  }
-
-  return rule;
 }
 
 function intersect(array1, array2) {
@@ -1976,7 +1881,7 @@ app.delete("/auth/v[1-2]/token", async (req, res) => {
   try {
     const result = await pool.query(
       "UPDATE consent.token SET status = 'deleted'," +
-      " updated_at = NOW() WHERE id = ANY($1::integer[])",
+        " updated_at = NOW() WHERE id = ANY($1::integer[])",
       [token_ids]
     );
 
@@ -2299,7 +2204,7 @@ app.put("/auth/v[1-2]/token", async (req, res) => {
 
   for (const i of request) {
     let uuid = i.token;
-	  let resources = i.resources;
+    let resources = i.resources;
 
     try {
       if (req_object[uuid].to_activate.length !== 0) {
@@ -2509,7 +2414,6 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
         }
       } else newExpiryTime = DateTime.now().plus({ years: 1 });
 
-
     if (accesser_role === "consumer" || accesser_role === "data ingester") {
       if (!resource) {
         err.message = "Invalid data (item-id)";
@@ -2537,7 +2441,6 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
         return END_ERROR(res, 403, err);
       }
 
-      
       /* get recognised capabilities from config file */
       resource_server = resource.split("/")[2];
       caps_object = CAPS[resource_server];
@@ -2724,79 +2627,6 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
     let { access_item_id } = obj;
     let rule, resource_name, policy_json;
 
-    if (accesser_role === "data ingester" || accesser_role === "consumer")
-      resource_name = resource.replace(provider_id_hash + "/", "");
-
-    switch (accesser_role) {
-      case "onboarder":
-        rule = `${accesser_email} can access ${CAT_RESOURCE} for 1 week`;
-        break;
-
-      case "data ingester":
-        rule = create_policy_text(
-          accesser_email,
-          "data ingester",
-          resource,
-          resource_name,
-          ["default"],
-          caps_object
-        );
-        break;
-
-      case "consumer":
-        rule = ``; /* use create_policy_text function */
-        break;
-
-      case "delegate":
-        rule = ``; /* empty policy for delegate access */
-        break;
-
-      default:
-        return END_ERROR(res, 500, "Internal error!");
-    }
-
-    /* add capabilities/APIs to policy */
-    if (accesser_role === "consumer") {
-      let caps,
-        existing_caps = [];
-
-      if (consumer_acc_id !== null) {
-        /* get existing capabilities if existing rule */
-        try {
-          caps = await pool.query(
-            "SELECT capability from consent.capability" +
-              " WHERE access_id = $1::integer" +
-              " AND status = 'active'",
-            [consumer_acc_id]
-          );
-
-          existing_caps = [...new Set(caps.rows.map((row) => row.capability))];
-        } catch (error) {
-          return END_ERROR(res, 500, "Internal error!", error);
-        }
-      }
-
-      let capability = existing_caps.concat(req_capability);
-
-      rule = create_policy_text(
-        accesser_email,
-        "consumer",
-        resource,
-        resource_name,
-        capability,
-        caps_object
-      );
-    }
-
-    try {
-      /* cannot parse an empty policy, so set as {} */
-      if (accesser_role === "delegate") policy_json = {};
-      else policy_json = parser.parse(rule);
-    } catch (error) {
-      let err = new Error("Error in policy text");
-      return END_ERROR(res, 500, "Internal error!", err);
-    }
-
     try {
       if (!access_item_id) {
         const access_item = await pool.query(
@@ -2839,27 +2669,19 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
           [
             provider_uid, //$1
             role_id.rows[0].id, //$2
-            rule, //$3
-            policy_json, //$4
+            " ", //$3
+            {}, //$4
             access_item_id, //$5
             res_type, //$6
             "active", //$7
             newExpiryTime.toString(),
           ]
         );
-      } else {
-        access = await pool.query(
-          "UPDATE consent.access SET policy_text = $1::text," +
-            " policy_json = $2::jsonb, " +
-            " updated_at = NOW() WHERE access.id = $3::integer" +
-            " RETURNING id",
-          [rule, policy_json, consumer_acc_id]
-        );
       }
 
       /* add newly requested capabilities to table if consumer */
       if (accesser_role === "consumer") {
-        let access_id = access.rows[0].id;
+        let access_id = consumer_acc_id || access.rows[0].id;
 
         for (const cap of req_capability) {
           const result = await pool.query(
@@ -3416,35 +3238,13 @@ app.delete("/auth/v[1-2]/provider/access", async (req, res) => {
             [id]
           );
 
-        const result_token_access = await pool.query(
-          " UPDATE consent.token_access SET status = 'revoked'," +
-            " updated_at = NOW() WHERE access_id = $1::integer",
-          [id]
-        );
+          const result_token_access = await pool.query(
+            " UPDATE consent.token_access SET status = 'revoked'," +
+              " updated_at = NOW() WHERE access_id = $1::integer",
+            [id]
+          );
 
           if (result.rowCount === 0) throw new Error("Error in deletion");
-        } else {
-          /* rewrite policy text */
-
-          let resource_name = resource.replace(provider_id_hash + "/", "");
-          let policy_text = create_policy_text(
-            accesser_email,
-            "consumer",
-            resource,
-            resource_name,
-            existing_caps,
-            caps_object
-          );
-
-          let policy_json = parser.parse(policy_text);
-
-          const access = await pool.query(
-            "UPDATE consent.access SET policy_text = $1::text," +
-              " policy_json = $2::jsonb," +
-              " updated_at = NOW() WHERE access.id = $3::integer" +
-              " RETURNING id",
-            [policy_text, policy_json, id]
-          );
         }
       } catch (error) {
         return END_ERROR(res, 500, "Internal error!", error);

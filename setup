@@ -120,12 +120,6 @@ then
 	certbot --nginx --non-interactive --agree-tos -m $EMAIL -d $CONSENT_DOMAIN
 fi
 
-git clone --depth=1 https://github.com/datakaveri/node-aperture
-cd node-aperture
-npm install
-npm audit fix --force
-
-cd ..
 npm install
 npm audit fix --force
 
