@@ -32,47 +32,11 @@ CREATE TABLE public.crl (
 INSERT INTO public.crl VALUES('[]'::jsonb);
 
 --
--- Name: token; Type: TABLE; Schema: public; Owner: postgres
---
-
-CREATE TABLE public.token (
-
-	id				character varying		NOT NULL,
-
-	token				character varying		NOT NULL,
-	expiry				timestamp without time zone	NOT NULL,
-	request				jsonb				NOT NULL,
-
-	cert_serial			character varying		NOT NULL,
-	cert_fingerprint		character varying		NOT NULL,
-
-	issued_at			timestamp without time zone	NOT NULL,
-	resource_ids			jsonb				NOT NULL,
-
-	introspected			boolean				NOT NULL,
-	revoked				boolean				NOT NULL,
-	cert_class			integer				NOT NULL,
-
-	server_token			jsonb				NOT NULL,
-	providers			jsonb				NOT NULL,
-
-	geoip				jsonb				NOT NULL,
-
-	api_called_from			character varying(512)			,
-
-	PRIMARY KEY (id, token)
-);
-
-CREATE UNIQUE INDEX idx_token_id ON public.token(id,token,issued_at);
-
---
 -- ACCESS CONTROLS
 --
 
 ALTER TABLE public.crl			OWNER TO postgres;
-ALTER TABLE public.token		OWNER TO postgres;
 
 CREATE USER auth		with PASSWORD 'XXX_auth';
 
 GRANT SELECT				ON TABLE public.crl				TO auth;
-GRANT SELECT,INSERT,UPDATE,DELETE	ON TABLE public.token				TO auth;

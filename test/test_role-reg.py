@@ -29,7 +29,6 @@ def test_no_role():
 
 def test_success():
         r = role_reg(email, '9454234223', name , ["consumer"], None, csr)
-        print(r)
         assert r['success']     == True
         assert r['status_code'] == 200
 

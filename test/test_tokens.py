@@ -59,7 +59,7 @@ def init():
         assert reset_role(email) == True
         org_id = add_organization("iisc.ac.in")
 
-        r = role_reg(email, '9454234223', name , ["consumer"], None, csr)
+        r = role_reg(email, '9454234223', name , ["consumer", "data ingester"], org_id, csr)
         assert r['success']     == True
         assert r['status_code'] == 200
 
@@ -111,6 +111,13 @@ def test_different_resource_servers():
         r = consumer.get_token(body)
         assert r['success'] is False
         assert r['status_code'] == 400
+
+def test_different_invalid_resource_servers():
+        body = {}
+        body['request'] = ["rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/someserver.iudx.io/rg1"]
+        r = consumer.get_token(body)
+        assert r['success'] is False
+        assert r['status_code'] == 403
 
 def test_unauthorized():
         body = {}
@@ -761,7 +768,6 @@ def test_get_tokens_revoked_resource():
         check = False
         for tokens in r['response']:
                 if uuid == tokens['uuid']:
-                        print(tokens)
                         assert tokens['request'][0]['status'] == 'revoked'
                         check = True
         
@@ -799,4 +805,78 @@ def test_get_tokens_deleted_resource():
                         assert i['status'] == 'deleted'
                         check = True
 
+        assert check is True
+
+def test_same_resource_same_user_diff_role():
+        # policy set for same resource for a user registered as consumer
+        # and data ingester. Getting a token for the resource will result
+        # in a token with '2' resources, one reflecting the consumer
+        # policy, the other for the ingester policy
+        resource_id = set_policy()
+
+        access_req = {"user_email": email, 
+                    "user_role":'data ingester', 
+                    "item_id":resource_id, 
+                    "item_type":"resourcegroup"
+                    }
+        r = provider.provider_access([access_req])
+        assert r['success']     == True
+        assert r['status_code'] == 200
+
+        body = {}
+        body['request'] = [resource_id]
+        r = consumer.get_token(body)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+
+        token = r['response']['token']
+        s = token.split("/")
+        uuid = s[3]
+
+        r = consumer.view_tokens()
+        
+        check = False
+        for tokens in r['response']:
+                if uuid == tokens['uuid']:
+                        assert len(tokens['request']) == 2
+                        check = True
+        
+        assert check is True
+
+def test_different_provider_tokens():
+        resource_id = set_policy()
+
+        # let alt_provider set a policy
+        resource_id_alt = "iisc.ac.in/2052f450ac2dde345335fb18b82e21da92e3388c/rs.iudx.io/" + rand_rsg()
+        access_req = {"user_email": email, 
+                    "user_role":'consumer', 
+                    "item_id":resource_id_alt, 
+                    "item_type":"resourcegroup",
+                    "capabilities":["complex","subscription","temporal"]
+                    }
+        r = alt_provider.provider_access([access_req])
+        assert r['success']     == True
+        assert r['status_code'] == 200
+
+
+        body = {}
+        body['request'] = [resource_id, resource_id_alt]
+        r = consumer.get_token(body)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+
+        token = r['response']['token']
+        s = token.split("/")
+        uuid = s[3]
+
+        r = consumer.view_tokens()
+        
+        check = False
+        for tokens in r['response']:
+                if uuid == tokens['uuid']:
+                        assert len(tokens['request']) == 2
+                        resources = [i['cat_id'] for i in tokens['request']]
+                        assert set(resources) == set(body['request'])
+                        check = True
+        
         assert check is True

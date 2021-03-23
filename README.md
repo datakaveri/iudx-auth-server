@@ -89,6 +89,8 @@ The tables used in the project are:
 * `access`		: Access and policy related information
 * `resourcegroup`	: Resource groups for which policies have been created
 * `capability`		: Capabilities associated with individual access rules/policies
+* `session`		: Session ID generated for secure endpoints
+* `token_access`	: Mapping between tokens and resources associtaed with tokens
 
 For more information, please check the [schema.sql](schema.sql) and [consent_schema.sql](consent_schema.sql) files.
 
@@ -101,29 +103,22 @@ For more information, please check the [schema.sql](schema.sql) and [consent_sch
 
 ### Running tests
 
-1. All tests are written in Python3. The _requests_ and _psycopg2_ Python packages are required to run tests:
+1. All tests are written in Python3 using _pytest_. The _pytest_, _requests_ and _psycopg2_ Python packages are required to run tests:
 
 ```
 apt install python3-pip
 pip3 install psycopg2
 pip3 install requests
+pip3 install pytest
 ```
 
 2. NGINX is configured to perform rate-limiting on the Auth and Consent endpoints. To avoid this during testing, increase the request limit in `/etc/nginx/sites-available/auth.iudx.org.in` and `/etc/nginx/sites-available/cons.iudx.org.in`. Then, restart NGINX (`systemctl restart nginx`)
 
-3. To execute the tests - in the `tests/` directory, run:
-
-```
-./run
-```
-
-A collection of tests have been written for _pytest_ (`pip3 install pytest`). In the `tests/` directory, run:
+3. In the `tests/` directory, run:
 
 ```
 pytest
 ```
-
-4. Another resource server must be specified in [capabilities.json](capabilities.json), `iisc.iudx.org.in` for introspect tests to work. This resource server must have same capabilities as `rs.iudx.io`
 
 ## 6. License
 
