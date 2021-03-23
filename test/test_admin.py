@@ -213,8 +213,12 @@ def test_check_rejected_provider():
 
         # should not be in pending
         r = untrusted.get_provider_regs()
-        assert r['success']     == True
-        assert r['status_code'] == 200
-        providers = r['response']
-        for i in providers:
-                assert i['email'] != remail
+        # will return 200 if there are remnant pending providers from previous tests
+        if r['success'] == True:
+                assert r['status_code'] == 200
+                providers = r['response']
+                for i in providers:
+                        assert i['email'] != remail
+        # will return 400 if there are no pending providers
+        else:
+                assert r['status_code'] == 400
