@@ -89,6 +89,8 @@ The tables used in the project are:
 * `access`		: Access and policy related information
 * `resourcegroup`	: Resource groups for which policies have been created
 * `capability`		: Capabilities associated with individual access rules/policies
+* `session`		: Session ID generated for secure endpoints
+* `token_access`	: Mapping between tokens and resources associtaed with tokens
 
 For more information, please check the [schema.sql](schema.sql) and [consent_schema.sql](consent_schema.sql) files.
 
