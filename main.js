@@ -1632,13 +1632,12 @@ app.post("/auth/v[1-2]/token/introspect", async (req, res) => {
     for (let obj of token_access_items) {
       if (!access[obj.access_id]) access[obj.access_id] = {};
 
+      access[obj.access_id].id = obj.cat_id;
       access[obj.access_id].resource_group = obj.cat_id
         .split("/")
         .slice(0, 4)
         .join("/");
       access[obj.access_id].apis = new Set();
-
-      access[obj.access_id].expired = true;
     }
 
     /* capability will be null for onboarder/data ingester */
@@ -1646,7 +1645,7 @@ app.post("/auth/v[1-2]/token/introspect", async (req, res) => {
       "SELECT access.id, role_id," +
         " capability FROM consent.access LEFT JOIN consent.capability" +
         " ON access_id =access.id WHERE access.id = ANY ($1::integer[])" +
-        " AND access.status = 'active' AND expiry > NOW()" +
+        " AND access.status = 'active' AND access.expiry > NOW()" +
         " AND (capability.status = 'active' OR capability.status IS NULL)",
       [Object.keys(access)]
     );
@@ -1668,9 +1667,6 @@ app.post("/auth/v[1-2]/token/introspect", async (req, res) => {
   };
 
   for (let obj of access_query.rows) {
-    /* if item is in access_query, not expired */
-    access[obj.id].expired = false;
-
     /* get APIs depending on role/capability */
     if (obj.role_id === roles.onboarder) continue;
     else {
@@ -1684,21 +1680,28 @@ app.post("/auth/v[1-2]/token/introspect", async (req, res) => {
     }
   }
 
-  for (let obj of token_access_items) {
-    /* Skip if item is expired */
-    if (access[obj.access_id].expired === true) continue;
+	/* if 2 cat IDs are same, then concatenate the APIs together
+	 * this happens when a user has consumer & ingester access to
+	 * the same resource */
+  let process_request = new Map();
+  for (let i of Object.keys(access)) {
+    if (!process_request.has(access[i].id))
+      process_request.set(access[i].id, []);
 
-    obj.id = obj.cat_id;
-    if (obj.id.split("/").length === 4)
-      //is resource group
-      obj.id = obj.id + "/*";
-
-    obj.apis = [...access[obj.access_id].apis];
-
-    delete obj.access_id;
-    delete obj.cat_id;
-    response.request.push(obj);
+    process_request.set(
+      access[i].id,
+      process_request.get(access[i].id).concat([...access[i].apis])
+    );
   }
+
+  for (let [id, apis] of process_request.entries()) {
+    if (id.split("/").length === 4)
+      //is resource group
+      id = id + "/*";
+
+    response.request.push({ id: id, apis: apis });
+  }
+
   const details = {
     resource_server: hostname_in_certificate,
     issued_to: token.split("/")[1],
