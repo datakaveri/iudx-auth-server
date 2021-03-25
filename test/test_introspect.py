@@ -513,13 +513,15 @@ def test_consumer_ingester_same_resource():
         with open('../capabilities.json') as f:
                 caps = json.load(f)
                 all_caps = list(caps['rs.iudx.io']['consumer'].keys())
-                consumer_apis = set()
-                all_apis = list(caps['rs.iudx.io']['consumer'].values())
-                ingester_apis = caps['rs.iudx.io']['data ingester']['default']
+                all_apis = set()
+                consumer_apis = list(caps['rs.iudx.io']['consumer'].values())
+                ingester_apis = list(caps['rs.iudx.io']['data ingester']['default'])
 
-                for i in all_apis:
-                    consumer_apis.update(i)
-
+                for i in consumer_apis:
+                    all_apis.update(i)
+                
+                all_apis.update(ingester_apis)
+            
                 resource_id = "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/" + rand_rsg()
                 access_req_c = {"user_email": email, 
                             "user_role":'consumer', 
@@ -548,21 +550,17 @@ def test_consumer_ingester_same_resource():
                 assert r['success'] is True
                 assert r['status_code'] == 200
                 
-                check_cons = False
-                check_di = False
+                check = False
 
-                consumer_apis = {str.replace('{{RESOURCE_GROUP_ID}}',resource_id) for str in consumer_apis}
-                assert len(r['response']['request']) == 2
+                all_apis = {str.replace('{{RESOURCE_GROUP_ID}}',resource_id) for str in all_apis}
+                assert len(r['response']['request']) == 1
                 for i in r['response']['request']:
                         assert i['id'] == resource_id + '/*'
-                        if set(ingester_apis) == set(i['apis']):
-                               check_di = True
-                        if set(consumer_apis) == set(i['apis']):
-                               check_cons = True
+                        if all_apis == set(i['apis']):
+                               check = True
 
+                assert check is True
 
-                assert check_cons is True
-                assert check_di is True
 # token w/ expired rule
 def test_expired_rule():
         resource_id = "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/" + rand_rsg()
