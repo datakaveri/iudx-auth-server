@@ -129,7 +129,7 @@ def test_expired_token():
         r = resource_server.introspect_token(token)
         assert r['success'] is True
         assert r['status_code'] == 200
-        assert len(r['response']['request']) > 0
+        assert len(r['response']['request']) == 1
 
         s = token.split("/")
         uuid = s[3]
@@ -201,7 +201,7 @@ def test_token_belonging_diff_server():
         r = file_server.introspect_token(token)
         assert r['success'] is True
         assert r['status_code'] == 200
-        assert len(r['response']['request']) > 0
+        assert len(r['response']['request']) == 1
 
 def test_revoked_rule():
         resource_id = "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/" + rand_rsg()
@@ -603,7 +603,7 @@ def test_expired_rule():
         assert r['success'] is False
         assert r['status_code'] == 403
 
-def test_different_resources():
+def test_different_items():
         resource_id = "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/" + rand_rsg()
         access_req = {"user_email": email, 
                     "user_role":'consumer', 
@@ -624,5 +624,41 @@ def test_different_resources():
         assert r['success'] is True
         assert r['status_code'] == 200
 
+        assert len(r['response']['request']) == 3
         for i in r['response']['request']:
                 assert i['id'] in [resource_id + '/*', resource_id + "/item-1", resource_id + "/item-2/item-3"]
+
+def test_different_resources():
+        resource_id_1 = "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/" + rand_rsg()
+        resource_id_2 = "rbccps.org/9cf2c2382cf661fc20a4776345a3be7a143a109c/rs.iudx.io/" + rand_rsg()
+
+        access_req_1 = {"user_email": email, 
+                    "user_role":'consumer', 
+                    "item_id":resource_id_1, 
+                    "item_type":"resourcegroup",
+                    "capabilities":["complex","subscription","temporal"]
+                    }
+
+        access_req_2 = {"user_email": email, 
+                    "user_role":'consumer', 
+                    "item_id":resource_id_2, 
+                    "item_type":"resourcegroup",
+                    "capabilities":["complex","subscription","temporal"]
+                    }
+
+        r = provider.provider_access([access_req_1, access_req_2])
+
+        body = {}
+        body['request'] = [resource_id_1, resource_id_2, resource_id_1 + "/item-1"]
+        r = consumer.get_token(body)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+        token = r['response']['token']
+
+        r = resource_server.introspect_token(token)
+        assert r['success'] is True
+        assert r['status_code'] == 200
+
+        assert len(r['response']['request']) == 3
+        for i in r['response']['request']:
+                assert i['id'] in [resource_id_1 + '/*', resource_id_2 + '/*', resource_id_1 + "/item-1"]
