@@ -1632,7 +1632,6 @@ app.post("/auth/v[1-2]/token/introspect", async (req, res) => {
     for (let obj of token_access_items) {
       if (!access[obj.access_id]) access[obj.access_id] = {};
 
-      access[obj.access_id].id = obj.cat_id;
       access[obj.access_id].resource_group = obj.cat_id
         .split("/")
         .slice(0, 4)
@@ -1680,17 +1679,16 @@ app.post("/auth/v[1-2]/token/introspect", async (req, res) => {
     }
   }
 
-	/* if 2 cat IDs are same, then concatenate the APIs together
-	 * this happens when a user has consumer & ingester access to
-	 * the same resource */
+  /* if 2 cat IDs are same, then concatenate the APIs together
+   * this happens when a user has consumer & ingester access to
+   * the same resource */
   let process_request = new Map();
-  for (let i of Object.keys(access)) {
-    if (!process_request.has(access[i].id))
-      process_request.set(access[i].id, []);
+  for (let i of token_access_items) {
+    if (!process_request.has(i.cat_id)) process_request.set(i.cat_id, []);
 
     process_request.set(
-      access[i].id,
-      process_request.get(access[i].id).concat([...access[i].apis])
+      i.cat_id,
+      process_request.get(i.cat_id).concat([...access[i.access_id].apis])
     );
   }
 
