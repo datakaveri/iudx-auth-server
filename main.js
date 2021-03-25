@@ -84,7 +84,7 @@ const MIN_CERT_CLASS_REQUIRED = Object.freeze({
 
 /* --- environment variables--- */
 
-process.env.TZ = "Asia/Kolkata";
+//process.env.TZ = "Asia/Kolkata";
 
 /* --- telegram --- */
 
@@ -2353,10 +2353,12 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 
   const request = res.locals.body;
 
-  if (!Array.isArray(request))
+  if (!Array.isArray(request) || !request.length)
     return END_ERROR(res, 400, "Invalid data (body)");
 
   for (const [index, obj] of request.entries()) {
+    if (typeof obj !== "object" || obj === null)
+      return END_ERROR(res, 400, "Invalid data (body)");
     let accesser_uid, access_item_id;
     let req_capability;
 
