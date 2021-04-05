@@ -2566,38 +2566,21 @@ app.post("/auth/v[1-2]/provider/access", async (req, res) => {
 
     /* check for duplicates in the object array */
     for (const i of to_add) {
-      if (i.accesser_role === "onboarder" && accesser_role === "onboarder") {
-        if (i.accesser_email === accesser_email) {
-          err.message = "Invalid data (duplicate)";
-          return END_ERROR(res, 400, err);
-        }
-      } else if (
-        i.accesser_role === "data ingester" &&
-        accesser_role === "data ingester"
+      if (
+        i.accesser_email === accesser_email &&
+        i.accesser_role === accesser_role
       ) {
-        if (
-          i.accesser_email === accesser_email &&
-          i.resource === resource &&
-          i.res_type === res_type
-        ) {
-          err.message = "Invalid data (duplicate)";
-          return END_ERROR(res, 400, err);
-        }
-      } else if (
-        i.accesser_role === "consumer" &&
-        accesser_role === "consumer"
-      ) {
-        if (
-          i.accesser_email === accesser_email &&
-          i.resource === resource &&
-          i.res_type === res_type
-        ) {
-          let duplicate = intersect(req_capability, i.req_capability);
-
-          if (duplicate.length !== 0) {
+        switch (accesser_role) {
+          case "onboarder":
+          case "delegate":
             err.message = "Invalid data (duplicate)";
             return END_ERROR(res, 400, err);
-          }
+          case "consumer":
+          case "data ingester":
+            if (i.resource === resource && i.res_type === res_type) {
+              err.message = "Invalid data (duplicate)";
+              return END_ERROR(res, 400, err);
+            }
         }
       }
     }

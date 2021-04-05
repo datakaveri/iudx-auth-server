@@ -145,7 +145,7 @@ def test_provider_update_rule_set_by_delegate():
         # provider can update consumer rule set by delegate
 
         req = {"user_email": email, "user_role":'consumer', "item_id":resource_id, "item_type":"resourcegroup"}
-        req["capabilities"] = ['complex'];
+        req["capabilities"] = ['complex', 'subscription'];
         r = untrusted.provider_access([req], 'abc.xyz@rbccps.org')
         assert r['success']     == True
         assert r['status_code'] == 200
@@ -216,6 +216,12 @@ def test_delegate_set_delegate_rule():
         assert r['success']     == False
         assert r['status_code'] == 403
 
+        req1 = {"user_email": email, "user_role":'data ingester', "item_id":resource_id, "item_type":"resourcegroup"}
+        req2 = {"user_email": email, "user_role":'delegate'}
+        r = alt_provider.provider_access([req1, req2], 'abc.xyz@rbccps.org')
+        assert r['success']     == False
+        assert r['status_code'] == 403
+
 def test_delegate_get_all_rules():
         # test getting all access rules
         global consumer_id, onboarder_id, ingester_id, delegate_id, provider_set_consumer_id
@@ -234,7 +240,7 @@ def test_delegate_get_all_rules():
                 if r['email'] == email and r['role'] == 'consumer' and resource_id == r['item']['cat_id']:
                         consumer_id = r['id']
                         assert set(r['capabilities']).issubset(set(['temporal', 'subscription', 'complex']))
-                        assert len(r['capabilities']) <= 3 and len(r['capabilities']) >= 1
+                        assert len(r['capabilities']) == 3
                         check_con = True
                 if r['email'] == email and r['role'] == 'consumer' and pr_resource_id == r['item']['cat_id']:
                         provider_set_consumer_id = r['id']
