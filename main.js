@@ -3742,8 +3742,9 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 	try { // check if the user exists
 
 		const check_uid = await pool.query (
-			" SELECT * FROM consent.users" 		+
-			" WHERE consent.users.email = $1::text ",
+			" SELECT users.id, organization_id, role.role, role.status" +
+			" FROM consent.users JOIN consent.role ON users.id = role.user_id" +
+			" WHERE users.email = $1::text ",
 			[ email ]);
 
 		if (check_uid.rows.length !== 0)
@@ -3754,29 +3755,23 @@ app.post("/consent/v[1-2]/registration", async (req, res) => {
 			/* if registered as consumer first, org_id will be undefined */
 			check_orgid = check_uid.rows[0].organization_id;
 
-			/* check if user has registered as provider before
-			 * If yes, do not allow creation of new roles for that user */
-			const check = await pool.query (
-				"SELECT * FROM consent.role"		+
-				" WHERE role.user_id = $1::integer"	+
-				" AND role = 'provider'",
-				[ user_id ]);
+			let registered_roles = [];
 
-			if (check.rows.length !== 0)
-				return END_ERROR (res, 403, "Email exists");
-
-			/* check if user is trying to register for role
-			 * that they are already registered for */
-			for (const val of roles)
+			for (let obj of check_uid.rows)
 			{
-				let uid = null;
+				/* check if user has registered as provider before
+				 * If yes, do not allow creation of new roles for that user */
+				if (obj.role === 'provider')
+					return END_ERROR (res, 403, "Email exists");
 
-				try { uid = await check_privilege(email, val); }
-				catch(error) { /* do nothing if role not there */ }
-
-				if (uid !== null)
-					return END_ERROR (res, 403, "Already registered as " + val);
+				if (obj.status === 'approved')
+					registered_roles.push(obj.role);
 			}
+
+			let duplicates = intersect(roles, registered_roles);
+
+			if (duplicates.length !== 0)
+				return END_ERROR (res, 403, "Already registered as " + duplicates.toString());
 
 			message = "Since you have registered before, please continue " +
 				  "to use the certificate that was sent before.";
