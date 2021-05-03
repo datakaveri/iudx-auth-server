@@ -11,10 +11,11 @@
         "/ngsi-ld/v1/entities/{{RESOURCE_GROUP_ID}}",
         "/ngsi-ld/v1/entities"
       ],
-      "subscription": ["/ngsi-ld/v1/subscription"]
+      "subscription": ["/ngsi-ld/v1/subscription"],
+      "download": ["/iudx/v1/download"]
     },
     "data ingester": {
-      "default": ["/iudx/v1/adapter"]
+      "default": ["/iudx/v1/adapter", "/iudx/v1/upload", "/iudx/v1/delete"]
     }
   },
   "rs.iudx.org.in": {
@@ -29,10 +30,11 @@
         "/ngsi-ld/v1/entities/{{RESOURCE_GROUP_ID}}",
         "/ngsi-ld/v1/entities"
       ],
-      "subscription": ["/ngsi-ld/v1/subscription"]
+      "subscription": ["/ngsi-ld/v1/subscription"],
+      "download": ["/iudx/v1/download"]
     },
     "data ingester": {
-      "default": ["/iudx/v1/adapter"]
+      "default": ["/iudx/v1/adapter", "/iudx/v1/upload", "/iudx/v1/delete"]
     }
   },
   "file.iudx.io": {
