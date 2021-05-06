@@ -445,35 +445,9 @@ function is_valid_email (email)
 	if (invalid_start_chars.indexOf(email[0]) !== -1)
 		return false;
 
-	/*
-		Since we use SHA1 (160 bits) for storing email hashes:
-
-			the allowed chars in the email login is -._a-z0-9
-			which is : 1 + 1 + 1 + 26 + 10 = ~40 possible chars
-
-			the worst case brute force attack with 31 chars is
-				40**31 > 2**160
-
-			but for 30 chars it is
-				40**30 < 2**160
-
-			and since we have a good margin for 30 chars
-				(2**160) - (40**30) > 2**157
-
-			hence, as a precaution, limit the login length to 30.
-
-		SHA1 has other attacks though, maybe we should switch to better
-		hash algorithm in future.
-	*/
-
 	const split = email.split("@");
 
 	if (split.length !== 2)
-		return false;
-
-	const user = split[0]; // the login
-
-	if (user.length === 0 || user.length > 30)
 		return false;
 
 	let num_dots = 0;
